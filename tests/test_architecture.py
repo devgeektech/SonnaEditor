@@ -15,12 +15,7 @@ import pytest
 import torch
 
 from sonna_editor import config
-from sonna_editor.model.architecture import (
-    EmbeddingRegistry,
-    MetadataEncoder,
-    SonnaEditor,
-    _grow_embedding,
-)
+from sonna_editor.model.architecture import SonnaEditor, _grow_embedding
 from sonna_editor.model.postprocess import (
     _TEMPERATURE_IDX,
     postprocess_predictions,
@@ -423,6 +418,8 @@ class TestSliderSetVersion:
     def test_default_instantiation_is_v2(self) -> None:
         m = SonnaEditor()
         assert m._slider_set_version == "v2"
+        assert m._use_wb_metadata_skip is True
+        assert hasattr(m, "wb_metadata_skip")
         for h in _V2_EXT_HEADS:
             assert hasattr(m, h), f"v2 model missing {h}"
 
@@ -454,6 +451,27 @@ class TestSliderSetVersion:
         with torch.no_grad():
             out = m(_dummy_image(2), _dummy_metadata(2))
         assert out.shape == (2, 147)
+
+    def test_wb_metadata_skip_identity_initialisation(self) -> None:
+        """New models start WB predictions near AsShot, then learn residuals."""
+        m = SonnaEditor(slider_set_version="v2")
+        m.eval()
+        for p in m.wb_head.parameters():
+            p.data.zero_()
+        meta = _dummy_metadata(2)
+        meta["as_shot_temperature"] = torch.tensor([3200.0, 6400.0])
+        meta["as_shot_tint"] = torch.tensor([-8.0, 12.0])
+        with torch.no_grad():
+            out = m(_dummy_image(2), meta)
+        assert out[0, 11].item() == pytest.approx(math.log(3200.0), rel=1e-5)
+        assert out[1, 11].item() == pytest.approx(math.log(6400.0), rel=1e-5)
+        assert out[0, 12].item() == pytest.approx(-8.0, abs=1e-5)
+        assert out[1, 12].item() == pytest.approx(12.0, abs=1e-5)
+
+    def test_wb_metadata_skip_can_be_disabled_for_legacy_compat(self) -> None:
+        m = SonnaEditor(use_wb_metadata_skip=False)
+        assert m._use_wb_metadata_skip is False
+        assert not hasattr(m, "wb_metadata_skip")
 
 
 _PROD_CKPT = Path("v1_learning/model-v1.2.3-prod256.ckpt")
@@ -497,4 +515,19 @@ class TestCheckpointCrossVersion:
         SonnaEditor().save_checkpoint(v2_ckpt)
         loaded = SonnaEditor.from_checkpoint(v2_ckpt)
         assert loaded._slider_set_version == "v2"
+        assert loaded._use_wb_metadata_skip is True
         assert hasattr(loaded, "defringe_head")
+
+    def test_legacy_native_ckpt_loads_without_wb_skip(self, tmp_path: Path) -> None:
+        legacy_ckpt = tmp_path / "legacy_no_wb_skip.ckpt"
+        model = SonnaEditor(use_wb_metadata_skip=False)
+        model.save_checkpoint(legacy_ckpt)
+        ckpt = torch.load(legacy_ckpt, map_location="cpu", weights_only=False)
+        ckpt["arch_config"].pop("use_wb_metadata_skip", None)
+        torch.save(ckpt, legacy_ckpt)
+
+        loaded = SonnaEditor.from_checkpoint(legacy_ckpt)
+        assert loaded._use_wb_metadata_skip is False
+        with torch.no_grad():
+            out = loaded(_dummy_image(1), _dummy_metadata(1))
+        assert out.shape == (1, 147)

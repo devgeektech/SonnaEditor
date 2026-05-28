@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import io
 import math
-import tempfile
 from pathlib import Path
 
 import numpy as np
@@ -15,6 +14,7 @@ from PIL import Image
 from sonna_editor.config import SLIDER_FIELDS
 from sonna_editor.model.architecture import EmbeddingRegistry, SonnaEditor
 from sonna_editor.model.augmentation import ValidationAugmentation
+from sonna_editor.slider_set import v1_fields
 from sonna_editor.training.datamodule import (
     SonnaDataset,
     _cat_id,
@@ -212,6 +212,15 @@ def test_dataset_target_shape(dataset: SonnaDataset) -> None:
     _, _, target = dataset[0]
     assert target.shape == (len(SLIDER_FIELDS),)
     assert target.dtype == torch.float32
+
+
+def test_dataset_target_shape_matches_v1_slider_set(
+    sample_df: pd.DataFrame,
+    registry: EmbeddingRegistry,
+) -> None:
+    ds = SonnaDataset(sample_df, ValidationAugmentation(), registry, slider_set_version="v1")
+    _, _, target = ds[0]
+    assert target.shape == (len(v1_fields()),)
 
 
 def test_dataset_target_none_becomes_nan(dataset: SonnaDataset) -> None:

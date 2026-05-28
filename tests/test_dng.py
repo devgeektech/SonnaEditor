@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -241,8 +242,11 @@ class TestBatchConvert:
 
 @pytest.mark.integration
 def test_real_conversion(tmp_path):
-    """Convert a real CR3 to DNG. Requires a RAW file at the path below."""
-    input_path = Path("/Users/darshil/Desktop/0S6A6020.CR3")
+    """Convert a real RAW to DNG when SONNA_TEST_RAW points at a fixture."""
+    raw_fixture = os.environ.get("SONNA_TEST_RAW")
+    if not raw_fixture:
+        pytest.skip("Set SONNA_TEST_RAW to run live DNG conversion")
+    input_path = Path(raw_fixture).expanduser()
     if not input_path.exists():
         pytest.skip("Test RAW file not present")
 

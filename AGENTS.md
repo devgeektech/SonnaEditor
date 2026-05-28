@@ -1,6 +1,6 @@
-# CLAUDE.md — Sonna Editor
+# AGENTS.md - Sonna Editor
 
-This file is auto-loaded by Claude Code at the start of every session in this project. It contains operational rules and pointers to deeper context.
+This file is auto-loaded by Codex at the start of every session in this project. It contains operational rules and pointers to deeper context.
 
 ## What this project is
 
@@ -12,7 +12,7 @@ Not for sale. Not competing with Imagen. Internal tooling for cost savings, IP c
 
 For any non-trivial task, read these first:
 
-1. **HANDOVER.md** (project root) — full context, architectural reasoning, decisions, risks, Claude Code workflow patterns
+1. **HANDOVER.md** and **project_knowledge.md**  (project root) — full context, architectural reasoning, decisions, risks, Codex workflow patterns
 2. **SONNA_EDITOR_BUILD_SPEC.md** (project root) — task-by-task build spec with workflow guidance per task
 
 If you haven't read these in the current session and the user asks you to implement anything beyond a trivial fix, read them now.
@@ -85,7 +85,7 @@ Without the pauses, multi-agent collapses into rationalising the first answer. T
 
 ## Session opener template
 
-When the user starts a new Claude Code session, expect this prompt:
+When the user starts a new Codex session, expect this prompt:
 
 ```
 Project context: Sonna Editor build.

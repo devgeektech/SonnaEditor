@@ -1,3 +1,6 @@
+import os
+import platform
+import shutil
 from pathlib import Path
 
 # Project root
@@ -17,10 +20,47 @@ AUDITS_DIR = DATA_DIR / "audits"
 # registry will replace this with a manifest-based discovery layer.
 CHECKPOINTS_DIR = PROJECT_ROOT / "v1_learning"
 
-# Adobe DNG Converter binary
-DNG_CONVERTER_PATH = Path(
-    "/Applications/Adobe DNG Converter.app/Contents/MacOS/Adobe DNG Converter"
-)
+# Adobe DNG Converter binary.
+# `SONNA_DNG_CONVERTER` always wins so packaged installs and unusual local
+# setups can point at the converter without editing source code. The fallback
+# list covers the default Adobe installer locations on macOS and Windows, plus
+# PATH-based discovery for Linux/Wine or custom installs.
+DNG_CONVERTER_ENV_VAR = "SONNA_DNG_CONVERTER"
+
+
+def _default_dng_converter_path() -> Path:
+    """Return the best-known Adobe DNG Converter executable path for this OS."""
+    env_path = os.environ.get(DNG_CONVERTER_ENV_VAR)
+    if env_path:
+        return Path(env_path).expanduser()
+
+    system = platform.system()
+    candidates: list[Path] = []
+    if system == "Darwin":
+        candidates.append(
+            Path("/Applications/Adobe DNG Converter.app/Contents/MacOS/Adobe DNG Converter")
+        )
+    elif system == "Windows":
+        candidates.extend(
+            [
+                Path(r"C:\Program Files\Adobe\Adobe DNG Converter\Adobe DNG Converter.exe"),
+                Path(r"C:\Program Files (x86)\Adobe\Adobe DNG Converter\Adobe DNG Converter.exe"),
+            ]
+        )
+
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate
+
+    for executable in ("Adobe DNG Converter", "Adobe DNG Converter.exe", "dngconverter"):
+        found = shutil.which(executable)
+        if found:
+            return Path(found)
+
+    return candidates[0] if candidates else Path("Adobe DNG Converter")
+
+
+DNG_CONVERTER_PATH = _default_dng_converter_path()
 
 # Model input resolution
 #   v1.0.x (legacy):  384 — value preserved in each ckpt's arch_config so
@@ -31,6 +71,15 @@ DNG_CONVERTER_PATH = Path(
 #                     stored resolution rather than this global so old ckpts
 #                     don't regress.
 IMAGE_RESOLUTION = 512
+
+# Training-time colour jitter must stay mild because targets are Lightroom
+# slider values for the original edit. Strong brightness/hue jitter makes the
+# same target describe visibly different exposures/white balances, which pushes
+# the model toward mean predictions on Exposure/Temperature/Tint.
+TRAIN_AUG_BRIGHTNESS = 0.10
+TRAIN_AUG_CONTRAST = 0.10
+TRAIN_AUG_SATURATION = 0.10
+TRAIN_AUG_HUE = 0.0
 
 # Supported RAW file extensions
 SUPPORTED_RAW_EXTENSIONS = {

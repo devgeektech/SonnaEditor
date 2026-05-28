@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+import tempfile
 import time
 from pathlib import Path
 from typing import Optional
@@ -32,13 +33,13 @@ _TINT_IDX: int = SLIDER_FIELDS.index("Tint")
 # their inputs are unsafe (Inf in any slider truth, AsShot non-positive/Inf,
 # AsShot Tint Inf). The bad rows' raw_paths are appended to this file so
 # we can spot patterns across epochs.
-_SKIPPED_LOG_PATH = Path("/tmp/saha_skipped_rows.log")
+_SKIPPED_LOG_PATH = Path(tempfile.gettempdir()) / "saha_skipped_rows.log"
 _skipped_log_inited = False
 
 
 def _log_skipped(reasons: dict[str, int], invalid_rows: list[int],
                  raw_paths: Optional[list[str]]) -> None:
-    """Append a line to /tmp/saha_skipped_rows.log when rows are masked out.
+    """Append a line to the OS temp skipped-row log when rows are masked out.
 
     Format:
       HH:MM:SS  n_invalid=N/B  reasons={...}  rows=[(idx, path), ...]
@@ -163,7 +164,7 @@ class WeightedSliderLoss(nn.Module):
         zero loss with intact gradient is returned (no further NaN
         propagation).
 
-        Bad-row raw_paths are appended to /tmp/saha_skipped_rows.log when
+        Bad-row raw_paths are appended to the OS temp skipped-row log when
         present in `metadata["raw_path"]`.
 
         metadata is an optional dict produced by SonnaDataset.__getitem__. Keys

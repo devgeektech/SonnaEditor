@@ -1,7 +1,15 @@
 # Session State — Sonna Editor
 
 **Saved:** 2026-05-14, night (NZT) — second session of the day
-**Current phase/task:** Saha-app UI rebuild track, **P0 complete**. Next is **P1 — Profile-type backend prep**. Phase 5 backend work paused for the duration of this UI track.
+**Current phase/task:** Cross-platform environment/docs pass in progress. Saha-app UI rebuild P0 was previously complete; P1 profile-type backend prep remains next after this hygiene pass.
+
+## Cross-platform update — 2026-05-28
+
+- Project target is now explicit: macOS, Windows, and Linux.
+- Python setup uses uv + Python 3.11 on every OS.
+- Runtime device selection should use CUDA, then Apple MPS, then CPU fallback.
+- Adobe DNG Converter is optional for non-DNG workflows and configurable with `SONNA_DNG_CONVERTER`.
+- Electron backend launching should use `uv` directly from the repo root instead of shell-specific `bash -lc` assumptions.
 
 ## What was completed this session
 
@@ -9,7 +17,7 @@ Two-part session: full audit + plan for the Saha-app UI rebuild, then P0 (first 
 
 ### Audit + plan track
 - Read entire repo state: CLAUDE.md, MEMORY.md, SESSION_STATE.md (previous save), HANDOVER.md (all 1229 lines), SONNA_EDITOR_BUILD_SPEC.md (headings + Phase 5 section in detail).
-- Audited the Saha-app codebase in depth: `saha-app/src/{App.jsx, components/*, hooks/*, api/*, tokens.js}`, `saha-app/electron/{main.js, preload.js}`, and the FastAPI backend under `src/sonna_editor/api/{server.py, models.py, jobs.py, callbacks.py, routes/*}`. Confirmed stack: Electron 33 + React 18 + Vite 6 + JSX inline styles, FastAPI backend spawned via `bash -lc exec uv run scripts/serve.py`, HTTP+WS IPC at 127.0.0.1:8765, no global store (React useState lifted in App.jsx).
+- Audited the Saha-app codebase in depth: `saha-app/src/{App.jsx, components/*, hooks/*, api/*, tokens.js}`, `saha-app/electron/{main.js, preload.js}`, and the FastAPI backend under `src/sonna_editor/api/{server.py, models.py, jobs.py, callbacks.py, routes/*}`. Confirmed stack: Electron 33 + React 18 + Vite 6 + JSX inline styles, FastAPI backend, HTTP+WS IPC at 127.0.0.1:8765, no global store (React useState lifted in App.jsx).
 - Produced the full 7-section audit + phased build plan: 12-13 commits across 7 phases, ~14-17 hrs estimate. **P6 (Full Personal AI training UI) deferred**; training stays a CLI operation for now.
 - Surfaced 7 open questions; user approved with refinements (see memory `project_saha_ui_rebuild.md` for the canonical record).
 - Identified the live-progress bug's actual root cause: NOT a missing IPC event but a structural callback gap in `inference/pipeline.py:process_shoot_with_model`. Per-photo `on_photo_complete` only fires during the XMP-write loop (line 368); the two slow phases — parallel preview extraction (272-282) and single-batch GPU `engine.predict` (304) — emit zero callbacks. Documented in memory `project_saha_live_progress_bug.md` for P3.
@@ -61,7 +69,7 @@ Process for P1 (unchanged from P0):
 - **P0 commit `92703dd` not pushed to origin/main.** No conflict with the plan (push when convenient), but worth noting.
 - **Visual smoke test of P0 in Electron deferred.** No `npm run dev` performed this session — only test-suite regression. Recommend running through the app once before P1's commit to confirm the trimmed Process page still feels right.
 - **Diagnostic scripts still untracked.** Carry-over from earlier sessions (`scripts/audit_all_sliders_v1.2.3.py`, `scripts/compare_saha_xmps.py`, `scripts/compare_three_way.py`, `scripts/output/`, `scripts/tint_deep_dive.py`, `scripts/verify_temperature_clamp.py`). Decision still pending: commit as operational artifacts, gitignore, or delete. User chose to defer at P0 start.
-- **WB head skip-connection experiment** (HANDOVER item 15) and the **Phase 5 Mode B re-validation** (item 17 follow-up) remain queued, both gated on this UI rebuild track completing.
+- **WB head skip-connection code is implemented** (HANDOVER item 15, 2026-05-28) and now needs a v2 training run plus all-slider audit. **Phase 5 Mode B re-validation** (item 17 follow-up) remains queued.
 
 ## Files changed this session
 

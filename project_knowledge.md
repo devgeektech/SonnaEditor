@@ -2,7 +2,7 @@
 
 ## Project overview
 
-Sonna Editor is a local desktop tool for predicting Lightroom slider adjustments from RAW images. It uses a PyTorch regression model trained on Lightroom-edited photos, then writes XMP sidecars alongside RAW files. The UI is Electron + React and the backend is Python.
+Sonna Editor is a local desktop tool for predicting Lightroom slider adjustments from RAW images. It uses a PyTorch regression model trained on Lightroom-edited photos, then writes XMP sidecars alongside RAW files. The UI is Electron + React and the backend is Python. The runtime target is cross-platform: macOS, Windows, and Linux.
 
 The core inference flow is:
 - extract RAW preview + metadata
@@ -36,6 +36,8 @@ The core inference flow is:
   - fusion MLP with metadata embeddings
   - multiple output heads per slider group
   - slider set version gating (`v1` vs `v2`)
+  - v2 WB metadata skip: predicts residuals on top of
+    `[log(as_shot_temperature), as_shot_tint]`; legacy checkpoints keep it off
 - checkpoint API
   - `save_checkpoint()`: persist model weights and registry
   - `from_checkpoint()`: restore native checkpoints with registry and architecture metadata
@@ -69,7 +71,7 @@ The core inference flow is:
 ### `src/sonna_editor/inference/engine.py`
 - `InferenceEngine`: load a trained checkpoint and run batched inference
 - `_load_from_checkpoint()`: support Lightning and native SonnaEditor checkpoints
-- `warmup()`: compile MPS kernels with a dummy forward pass
+- `warmup()`: run a dummy forward pass so CUDA/MPS/CPU backend setup cost is paid before timed inference
 - `_build_batch()`: assemble image tensors and metadata tensors for model input
   - current fix: map string metadata values to checkpoint registry IDs instead of zeroing all categorical IDs
   - fallback unknown values to `unknown` embedding index 0
@@ -92,6 +94,7 @@ The core inference flow is:
 - `build_registry()`: create an `EmbeddingRegistry` from training data categories
 - `SonnaDataset`: dataset wrapper for parquet rows and metadata tensors
 - maps training rows to model input tensors
+- emits target tensors sized to the requested `slider_set_version`
 - uses `unknown` fallback IDs consistent with inference behavior
 
 ### `src/sonna_editor/api/`

@@ -37,7 +37,7 @@ def main() -> None:
     print(f"   Shoots:            {summary['n_shoots']:,}")
     print(f"   Likely unedited:   {summary['n_unedited']} ({100*summary['unedited_ratio']:.1f}%)")
     print(f"   Outlier sliders:   {summary['n_outlier_sliders']}")
-    print(f"   Training estimate: {summary['training_minutes_estimate']:.0f} min (100 epochs, M1 Pro)")
+    print(f"   Training estimate: {summary['training_minutes_estimate']:.0f} min (100 epochs)")
     print(f"\n   Report:  {summary['report_path']}")
 
     if status == "STOP":

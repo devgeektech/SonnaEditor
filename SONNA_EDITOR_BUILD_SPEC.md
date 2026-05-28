@@ -1,7 +1,8 @@
 # Sonna Editor — Build Specification
 
 **Version:** 1.0
-**Target hardware:** M1 Pro MacBook Pro, 32GB RAM
+**Target platforms:** macOS, Windows, and Linux
+**Reference hardware:** M1 Pro MacBook Pro, 32GB RAM
 **Goal:** Internal AI photo editing tool that learns Sonna's editing style and applies it to new event work, outputting Lightroom-compatible XMP sidecars.
 
 ---
@@ -28,7 +29,7 @@ Work through phases sequentially. Don't skip ahead — later phases assume earli
 ```
                     ┌─────────────────────────────────────────┐
                     │           SONNA EDITOR                  │
-                    │       (PyQt6 Desktop App)               │
+                    │       (Electron Desktop App)             │
                     └─────────────────────────────────────────┘
                                        │
             ┌──────────────────────────┼──────────────────────────┐
@@ -139,7 +140,7 @@ sonna-editor/
 │       │
 │       └── ui/                 # Phase 7
 │           ├── __init__.py
-│           ├── main.py         # PyQt6 entrypoint
+│           ├── main.py         # legacy PyQt6 entrypoint (superseded by Electron)
 │           ├── windows/        # main window, dialogs
 │           ├── widgets/        # custom widgets
 │           └── workers/        # QThread workers for long ops
@@ -181,15 +182,15 @@ sonna-editor/
 
 ### Task 0.1: Install foundational tools
 
-**Goal:** Get the development environment ready on the M1 Pro.
+**Goal:** Get the development environment ready on macOS, Windows, or Linux.
 
 **Manual steps (do these yourself before Claude Code session):**
 
 1. Install Homebrew if not already installed: https://brew.sh
-2. Install `uv` (fast Python package manager): `brew install uv`
-3. Install `git` if not already: `brew install git`
-4. Download Adobe DNG Converter: https://helpx.adobe.com/camera-raw/digital-negative.html
-   Install it. The CLI binary will be at `/Applications/Adobe DNG Converter.app/Contents/MacOS/Adobe DNG Converter`.
+2. Install `uv` (fast Python package manager): `brew install uv`, `pipx install uv`, or `python -m pip install --user uv`
+3. Install `git` if not already.
+4. Optional for DNG workflows: Download Adobe DNG Converter: https://helpx.adobe.com/camera-raw/digital-negative.html
+   Install it at the OS default path or set `SONNA_DNG_CONVERTER` to the executable path.
 5. Create a GitHub account if you don't have one (free tier is fine).
 6. Create a new private repository called `sonna-editor`. Don't initialise it with anything.
 
@@ -204,14 +205,14 @@ sonna-editor/
 **Claude Code prompt:**
 
 ```
-I'm starting a new Python project called sonna-editor. It's a local AI photo editing tool that will run on my M1 Pro MacBook Pro with 32GB RAM. I want to use uv for package management and Python 3.11.
+I'm starting a new Python project called sonna-editor. It's a local AI photo editing tool that should run on macOS, Windows, and Linux. I want to use uv for package management and Python 3.11.
 
 Please:
 
 1. Initialise a uv-managed Python 3.11 project in the current directory
 2. Set up the full directory structure as specified in SONNA_EDITOR_BUILD_SPEC.md (the structure under "Project structure")
 3. Create a pyproject.toml with these initial dependencies:
-   - torch (with MPS support — latest stable)
+   - torch (latest stable; CUDA/MPS/CPU runtime selected automatically)
    - torchvision
    - pytorch-lightning
    - rawpy
@@ -229,8 +230,8 @@ Please:
 5. Create a scripts/verify_environment.py that:
    - Imports torch and prints torch.__version__
    - Checks torch.backends.mps.is_available() and prints result
-   - Runs a small tensor operation on MPS (matmul of two 1000x1000 random tensors) and reports success
-   - Checks that Adobe DNG Converter binary exists at the expected path and prints the version
+   - Runs a small tensor operation on the best available device (CUDA, MPS, or CPU) and reports success
+   - Reports Adobe DNG Converter if installed or configured via `SONNA_DNG_CONVERTER`
    - Prints Python version and platform info
 6. Create an empty README.md with the project name and one-line description
 7. Initialise a git repo, make the initial commit, and tell me the command to push to my GitHub repo (which I've already created at github.com/[my-username]/sonna-editor)
@@ -311,12 +312,12 @@ Reference the Adobe XMP Specification and CRS namespace docs for correctness. Do
 **Claude Code prompt:**
 
 ```
-Implement src/sonna_editor/data/dng.py — a Python wrapper around Adobe DNG Converter for the M1 Pro Mac.
+Implement src/sonna_editor/data/dng.py — a cross-platform Python wrapper around Adobe DNG Converter.
 
 Requirements:
 
 1. Function `convert_to_dng(input_path: Path, output_dir: Path, embed_original: bool = False, compress: bool = True) -> Path`:
-   - Calls /Applications/Adobe DNG Converter.app/Contents/MacOS/Adobe DNG Converter via subprocess
+   - Resolves the converter from `SONNA_DNG_CONVERTER`, OS default paths, or PATH, then calls it via subprocess
    - Uses appropriate CLI flags (-c for compressed, -e for embed original, -d for output directory)
    - Returns the path to the resulting DNG file
    - Handles errors (binary not found, conversion failure, unsupported format)
@@ -389,7 +390,7 @@ Use rawpy for RAW handling. For metadata, prefer reading from the file's EXIF ov
 **Manual step:** Provide a single test RAW file at `tests/fixtures/sample.dng` or `tests/fixtures/sample.cr3`.
 
 **Success criteria:**
-- Extracts a thumbnail in <100ms per file on M1 Pro
+- Extracts a thumbnail quickly on the reference machine; exact timing varies by OS and storage
 - Metadata fields populate correctly for at least 3 different camera bodies you've used
 - Tests pass
 
@@ -486,7 +487,7 @@ Requirements:
 
 6. Tests with synthetic data
 
-Performance target: processes 1000 RAW+XMP pairs in under 5 minutes on M1 Pro using multiprocessing for the per-file work.
+Performance target: processes 1000 RAW+XMP pairs in under 5 minutes on the reference machine using multiprocessing for the per-file work.
 ```
 
 **Success criteria:**
@@ -524,7 +525,7 @@ Requirements:
    - Outlier detection: photos with slider values > 3 std devs from the mean (list for manual review)
    - Consistency score: standard deviation of each slider, lower is better; flag if certain sliders have very high variance
    - Date range of captures
-   - Estimated training time on M1 Pro based on photo count
+   - Estimated training time based on photo count and reference hardware
 
 3. The markdown report should have clear sections:
    - Summary (photo count, recommendation: GO / WARN / STOP)
@@ -701,7 +702,7 @@ Requirements:
 
 **Workflow:** **OPUS** + **`/plan`** + **full multi-agent (architect → engineer → reviewer → QA)**. Highest-stakes task in the project. Architecture decisions propagate through everything downstream and are hard to reverse.
 
-Use the multi-agent invocation pattern from HANDOVER.md Part 5 with explicit pause-between-roles. Architect proposes and justifies the architecture. Engineer implements after architect approval. Reviewer specifically checks: parameter count reasonableness (~30M target), MPS compatibility (no ops that fall back to CPU silently), batch dimension handling, save/load correctness, embedding registry update logic for new camera bodies. QA writes tests including edge cases: single-sample batch, missing metadata fields, embedding overflow when a new camera appears.
+Use the multi-agent invocation pattern from HANDOVER.md Part 5 with explicit pause-between-roles. Architect proposes and justifies the architecture. Engineer implements after architect approval. Reviewer specifically checks: parameter count reasonableness (~30M target), CUDA/MPS/CPU compatibility, batch dimension handling, save/load correctness, embedding registry update logic for new camera bodies. QA writes tests including edge cases: single-sample batch, missing metadata fields, embedding overflow when a new camera appears.
 
 **Critical:** also configure for **resolution flexibility** so 384/512/768 input sizes are a config flag, not hardcoded. This is required for the staged resolution roadmap (v1 384px → v2 512px → v3 768px).
 
@@ -851,7 +852,7 @@ datamodule.py:
 
 2. Class SonnaDataModule(pytorch_lightning.LightningDataModule):
    - setup() loads train/val/test parquet files
-   - DataLoaders with batch_size 16 (good for M1 Pro 32GB), num_workers 4, persistent_workers True
+   - DataLoaders with batch_size 16 default, num_workers 4, persistent_workers True
    - prepare_data() validates files exist
 
 module.py:
@@ -885,7 +886,7 @@ CLI training entrypoint:
 - --freeze-backbone (default: freeze for first 10 epochs, unfreeze after)
 - Saves a final model.ckpt + a summary report (final metrics, training curves as PNGs)
 
-Optimised for M1 Pro: use accelerator="mps", precision="32-true" (M1 doesn't fully support fp16 yet via MPS — confirm before changing).
+Use runtime accelerator selection (`cuda`, `mps`, or `cpu`) and precision="32-true" for cross-platform reliability.
 ```
 
 **Success criteria:**
@@ -940,7 +941,7 @@ engine.py:
    - Batch processing internally for efficiency
    - Output post-processing: clamp to Lightroom slider valid ranges from config
 
-2. Method warmup() that runs a single dummy forward pass to compile MPS kernels (first call on MPS is slow due to graph compilation)
+2. Method warmup() that runs a single dummy forward pass so CUDA/MPS/CPU backend setup happens before timed inference
 
 pipeline.py:
 
@@ -955,7 +956,7 @@ pipeline.py:
      f. Write XMPs
    - Returns summary including low-confidence photo list (if uncertainty enabled)
 
-2. Performance target: process a 1000-photo shoot in under 5 minutes on M1 Pro
+2. Performance target: process a 1000-photo shoot in under 5 minutes on the reference machine
    - Bottleneck is RAW preview extraction (parallelisable)
    - Inference itself should be ~30-50 photos/sec batched
 
@@ -1047,7 +1048,7 @@ The script should produce a clear before/after report so the user can decide whe
 ```
 
 **Success criteria:**
-- Fine-tuning run completes in <2 hours on M1 Pro
+- Fine-tuning run completes in <2 hours on the reference machine
 - New version metrics are reported clearly
 - Old version preserved
 
@@ -1089,7 +1090,7 @@ manager.py:
 
 ---
 
-## Phase 7 — Desktop UI (PyQt6)
+## Phase 7 — Desktop UI (Electron)
 
 **Estimated time:** 25-35 hours
 **Prerequisites:** All previous phases complete
@@ -1101,7 +1102,7 @@ manager.py:
 **Claude Code prompt:**
 
 ```
-Implement src/sonna_editor/ui/main.py and src/sonna_editor/ui/windows/main_window.py — the main PyQt6 application window.
+Implement the Electron + React desktop UI under `saha-app/`.
 
 Layout:
 - Top toolbar: Profile selector dropdown, "Train New" button, "Manage Profiles" button
@@ -1115,7 +1116,7 @@ Initial views:
 - "Fine-tune" view: profile selector, captures folder picker, Start Fine-tune button
 - "Settings" view: paths, options, DNG Converter location
 
-Use PyQt6 with Qt Designer-compatible code (programmatic, not .ui files — easier for Claude Code to maintain).
+Use the existing Electron + React stack and FastAPI backend bridge.
 
 Implement basic windowing, navigation, and stub views. No actual functionality wired yet.
 ```
@@ -1143,7 +1144,7 @@ Requirements:
 - Cancel button works (graceful shutdown of worker thread)
 - Recent shoots list (last 5 processed)
 
-Use PyQt6 signals/slots properly. Don't block the UI thread.
+Use Electron/React async flows properly. Don't block the renderer thread.
 ```
 
 **Success criteria:** User can process a real shoot end-to-end through the UI without touching a terminal.
@@ -1244,7 +1245,7 @@ Not specified in detail. Plan when Phase 7 is solid for Darshil personally. Will
 
 **Development (one-time):**
 - Time: 80-100 hours over 8-10 weeks at 8-10 hrs/week
-- Cloud GPU: NZD $0 (train locally on M1 Pro)
+- Cloud GPU: NZD $0 by default (train locally when hardware is sufficient)
 - Code signing (Phase 8 only, deferred): NZD $165/year if/when distributing to team
 
 **Operational (ongoing, Phase 7 onward):**

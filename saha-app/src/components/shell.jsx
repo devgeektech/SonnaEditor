@@ -1,7 +1,6 @@
 // Shared dark window chrome + nav rail.
-// Ported from "SAHA UI/shell.jsx" (IIFE → ESM). The fake TrafficLights from
-// the design canvas have been removed — Electron's titleBarStyle: 'hiddenInset'
-// overlays the real macOS traffic lights at top-left.
+// Ported from "SAHA UI/shell.jsx" (IIFE -> ESM). Window controls are delegated
+// to Electron so the same shell works on macOS, Windows, and Linux.
 
 import SONNA from '../tokens.js';
 
@@ -94,9 +93,8 @@ export function NavRail({ active = 'process', accent = false, accentColor = ochr
 export function TitleBar({ title = 'saha', folder = '' }) {
   return (
     <div style={{
-      // Bumped to 44px to accommodate the macOS native traffic lights overlay.
-      // Padding-left clears the lights area; the absolute-positioned title
-      // remains centered relative to the full window.
+      // Keep enough drag area for native window controls across platforms.
+      // The absolute-positioned title remains centered relative to the window.
       height: 44, flexShrink: 0,
       background: bgDeep,
       borderBottom: `1px solid ${line}`,
@@ -116,10 +114,10 @@ export function TitleBar({ title = 'saha', folder = '' }) {
   );
 }
 
-// MacShell — outer frame; child renders below the rail.
+// AppShell — outer frame; child renders below the rail.
 // Width/height default to viewport so the Electron window fills its native frame
 // instead of rendering a fixed-size 1280×780 island inside it.
-export function MacShell({ title, folder, activeNav = 'process', accent = false, accentColor, onNavigate, children }) {
+export function AppShell({ title, folder, activeNav = 'process', accent = false, accentColor, onNavigate, children }) {
   return (
     <div style={{
       width: '100%', height: '100%',

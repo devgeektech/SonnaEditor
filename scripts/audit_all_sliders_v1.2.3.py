@@ -26,6 +26,7 @@ from tqdm import tqdm
 from sonna_editor import config
 from sonna_editor.data.xmp import LR_DEFAULTS
 from sonna_editor.model.architecture import SonnaEditor
+from sonna_editor.runtime import preferred_torch_device
 from sonna_editor.model.augmentation import ValidationAugmentation
 from sonna_editor.data.extract import compute_histogram
 
@@ -363,7 +364,7 @@ def build_markdown_report(
     lines.append(f"**Model:** `{CKPT}`  ")
     lines.append(f"**Test split:** `{TEST_PARQUET}`  ({n_rows} photos)  ")
     lines.append(f"**Generated:** {pd.Timestamp.now().isoformat(timespec='seconds')}  ")
-    lines.append(f"**Architecture:** v1, 13 heads, 135 outputs  ")
+    lines.append("**Architecture:** v1, 13 heads, 135 outputs  ")
     lines.append("")
     lines.append("Read-only diagnostic against the live production checkpoint. Raw")
     lines.append("model predictions, no postprocess clamping. Temperature (idx 11)")
@@ -527,7 +528,7 @@ def main() -> int:
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
     _logger.info("Loading model from %s", CKPT)
-    device = "mps" if torch.backends.mps.is_available() else "cpu"
+    device = preferred_torch_device()
     model = SonnaEditor.from_checkpoint(CKPT, device="cpu")
     model.to(device)
     _logger.info("Model loaded: slider_set_version=%s, device=%s", model._slider_set_version, device)

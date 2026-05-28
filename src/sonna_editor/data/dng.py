@@ -13,18 +13,24 @@ logger = logging.getLogger(__name__)
 
 
 class DNGConverterNotFoundError(FileNotFoundError):
+    """Raised when Adobe DNG Converter cannot be found on this machine."""
+
     pass
 
 
 class DNGConversionError(RuntimeError):
+    """Raised when Adobe DNG Converter exits non-zero or skips output."""
+
     pass
 
 
 def _check_binary() -> None:
+    """Validate the configured converter path before launching subprocesses."""
     if not DNG_CONVERTER_PATH.exists():
         raise DNGConverterNotFoundError(
             f"Adobe DNG Converter not found at {DNG_CONVERTER_PATH}. "
-            "Install from https://helpx.adobe.com/camera-raw/using/adobe-dng-converter.html"
+            "Install Adobe DNG Converter, put it on PATH, or set "
+            "SONNA_DNG_CONVERTER to its executable path."
         )
 
 
@@ -37,7 +43,7 @@ def get_dng_converter_version() -> str:
         text=True,
         timeout=10,
     )
-    # DNG Converter prints version to stdout or stderr depending on version
+    # DNG Converter prints version to stdout or stderr depending on version.
     output = (result.stdout + result.stderr).strip()
     return output if output else "unknown"
 
@@ -54,6 +60,9 @@ def convert_to_dng(
     Raises DNGConverterNotFoundError if the binary is missing.
     Raises DNGConversionError if conversion fails.
     Raises ValueError if the input format is not supported.
+
+    Adobe uses the same CLI flags on macOS and Windows. Linux is supported when
+    a compatible converter command is exposed on PATH or via SONNA_DNG_CONVERTER.
     """
     _check_binary()
 

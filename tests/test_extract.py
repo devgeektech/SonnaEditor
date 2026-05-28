@@ -44,7 +44,7 @@ class TestExtractPreview:
         assert abs(ratio_small - ratio_large) < 0.02
 
     def test_under_500ms(self):
-        # Cold read of a 21MB CR3 on M1 Pro — rawpy header parse + JPEG extract.
+        # Cold read of a 21MB CR3: rawpy header parse + JPEG extract.
         # Target is <100ms on warm cache; 500ms covers cold I/O in CI.
         extract_preview(FIXTURE_RAW)  # warm up OS cache
         start = time.perf_counter()

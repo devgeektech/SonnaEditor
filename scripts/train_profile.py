@@ -25,6 +25,7 @@ from pytorch_lightning.callbacks import (
 from pytorch_lightning.loggers import TensorBoardLogger
 
 import sonna_editor.config as config
+from sonna_editor.runtime import preferred_lightning_accelerator
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 log = logging.getLogger(__name__)
@@ -45,6 +46,10 @@ def _parse_args() -> argparse.Namespace:
                    help="Number of epochs to keep backbone frozen (default: 10)")
     p.add_argument("--num-workers",   type=int,   default=4)
     p.add_argument("--resume-from-checkpoint", type=Path, default=None, metavar="CKPT")
+    p.add_argument("--slider-set-version", choices=("v1", "v2"), default="v2",
+                   help="Target slider set for training. v2 is the current default.")
+    p.add_argument("--no-wb-metadata-skip", action="store_true",
+                   help="Disable the direct AsShot Temperature/Tint residual in new models.")
     p.add_argument("--image-resolution", type=int, default=None,
                    help="Override model input resolution for training (default: config IMAGE_RESOLUTION)")
     p.add_argument("--temperature-weight", type=float, default=None,
@@ -91,6 +96,22 @@ def _apply_training_overrides(args: argparse.Namespace) -> None:
         log.info("Override SIGN_WRONG_PENALTY_WEIGHT=%0.2f", args.sign_wrong_penalty_weight)
 
 
+def _load_best_weights_into_model(model, best_ckpt: str) -> None:
+    """Load Lightning's best model weights into the native SonnaEditor instance.
+
+    Lightning checkpoint callbacks save the full training module. The app wants
+    a native SonnaEditor checkpoint, so copy the best validation weights back
+    before calling SonnaEditor.save_checkpoint().
+    """
+    ckpt = torch.load(best_ckpt, map_location="cpu", weights_only=False)
+    state = {
+        k[len("model.") :]: v
+        for k, v in ckpt["state_dict"].items()
+        if k.startswith("model.")
+    }
+    model.load_state_dict(state, strict=True)
+
+
 def main() -> None:
     args = _parse_args()
     args.output_dir.mkdir(parents=True, exist_ok=True)
@@ -110,6 +131,7 @@ def main() -> None:
         test_parquet=args.test_parquet,
         batch_size=args.batch_size,
         num_workers=args.num_workers,
+        slider_set_version=args.slider_set_version,
     )
     dm.prepare_data()
     dm.setup("fit")
@@ -131,9 +153,24 @@ def main() -> None:
     if args.resume_from_checkpoint and args.resume_from_checkpoint.exists():
         log.info("Resuming from %s", args.resume_from_checkpoint)
         model = SonnaEditor.from_checkpoint(args.resume_from_checkpoint)
+        if model._slider_set_version != args.slider_set_version:
+            raise ValueError(
+                f"--slider-set-version={args.slider_set_version!r} does not match "
+                f"checkpoint slider_set_version={model._slider_set_version!r}"
+            )
     else:
-        model = SonnaEditor(registry=reg, freeze_backbone=True)
-        log.info("Created fresh model (backbone frozen for %d epochs)", args.freeze_backbone_epochs)
+        model = SonnaEditor(
+            registry=reg,
+            freeze_backbone=True,
+            slider_set_version=args.slider_set_version,
+            use_wb_metadata_skip=not args.no_wb_metadata_skip,
+        )
+        log.info(
+            "Created fresh %s model (backbone frozen for %d epochs, wb_metadata_skip=%s)",
+            args.slider_set_version,
+            args.freeze_backbone_epochs,
+            model._use_wb_metadata_skip,
+        )
 
     lightning_module = SonnaLightningModule(
         model=model,
@@ -167,10 +204,10 @@ def main() -> None:
     ]
 
     # -----------------------------------------------------------------------
-    # Trainer — M1 Pro: MPS accelerator, fp32 (MPS has limited fp16 support)
+    # Trainer. fp32 is the safe cross-platform default for CUDA, MPS, and CPU.
     # -----------------------------------------------------------------------
     trainer = pl.Trainer(
-        accelerator="mps",
+        accelerator=preferred_lightning_accelerator(),
         devices=1,
         precision="32-true",
         max_epochs=args.max_epochs,
@@ -203,8 +240,20 @@ def main() -> None:
     # Save final model + summary
     # -----------------------------------------------------------------------
     final_model_path = args.output_dir / "model.ckpt"
+    if best_ckpt:
+        _load_best_weights_into_model(lightning_module.model, best_ckpt)
     lightning_module.model.save_checkpoint(final_model_path)
     log.info("Saved final model to %s", final_model_path)
+    sidecar_path = final_model_path.with_suffix(".json")
+    sidecar_path.write_text(json.dumps({
+        "display_name": f"Sonna trained profile ({args.slider_set_version})",
+        "checkpoint_path": str(final_model_path),
+        "image_resolution": config.IMAGE_RESOLUTION,
+        "slider_set_version": lightning_module.model._slider_set_version,
+        "use_wb_metadata_skip": lightning_module.model._use_wb_metadata_skip,
+        "default_skip_fields": [],
+    }, indent=2))
+    log.info("Saved model sidecar to %s", sidecar_path)
 
     summary = {
         "best_val_loss": float(trainer.checkpoint_callback.best_model_score or 0.0),
@@ -218,6 +267,8 @@ def main() -> None:
             "batch_size": args.batch_size,
             "freeze_backbone_epochs": args.freeze_backbone_epochs,
             "image_resolution": config.IMAGE_RESOLUTION,
+            "slider_set_version": args.slider_set_version,
+            "use_wb_metadata_skip": not args.no_wb_metadata_skip,
             "temperature_weight": args.temperature_weight,
             "tint_weight": args.tint_weight,
             "exposure_weight": args.exposure_weight,

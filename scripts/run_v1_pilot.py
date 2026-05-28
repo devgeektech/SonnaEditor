@@ -9,9 +9,9 @@ Usage:
     uv run scripts/run_v1_pilot.py --max-epochs 30 --batch-size 16 --workers 4
 
 Prerequisites:
-  - /Volumes/25-08/ must be mounted and readable
-  - Lightroom Classic must be closed (catalog must not be locked)
-  - At least 20 GB free disk space
+  - Source photo storage must be mounted and readable.
+  - Lightroom Classic must be closed (catalog must not be locked).
+  - At least 20 GB free disk space.
 """
 from __future__ import annotations
 
@@ -45,6 +45,7 @@ from sonna_editor.data.catalog_dataset import build_dataset_from_catalog
 from sonna_editor.data.dataset import save_split, split_dataset
 from sonna_editor.model.architecture import SonnaEditor
 from sonna_editor.model.postprocess import postprocess_predictions
+from sonna_editor.runtime import preferred_lightning_accelerator, preferred_torch_device
 from sonna_editor.training.callbacks import (
     CriticalMAECallback,
     DiskSpaceCallback,
@@ -449,7 +450,7 @@ def build_and_split_dataset(workers: int) -> tuple[Path, Path, Path]:
     save_split(train_df, val_df, test_df, splits_dir)
 
     n = stats["included"]
-    print(f"  Shoot-level splits (val+test shoots withheld whole):")
+    print("  Shoot-level splits (val+test shoots withheld whole):")
     print(f"    train: {len(train_df):,} ({100*len(train_df)/n:.0f}%)")
     print(f"    val:   {len(val_df):,} ({100*len(val_df)/n:.0f}%)")
     print(f"    test:  {len(test_df):,} ({100*len(test_df)/n:.0f}%)")
@@ -487,7 +488,7 @@ def wait_for_approval() -> None:
         # Exit cleanly so the user can review the dataset and start training manually.
         print("\n\nPAUSE — non-interactive mode detected. Exiting at dataset review point.")
         print("Dataset is saved. Start training manually when ready:")
-        print(f"  uv run scripts/run_v1_pilot.py --skip-dataset \\")
+        print("  uv run scripts/run_v1_pilot.py --skip-dataset \\")
         print(f"    --train-parquet {DATASET_DIR / 'splits/train.parquet'} \\")
         print(f"    --val-parquet {DATASET_DIR / 'splits/val.parquet'} \\")
         print(f"    --test-parquet {DATASET_DIR / 'splits/test.parquet'}")
@@ -585,6 +586,7 @@ def run_training(
         test_parquet=test_parquet,
         batch_size=batch_size,
         num_workers=workers,
+        slider_set_version="v1",
     )
     dm.prepare_data()
     dm.setup("fit")
@@ -601,7 +603,12 @@ def run_training(
     )
 
     # Model
-    model = SonnaEditor(registry=reg, freeze_backbone=True)
+    model = SonnaEditor(
+        registry=reg,
+        freeze_backbone=True,
+        slider_set_version="v1",
+        use_wb_metadata_skip=False,
+    )
     module = SonnaLightningModule(
         model=model,
         lr=3e-4,
@@ -637,9 +644,9 @@ def run_training(
     tb_logger = TensorBoardLogger(save_dir=str(LOG_DIR), name="tensorboard")
     csv_logger = CSVLogger(save_dir=str(LOG_DIR), name="csv")
 
-    # Trainer
+    # Trainer: choose CUDA, MPS, or CPU at runtime so this pilot can run on any OS.
     trainer = pl.Trainer(
-        accelerator="mps",
+        accelerator=preferred_lightning_accelerator(),
         devices=1,
         precision="32-true",
         max_epochs=max_epochs,
@@ -713,11 +720,7 @@ def _sample_predictions(
     ]
     results = []
 
-    device = (
-        torch.device("mps")
-        if torch.backends.mps.is_available()
-        else torch.device("cpu")
-    )
+    device = torch.device(preferred_torch_device())
     module.model.eval()
     module.model.to(device)
 

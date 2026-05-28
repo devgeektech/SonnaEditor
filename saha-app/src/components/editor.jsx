@@ -15,7 +15,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import SONNA from '../tokens.js';
-import { MacShell } from './shell.jsx';
+import { AppShell } from './shell.jsx';
 import { ErrorBanner } from './error-banner.jsx';
 import { useRecentFolders } from '../hooks/useRecentFolders.js';
 import { useJob, isTerminal } from '../hooks/useJob.js';
@@ -993,7 +993,7 @@ export function Editor({ profiles = [], activeProfile, onActivateProfile, onNavi
     && !!activeProfile
     && totalRaws > 0;
 
-  // The in-flight folder during processing — drives the MacShell title bar.
+  // The in-flight folder during processing drives the app shell title bar.
   const inFlightFolderPath = useMemo(() => {
     if (!isQueueRunning) return '';
     return queue.find((f) => f.status === 'processing')?.folderPath || '';
@@ -1325,7 +1325,7 @@ export function Editor({ profiles = [], activeProfile, onActivateProfile, onNavi
 
   return (
     <>
-      <MacShell title="saha" folder={inFlightFolderPath} activeNav="process" onNavigate={onNavigate}>
+      <AppShell title="saha" folder={inFlightFolderPath} activeNav="process" onNavigate={onNavigate}>
         <LeftFolderQueue
           queue={queue}
           expandedSet={expandedSet}
@@ -1347,7 +1347,7 @@ export function Editor({ profiles = [], activeProfile, onActivateProfile, onNavi
           onDismissError={() => setError(null)}
         />
         {rightColumn}
-      </MacShell>
+      </AppShell>
       {overwriteConfirm && (
         <OverwriteConfirmDialog
           conflicts={overwriteConfirm.conflicts}

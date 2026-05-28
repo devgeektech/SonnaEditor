@@ -18,6 +18,7 @@ from sonna_editor.data.extract import compute_histogram
 from sonna_editor.model.architecture import EmbeddingRegistry, SonnaEditor
 from sonna_editor.model.augmentation import ValidationAugmentation
 from sonna_editor.model.postprocess import postprocess_predictions, predictions_to_dict
+from sonna_editor.runtime import preferred_torch_device
 
 
 def _load_from_checkpoint(path: Path, device: str) -> SonnaEditor:
@@ -60,6 +61,7 @@ def _load_from_checkpoint(path: Path, device: str) -> SonnaEditor:
             _pretrained_backbone=False,
             arch_version=arch_version,
             slider_set_version="v1",
+            use_wb_metadata_skip=False,
         )
         model.load_state_dict(model_state)
     else:
@@ -107,7 +109,7 @@ class InferenceEngine:
         device: Optional[str] = None,
     ) -> None:
         if device is None:
-            device = "mps" if torch.backends.mps.is_available() else "cpu"
+            device = preferred_torch_device()
         self._device = device
         # Resolution resolution order:
         #   1. Sidecar JSON {ckpt_basename}.json `resolution` field (preferred —
@@ -147,7 +149,7 @@ class InferenceEngine:
         self._transform = ValidationAugmentation(resolution=self._image_resolution)
 
     def warmup(self) -> None:
-        """Run a dummy forward pass to compile MPS kernels before timed inference."""
+        """Run a dummy forward pass so the selected backend is ready for inference."""
         res = self._image_resolution
         dummy_img = torch.zeros(1, 3, res, res, device=self._device)
         dummy_meta: dict[str, torch.Tensor] = {

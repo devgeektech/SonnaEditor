@@ -1,4 +1,5 @@
 #!/usr/bin/env python
+# ruff: noqa: E402
 """v1.2.0 FULL PRODUCTION run — 12.9K stratified dataset, 256px.
 
 The production training run. Forked from train_v1_2_0_3k_smoketest.py with
@@ -58,10 +59,10 @@ sys.path.insert(0, str(PROJECT_ROOT / "src"))
 # would silently fail (training would run at 512). Set this here, then
 # import the rest.
 import sonna_editor.config as _cfg
+from sonna_editor.runtime import preferred_lightning_accelerator
 _cfg.IMAGE_RESOLUTION = 256
 
 import pytorch_lightning as pl
-import torch
 from pytorch_lightning.callbacks import (
     EarlyStopping,
     LearningRateMonitor,
@@ -155,6 +156,7 @@ def main() -> None:
         batch_size=16,
         num_workers=4,
         sample_weight_col="sample_weight",
+        slider_set_version="v1",
     )
     dm.prepare_data()
     dm.setup("fit")
@@ -165,7 +167,12 @@ def main() -> None:
         len(dm.registry.camera_profiles), len(dm.registry.wb_presets),
     )
 
-    model = SonnaEditor(registry=dm.registry, freeze_backbone=True)
+    model = SonnaEditor(
+        registry=dm.registry,
+        freeze_backbone=True,
+        slider_set_version="v1",
+        use_wb_metadata_skip=False,
+    )
     lm = SonnaLightningModule(
         model=model,
         lr=3e-4,
@@ -207,9 +214,8 @@ def main() -> None:
         DiskSpaceCallback(watch_path=PROJECT_ROOT, min_free_gb=5.0),
     ]
 
-    accelerator = "mps" if torch.backends.mps.is_available() else "cpu"
     trainer = pl.Trainer(
-        accelerator=accelerator,
+        accelerator=preferred_lightning_accelerator(),
         devices=1,
         precision="32-true",
         max_epochs=MAX_EPOCHS,

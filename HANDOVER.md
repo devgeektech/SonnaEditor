@@ -2,7 +2,8 @@
 
 **Project:** Internal AI photo editing tool for Sonna Studios
 **Owner:** Darshil (Founder/Director, Sonna Studios)
-**Hardware:** M1 Pro MacBook Pro, 32GB RAM
+**Platforms:** macOS, Windows, and Linux
+**Reference hardware:** M1 Pro MacBook Pro, 32GB RAM
 **Status:** v1.2.0 production shipped — Phases 0-7 complete; Phase 8 (team distribution) deferred
 **Last updated:** May 2026
 
@@ -15,7 +16,7 @@
 - Checkpoint: `v1_learning/model-v1.2.3-prod256.ckpt` (registered copy of `model-v1.2.0-full-production.ckpt`)
 - Sidecar: `v1_learning/model-v1.2.3-prod256.json` (display name override + `default_skip_fields=["ColorGradeMidtoneHue", "SplitToningShadowHue", "Tint"]` + resolution=256). Sidecar is gitignored; canonical record of the field list lives in HANDOVER Part 6 item 14.
 - Trained on 9,746 photos / 30 epochs max (EarlyStopping at e13, best e5), 256px input, ~111 min wall time
-- Code state: Mode B Rebuild track complete (2026-05-14). Latest shipped includes the Mode B Step 3 validation commits (`b6b2d1e` predictions-sidecar schema, `7c93906` Mode B ckpt sidecar resolution) and the HANDOVER track-complete update for Mode B. Recent shipped changes since v1.2.3 production: Temperature epistemic clamp (`55aa70b`), Mode A WB AsShot substitution (`dac535e`), default_skip_fields expansion (`97194cf`), Mode B rebuild Steps 1-3 (`71fcf2b`, `a8d7c04`, `b6b2d1e`, `7c93906`), and the v1/v2 slider_set shape-mismatch refactor — 6 commits resolving the bug class surfaced on 2026-05-14 (see Part 6 item 18 for the full lineage).
+- Code state: Mode B Rebuild track complete (2026-05-14). Latest shipped includes the Mode B Step 3 validation commits (`b6b2d1e` predictions-sidecar schema, `7c93906` Mode B ckpt sidecar resolution) and the HANDOVER track-complete update for Mode B. Recent shipped changes since v1.2.3 production: Temperature epistemic clamp (`55aa70b`), Mode A WB AsShot substitution (`dac535e`), default_skip_fields expansion (`97194cf`), Mode B rebuild Steps 1-3 (`71fcf2b`, `a8d7c04`, `b6b2d1e`, `7c93906`), the v1/v2 slider_set shape-mismatch refactor, and the 2026-05-28 training-pipeline fix: v2 models now default to a direct AsShot Temperature/Tint WB metadata skip, training targets are slider-set-version aware, colour jitter is deliberately mild, and `scripts/train_profile.py` exports the best validation checkpoint as the native model.
 
 **Production data pipeline:**
 - Stratified BY-SHOOT splits at `v1_learning/dataset/splits_v2_stratified/{train,val,test}.parquet` (75/11/14 photo proportions, 5-bucket quantile stratification on shoot_mean_delta_temp, seed=42). Old uniform splits at `v1_learning/dataset/splits/` are deprecated; do not use for new training.
@@ -25,9 +26,9 @@
 
 **Known v1.2.3 limitations (per the all-slider audit + three-way comparison + Tint deep dive — see Part 7 "Diagnostic reports"):**
 
-- **Temperature: 731 K MAE** on the held-out test set. Root cause: in-range mean-attraction bias on a bimodal target distribution (warm-light cluster ~3000–3500K + daylight cluster ~5000–6000K). The model DOES learn the log-space spread (std_ratio 0.93, Pearson 0.71) but the `exp()` postprocess amplifies in-distribution prediction error; not an extrapolation problem. **The epistemic clamp (commit `55aa70b`) was tested and confirmed to NOT reduce MAE** — it bounds extrapolation only (fires on 0.06% of test predictions). The 731 K MAE is accepted as a known v1.2.3 limit; planned arch fix is item 15 (WB head skip-connection experiment). The v1.3 delta-from-AsShot experiment was an earlier attempt; failed in real-photo testing (uniformly over-cooled) and was reverted. **Do not retry the delta approach without a fundamentally different design.** *Re-confirmed by 2026-05-14 production smoke test (post-slider_set refactor): Temperature still feels "a bit intense" on real photos while other grades return to expected quality — consistent with the architectural-bias finding; not a regression from today's refactor track.*
+- **Temperature: 731 K MAE** on the v1.2.3 held-out test set. Root cause: in-range mean-attraction bias on a bimodal target distribution (warm-light cluster ~3000–3500K + daylight cluster ~5000–6000K). The model DOES learn the log-space spread (std_ratio 0.93, Pearson 0.71) but the `exp()` postprocess amplifies in-distribution prediction error; not an extrapolation problem. **The epistemic clamp (commit `55aa70b`) was tested and confirmed to NOT reduce MAE** — it bounds extrapolation only (fires on 0.06% of test predictions). The v1.3 delta-from-AsShot experiment was an earlier attempt; failed in real-photo testing (uniformly over-cooled) and was reverted. **Do not retry the delta approach without a fundamentally different design.** 2026-05-28 update: the next v2 training run now uses the WB metadata skip-connection by default, so Temperature should be re-audited after training rather than accepted as a permanent v2 limit.
 
-- **Tint: collapsed despite a near-perfect predictor available.** Audit categorisation: COLLAPSED (std_ratio 0.04, MAE 6.15). Tint targets in training have ρ=0.913 correlation with `as_shot_tint` — a near-identity mapping. The input is wired (`MetadataEncoder.as_shot_tint_fc`) but v1.2.3's fusion-MLP fails to extract it. **This is an architecture failure, not a data limit** — Phase 5 fine-tuning on similar data will not help. Mitigation: Tint is in `default_skip_fields`; Mode A's WB substitution (commit `dac535e`) writes the AsShot value explicitly to `crs:Tint`. Planned arch fix: item 15.
+- **Tint: collapsed despite a near-perfect predictor available.** Audit categorisation: COLLAPSED (std_ratio 0.04, MAE 6.15). Tint targets in training have ρ=0.913 correlation with `as_shot_tint` — a near-identity mapping. The input is wired (`MetadataEncoder.as_shot_tint_fc`) but v1.2.3's fusion-MLP fails to extract it. **This is an architecture failure, not a data limit** — Phase 5 fine-tuning on similar data will not help. Mitigation for legacy v1.2.x: Tint is in `default_skip_fields`; Mode A's WB substitution (commit `dac535e`) writes the AsShot value explicitly to `crs:Tint`. 2026-05-28 update: new v2 models include an identity-initialised direct AsShot Tint route into the WB head.
 
 - **SplitToningShadowHue + ColorGradeMidtoneHue: collapsed.** Both audit-categorised COLLAPSED. ColorGradeMidtoneHue is ALSO collapsed in Imagen Personal per the three-way comparison — **suggests a fundamental data limit, not Saha-specific** (the slider value may genuinely not be predictable from image content). Both added to `default_skip_fields` in this audit track.
 
@@ -88,9 +89,9 @@ Trained model checkpoints follow `model-v{MAJOR}.{MINOR}.{ATTEMPT}[-{suffix}].ck
 - Python 3.11.15 via uv 0.11.11
 - PyTorch 2.11.0, MPS confirmed available and working (M1 GPU)
 - All deps installed: torchvision, pytorch-lightning, rawpy, pillow, lxml, pandas, pyarrow, tqdm, pyqt6, scikit-learn, pytest, ruff, mypy
-- Adobe DNG Converter at `/Applications/Adobe DNG Converter.app/Contents/MacOS/Adobe DNG Converter`
+- Adobe DNG Converter is discovered via `SONNA_DNG_CONVERTER`, OS default paths, or PATH
 - GitHub repo: https://github.com/darshilp16-byte/sonnaeditor (SSH, pushed)
-- Claude Code settings: `bypassPermissions` mode, `additionalDirectories` set to `/Users/darshil/sonnaeditor`
+- Claude Code settings: use the current local checkout as the project root; avoid hardcoded user-home paths
 - `scripts/verify_environment.py` — 13/13 checks pass
 
 ### Before starting each session
@@ -168,7 +169,7 @@ All RAW formats (CR3, NEF, ARW, etc.) are converted to DNG via Adobe DNG Convert
 
 **Decision 3: Local-only, no cloud**
 
-For a four-person team with the M1 Pro available, local processing is faster and cheaper than cloud:
+For a four-person team with local GPU/CPU hardware available, local processing is faster and cheaper than cloud:
 - 1,000-photo shoot processes in 1-3 minutes locally vs. upload + process + download time
 - Zero ongoing costs
 - Client photos never leave Sonna's network (real privacy advantage)
@@ -279,7 +280,7 @@ Folder of new RAW files
   → User opens in Lightroom, edits are auto-detected and applied
 ```
 
-The model loads once at app startup and stays in memory. Inference is ~30-50 photos/sec batched on M1 Pro. A 1,000-photo shoot processes in 30 seconds to 2 minutes total.
+The model loads once at app startup and stays in memory. Inference uses CUDA, Apple MPS, or CPU depending on host capability. A 1,000-photo shoot processes fastest on GPU-backed machines.
 
 **Continuous learning (fine-tuning loop):**
 ```
@@ -374,7 +375,7 @@ to v1.2.3 and v2 inference paths.
 This is staged deliberately to balance training speed against quality.
 
 **v1 — 384px input (initial training)**
-- Fast iteration: 3-5 hours per training run on M1 Pro
+- Fast iteration: 3-5 hours per training run on the reference machine
 - Validates architecture, dataset quality, and end-to-end pipeline
 - Sufficient for global tone, white balance, and HSL prediction
 - Weaker on local-detail operations: Clarity, Texture, Dehaze
@@ -382,12 +383,12 @@ This is staged deliberately to balance training speed against quality.
 **v2 — 512px input (production target)**
 - Meaningful quality improvement on local-detail sliders
 - Training time roughly doubles to 6-10 hours
-- Memory headroom comfortable on M1 Pro 32GB at batch size 16
+- Memory headroom comfortable on the reference machine at batch size 16
 - This is the realistic production resolution for Sonna's use
 
 **v3 — 768px input (stretch goal)**
-- Maximum practical resolution on M1 Pro; marginal quality gains likely diminishing at this point
-- Training time on M1 Pro: 12-20 hours per run (overnight runs)
+- Maximum practical resolution on the reference machine; marginal quality gains likely diminishing at this point
+- Training time on the reference machine: 12-20 hours per run (overnight runs)
 - Memory: 18-22GB during training at batch size 16; may need batch size 8 + gradient accumulation
 - Worth pursuing only after v2 has been in production use long enough to identify specific quality gaps
 
@@ -412,7 +413,7 @@ Going straight to 768px adds training friction (longer runs, tighter memory, mor
 | 4 | Inference engine processing real shoots | 3-5 hrs |
 | 5 | Continuous learning / fine-tuning loop | 4-6 hrs |
 | 6 | Profile management & versioning | 2-3 hrs |
-| 7 | PyQt6 desktop UI | 10-15 hrs |
+| 7 | Electron desktop UI | 10-15 hrs |
 | 8 | Team distribution (deferred) | TBD |
 
 **Total: ~40-60 hours of focused work.** At 10 hrs/week, ~4-6 weeks to a fully working system. Mode B usable by week 2.
@@ -441,7 +442,7 @@ sonna-editor/
 │   ├── inference/              # Phase 4: engine, confidence, pipeline
 │   ├── finetune/               # Phase 5: capture, delta, retrain
 │   ├── profiles/               # Phase 6: registry, manager
-│   └── ui/                     # Phase 7: PyQt6 app
+│   └── ui/                     # Legacy PyQt6 scaffold; Electron app lives in saha-app/
 │
 ├── scripts/                    # CLI entrypoints
 ├── tests/                      # pytest tests
@@ -471,7 +472,7 @@ sonna-editor/
 - `lxml` for XMP read/write
 - Pillow for image processing
 - Pandas + PyArrow for Parquet datasets
-- PyQt6 for desktop UI
+- Electron + React for desktop UI
 - pytest + ruff + mypy for dev quality
 - Adobe DNG Converter (free, external)
 - All other dependencies free and open source
@@ -715,7 +716,7 @@ This forces Claude Code to load context properly before acting. Skip it and you'
 2. `/plan` with the Task 3.1 prompt — get architectural reasoning surfaced
 3. Architect agent: propose architecture, justify backbone choice, fusion strategy, output head structure
 4. Engineer agent: implement based on architect's plan
-5. Reviewer agent: specifically check — parameter count reasonableness, MPS compatibility, batch dimension handling, save/load correctness, embedding registry update logic
+5. Reviewer agent: specifically check — parameter count reasonableness, CUDA/MPS/CPU compatibility, batch dimension handling, save/load correctness, embedding registry update logic
 6. QA agent: write comprehensive tests including edge cases (single-sample batch, missing metadata fields, embedding overflow)
 7. Run tests, validate parameter count and forward pass on dummy data
 
@@ -813,7 +814,7 @@ This is operational. Run the training, monitor TensorBoard, evaluate results. If
 
 ---
 
-#### Phase 7 — PyQt6 UI
+#### Phase 7 — Electron UI
 
 **Task 7.1 (Scaffolding):**
 **Model:** Sonnet
@@ -977,9 +978,9 @@ These are decisions explicitly kicked to later phases. Don't try to solve them n
 
     Skipping is per-profile config — reversible, no checkpoint or code change. Users can override per-job via the `[x] Skip <field>` checkboxes in the Saha Output panel.
 
-15. **WB head metadata-skip-connection experiment (planned next-track experiment, surfaced from Item 2 Tint deep dive):** v1.2.3's WB head (`832 → 128 → 64 → 2`) receives metadata only via the fusion MLP's compressed output (image features 768-d + metadata 64-d → fusion → 832-d → head). The Tint deep dive (`scripts/output/tint_deep_dive.md` §7) found that despite `as_shot_tint` having ρ=0.91 with the Tint target and being wired as a metadata input (`MetadataEncoder.as_shot_tint_fc`), the model fails to extract this near-identity mapping — predictions collapse to ~mean regardless of as_shot_tint. Hypothesis: the fusion MLP's `(128 → 64)` bottleneck dilutes the direct `as_shot_tint → Tint` shortcut against image features competing for representation; raising Tint's loss weight to 4.0 didn't compensate.
+15. **WB head metadata-skip-connection (implemented 2026-05-28, pending training audit):** v1.2.3's WB head (`832 → 128 → 64 → 2`) receives metadata only via the fusion MLP's compressed output (image features 768-d + metadata 64-d → fusion → 832-d → head). The Tint deep dive (`scripts/output/tint_deep_dive.md` §7) found that despite `as_shot_tint` having ρ=0.91 with the Tint target and being wired as a metadata input (`MetadataEncoder.as_shot_tint_fc`), the model fails to extract this near-identity mapping — predictions collapse to ~mean regardless of as_shot_tint. Hypothesis: the fusion MLP's `(128 → 64)` bottleneck dilutes the direct `as_shot_tint → Tint` shortcut against image features competing for representation; raising Tint's loss weight to 4.0 didn't compensate.
 
-    Proposed experiment (warm-start from v1.2.3, not a full retrain): add a skip-connection from AsShot features (`as_shot_tint`, `as_shot_temperature`) directly into the WB head's input, bypassing the fusion MLP. Estimated effort: ~2 hours architecture change + ~4 hours warm-start training + audit comparison against v1.2.3 baseline. Worth running before committing to a full v2 retrain plan — confirms whether the architectural hypothesis holds (Outcome 1: both Tint and Temperature improve), partially holds (Outcome 2: Tint improves, Temperature doesn't, meaning Tint was bottlenecked but Temperature has a different problem), or fails (Outcome 3: architectural assumption was wrong, look elsewhere). Every outcome is diagnostically useful.
+    Implementation: new v2 models default to `use_wb_metadata_skip=True`. The WB output is `learned_residual + Linear([log(as_shot_temperature), as_shot_tint])`, and that linear layer is identity-initialised, so the starting prediction is AsShot WB plus a learnable residual. Legacy native and Lightning checkpoints load with the skip disabled unless their checkpoint metadata explicitly enables it, preserving v1.2.x production behaviour. Next action: train a v2 profile, then run the all-slider audit against v1.2.3 to confirm whether Temperature/Tint improved.
 
 16. **Fundamental data-limit sliders (added 2026-05-13 from three-way comparison findings):** the three-way XMP comparison (`~/Desktop/saha_three_way_comparison.md`) revealed that some sliders collapse in BOTH Saha v1.2.3 AND Imagen Personal — two trained models from independent lineages, training data, and architectures. When this happens, the most parsimonious explanation is that **the slider value is genuinely not predictable from image content alone** (the data does not constrain it).
 
@@ -1192,9 +1193,9 @@ After week 8: continuous use with periodic fine-tuning. Phase 8 team rollout whe
 
 ### Hardware-specific notes
 
-- M1 Pro 32GB is sufficient for everything in v1
-- Use MPS backend (`accelerator="mps"` in PyTorch Lightning)
-- Use fp32 precision (MPS fp16 has gaps)
+- M1 Pro 32GB remains the reference machine, but the project targets macOS, Windows, and Linux
+- Use runtime device selection: CUDA first, Apple MPS second, CPU fallback
+- Use fp32 precision by default
 - Batch size 16 for training, 32 for inference
 - Plug into power for training runs (battery drains fast)
 - Hard surface for airflow during multi-hour training
@@ -1212,7 +1213,7 @@ If you are Claude (or another AI) being given this document to continue the Sonn
 5. **Be honest about quality expectations.** Quality on day one will be limited. The fine-tuning loop is the long-term quality lever. Don't oversell.
 6. **The user is Darshil, founder of Sonna Studios.** Based in Hamilton, NZ. Direct, action-oriented working style. Prefers immediately usable outputs and clean prerequisite thinking. No em dashes, no corporate filler, casual warm professional tone.
 7. **Claude Code is the primary build tool.** Recommendations should assume Claude Code as the implementation partner unless told otherwise.
-8. **Hardware is M1 Pro 32GB.** Don't suggest cloud GPUs unless local M1 training proves inadequate (it shouldn't for v1).
+8. **Local hardware first.** Don't suggest cloud GPUs unless local CUDA/MPS/CPU workflows prove inadequate.
 9. **The point of this build is learning + IP control + cost savings.** Not commercial sale. This is internal tooling.
 10. **Ask before changing scope.** If you think a decision should be revisited, surface that thinking — don't just make the change.
 

@@ -5,7 +5,13 @@ from typing import Optional
 import torch
 from torchvision.transforms import v2
 
-from sonna_editor.config import IMAGE_RESOLUTION
+from sonna_editor.config import (
+    IMAGE_RESOLUTION,
+    TRAIN_AUG_BRIGHTNESS,
+    TRAIN_AUG_CONTRAST,
+    TRAIN_AUG_HUE,
+    TRAIN_AUG_SATURATION,
+)
 
 
 class TrainingAugmentation(torch.nn.Module):
@@ -18,8 +24,8 @@ class TrainingAugmentation(torch.nn.Module):
         1. RandomResizedCrop  — mild zoom only (scale ≥ 0.9) to avoid
            introducing significant exposure/colour shift from heavy crops
         2. RandomHorizontalFlip — safe; lighting is not horizontally symmetric
-        3. ColorJitter — applied while dtype is still uint8, before ToDtype,
-           so torchvision's integer-aware clipping is used correctly
+        3. ColorJitter — intentionally mild and hue-neutral so exposure and
+           white-balance labels still match the input image
         4. ToDtype(float32, scale=True) — normalises [0, 255] → [0.0, 1.0]
     """
 
@@ -35,10 +41,10 @@ class TrainingAugmentation(torch.nn.Module):
             ),
             v2.RandomHorizontalFlip(p=0.5),
             v2.ColorJitter(
-                brightness=0.4,
-                contrast=0.2,
-                saturation=0.2,
-                hue=0.05,
+                brightness=TRAIN_AUG_BRIGHTNESS,
+                contrast=TRAIN_AUG_CONTRAST,
+                saturation=TRAIN_AUG_SATURATION,
+                hue=TRAIN_AUG_HUE,
             ),
             v2.ToDtype(torch.float32, scale=True),
         ])

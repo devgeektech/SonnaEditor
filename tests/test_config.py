@@ -1,9 +1,20 @@
 """Structural tests for config.py — verifies SLIDER_FIELDS/RANGES/WEIGHTS consistency."""
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
+import sonna_editor.config as config
 from sonna_editor.config import SLIDER_FIELDS, SLIDER_LOSS_WEIGHTS, SLIDER_RANGES
+
+
+class TestPlatformPaths:
+    def test_dng_converter_env_override_wins(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """SONNA_DNG_CONVERTER lets every OS point at a custom converter path."""
+        custom_path = Path("/custom/dng-converter")
+        monkeypatch.setenv(config.DNG_CONVERTER_ENV_VAR, str(custom_path))
+        assert config._default_dng_converter_path() == custom_path
 
 
 class TestSliderFields:

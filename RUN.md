@@ -1,83 +1,119 @@
 # Run Sonna Editor
 
-This file explains how to set up the Python backend and start the Sonna Editor project on Windows.
+This is the cross-platform local runbook for macOS, Windows, and Linux.
 
-## 1) Prepare the Python environment
+## 1. Python Environment
 
-Open PowerShell and change to the project folder:
+The repo is uv-managed and pinned to Python 3.11 through `.python-version`.
+
+Windows PowerShell:
 
 ```powershell
-cd 'F:\Projects\SonnaEditor'
+cd F:\Projects\SonnaEditor
+python -m uv sync --extra dev
+python -m uv run python --version
 ```
 
-Create and activate a virtual environment (one-time):
+macOS/Linux shell:
 
-```powershell
-python -m venv .venv
-& .\.venv\Scripts\Activate.ps1
+```bash
+cd /path/to/SonnaEditor
+python3 -m uv sync --extra dev
+python3 -m uv run python --version
 ```
 
-Upgrade packaging tools and install Python dependencies:
+If `uv` is not installed yet:
 
-```powershell
-python -m pip install --upgrade pip setuptools wheel
-python -m pip install -e .[dev]
+```bash
+python -m pip install --user uv
 ```
 
-Optional import check:
+Use `python3` instead of `python` on systems where that is the correct Python
+launcher.
 
-```powershell
-python -c "import torch, torchvision, pandas, fastapi; from PyQt6 import QtWidgets; print('py imports OK')"
+## 2. Verify
+
+```bash
+python -m uv run python scripts/verify_environment.py
 ```
 
-## 2) Verify the environment
+The verifier checks Python, imports, and the best available PyTorch device:
+CUDA, Apple MPS, or CPU. Adobe DNG Converter is reported as optional unless you
+need RAW-to-DNG normalisation.
 
-Optional but recommended:
+## 3. Backend API
 
-```powershell
-python scripts\verify_environment.py
+```bash
+python -m uv run python scripts/serve.py --port 8765
 ```
 
-## 3) Start the backend API
+The API should respond at `http://127.0.0.1:8765/api/health`.
 
-Keep this terminal open. With the virtual environment active, run:
+## 4. Electron UI
 
-```powershell
-python scripts\serve.py --port 8765
-```
+Open a second terminal:
 
-The backend should start on `http://127.0.0.1:8765`.
-
-## 4) Install and run the frontend
-
-Open a second terminal and install Node dependencies once:
-
-```powershell
-cd .\saha-app
+```bash
+cd saha-app
 npm install
-```
-
-Then start the frontend:
-
-```powershell
 npm run dev
 ```
 
-This starts the Vite + Electron UI and connects it to the backend.
+Electron starts the React UI and connects it to the backend. In development it
+can also spawn the backend itself when `uv` is on `PATH`.
 
-## 5) Run the project
+## 5. Optional DNG Converter
 
-In PowerShell terminal 1:
+For DNG conversion workflows, install Adobe DNG Converter and either use the
+default installer path or set:
 
-```powershell
-cd 'F:\Projects\SonnaEditor'
-& .\.venv\Scripts\Activate.ps1
-python scripts\serve.py --port 8765
+```bash
+SONNA_DNG_CONVERTER=/absolute/path/to/converter
 ```
 
-In PowerShell terminal 2:
+PowerShell equivalent:
 
 ```powershell
-cd 'F:\Projects\SonnaEditor\saha-app'
-npm run dev
+$env:SONNA_DNG_CONVERTER = "C:\Path\To\Adobe DNG Converter.exe"
+```
+
+## 6. Train A Profile
+
+Use the stratified by-shoot splits and train a fresh v2 profile with the WB
+metadata skip enabled (default):
+
+```bash
+python -m uv run python scripts/train_profile.py \
+  --train-parquet data/splits/train.parquet \
+  --val-parquet data/splits/val.parquet \
+  --test-parquet data/splits/test.parquet \
+  --output-dir data/models/sonna-v2-run01 \
+  --slider-set-version v2 \
+  --image-resolution 512 \
+  --batch-size 16 \
+  --max-epochs 100
+```
+
+Windows PowerShell uses the same command with backticks for line continuation:
+
+```powershell
+python -m uv run python scripts/train_profile.py `
+  --train-parquet data\splits\train.parquet `
+  --val-parquet data\splits\val.parquet `
+  --test-parquet data\splits\test.parquet `
+  --output-dir data\models\sonna-v2-run01 `
+  --slider-set-version v2 `
+  --image-resolution 512 `
+  --batch-size 16 `
+  --max-epochs 100
+```
+
+The script writes `model.ckpt`, `model.json`, TensorBoard logs, and
+`training_summary.json` into the output directory. The exported `model.ckpt`
+contains the best validation checkpoint, not just the final epoch.
+
+Monitor training:
+
+```bash
+python -m uv run tensorboard --logdir data/models/sonna-v2-run01
 ```

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import io
+import time
+import tempfile
 from pathlib import Path
 from typing import Optional
 
@@ -11,9 +13,10 @@ import torch
 from torch.utils.data import DataLoader, Dataset, WeightedRandomSampler
 from torchvision.io import read_image
 
-from sonna_editor.config import SLIDER_FIELDS
 from sonna_editor.model.architecture import EmbeddingRegistry
 from sonna_editor.model.augmentation import TrainingAugmentation, ValidationAugmentation
+from sonna_editor.runtime import supports_pinned_memory
+from sonna_editor.slider_set import fields_for_version
 
 
 # ---------------------------------------------------------------------------
@@ -92,10 +95,12 @@ class SonnaDataset(Dataset):
         df: pd.DataFrame,
         transform: torch.nn.Module,
         registry: EmbeddingRegistry,
+        slider_set_version: str = "v2",
     ) -> None:
         self._df = df.reset_index(drop=True)
         self._transform = transform
         self._registry = registry
+        self._target_fields = fields_for_version(slider_set_version)
         self._log_problematic_rows()
 
     def _log_problematic_rows(self) -> None:
@@ -103,11 +108,10 @@ class SonnaDataset(Dataset):
         masked out by the loss layer. The dataset still returns these rows —
         loss-side masking handles the actual exclusion.
 
-        Logs go to /tmp/saha_skipped_rows.log alongside the per-batch logs.
+        Logs go to the OS temp directory alongside the per-batch logs.
         """
-        import time
         try:
-            log_path = Path("/tmp/saha_skipped_rows.log")
+            log_path = Path(tempfile.gettempdir()) / "saha_skipped_rows.log"
             issues: dict[str, int] = {}
             # AsShot null/missing
             if "as_shot_temperature" in self._df.columns:
@@ -116,9 +120,8 @@ class SonnaDataset(Dataset):
                 if n_null > 0:
                     issues["as_shot_temperature_null"] = n_null
             # Truth Inf
-            from sonna_editor.config import SLIDER_FIELDS as _F
             inf_truth = 0
-            for f in _F:
+            for f in self._target_fields:
                 if f in self._df.columns:
                     col = pd.to_numeric(self._df[f], errors="coerce")
                     inf_truth += int(np.isinf(col.fillna(0)).sum())
@@ -194,7 +197,7 @@ class SonnaDataset(Dataset):
         target = torch.tensor(
             [
                 float(row[f]) if (row.get(f) is not None and not pd.isna(row[f])) else float("nan")
-                for f in SLIDER_FIELDS
+                for f in self._target_fields
             ],
             dtype=torch.float32,
         )
@@ -224,6 +227,7 @@ class SonnaDataModule(pl.LightningDataModule):
         num_workers: int = 4,
         sample_weight_col: Optional[str] = None,
         registry: Optional[EmbeddingRegistry] = None,
+        slider_set_version: str = "v2",
     ) -> None:
         super().__init__()
         self.train_parquet = Path(train_parquet)
@@ -232,7 +236,9 @@ class SonnaDataModule(pl.LightningDataModule):
         self.batch_size    = batch_size
         self.num_workers   = num_workers
         self.sample_weight_col = sample_weight_col
+        self.slider_set_version = slider_set_version
 
+        fields_for_version(slider_set_version)
         self.registry: Optional[EmbeddingRegistry] = registry
         self._train_ds: Optional[SonnaDataset] = None
         self._val_ds:   Optional[SonnaDataset] = None
@@ -258,11 +264,18 @@ class SonnaDataModule(pl.LightningDataModule):
         train_aug = TrainingAugmentation()
         val_aug   = ValidationAugmentation()
 
-        self._train_ds = SonnaDataset(df_train, train_aug, self.registry)
-        self._val_ds   = SonnaDataset(df_val,   val_aug,   self.registry)
-        self._test_ds  = SonnaDataset(df_test,  val_aug,   self.registry)
+        self._train_ds = SonnaDataset(
+            df_train, train_aug, self.registry, self.slider_set_version
+        )
+        self._val_ds = SonnaDataset(
+            df_val, val_aug, self.registry, self.slider_set_version
+        )
+        self._test_ds = SonnaDataset(
+            df_test, val_aug, self.registry, self.slider_set_version
+        )
 
     def train_dataloader(self) -> DataLoader:
+        pin_memory = supports_pinned_memory()
         weights = self._train_weights
         if weights is not None:
             first = weights[0]
@@ -282,7 +295,7 @@ class SonnaDataModule(pl.LightningDataModule):
                 sampler=sampler,
                 num_workers=self.num_workers,
                 persistent_workers=self.num_workers > 0,
-                pin_memory=False,
+                pin_memory=pin_memory,
             )
         return DataLoader(
             self._train_ds,
@@ -290,7 +303,7 @@ class SonnaDataModule(pl.LightningDataModule):
             shuffle=True,
             num_workers=self.num_workers,
             persistent_workers=self.num_workers > 0,
-            pin_memory=False,  # MPS doesn't support pinned memory
+            pin_memory=pin_memory,
         )
 
     def val_dataloader(self) -> DataLoader:
@@ -300,7 +313,7 @@ class SonnaDataModule(pl.LightningDataModule):
             shuffle=False,
             num_workers=self.num_workers,
             persistent_workers=self.num_workers > 0,
-            pin_memory=False,
+            pin_memory=supports_pinned_memory(),
         )
 
     def test_dataloader(self) -> DataLoader:
@@ -310,5 +323,5 @@ class SonnaDataModule(pl.LightningDataModule):
             shuffle=False,
             num_workers=self.num_workers,
             persistent_workers=self.num_workers > 0,
-            pin_memory=False,
+            pin_memory=supports_pinned_memory(),
         )

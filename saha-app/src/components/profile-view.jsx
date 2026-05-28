@@ -17,7 +17,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import SONNA from '../tokens.js';
-import { MacShell } from './shell.jsx';
+import { AppShell } from './shell.jsx';
 import { ErrorBanner } from './error-banner.jsx';
 import { LiteProfileWizard } from './lite-wizard.jsx';
 import { useJob, isTerminal } from '../hooks/useJob.js';
@@ -814,7 +814,7 @@ export function ProfileView({ profiles, activeProfile, onActivate, onProfilesCha
       return;
     }
     try {
-      const ok = await window.saha?.revealInFinder?.(appPaths.profilesDir);
+      const ok = await window.saha?.revealPath?.(appPaths.profilesDir);
       if (!ok) {
         setError({ source: 'paths', message: 'Could not open the profiles directory.' });
       }
@@ -835,7 +835,7 @@ export function ProfileView({ profiles, activeProfile, onActivate, onProfilesCha
   }, [onProfilesChanged]);
 
   return (
-    <MacShell title="saha — profile" activeNav="profile" onNavigate={onNavigate}>
+    <AppShell title="saha — profile" activeNav="profile" onNavigate={onNavigate}>
       <div style={{
         flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0,
       }}>
@@ -871,6 +871,6 @@ export function ProfileView({ profiles, activeProfile, onActivate, onProfilesCha
           onCreated={handleWizardCreated}
         />
       )}
-    </MacShell>
+    </AppShell>
   );
 }

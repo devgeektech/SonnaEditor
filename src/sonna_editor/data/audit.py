@@ -26,7 +26,8 @@ _WARN_MIN_PHOTOS = 500
 _WARN_UNEDITED_RATIO = 0.20    # 20 % unedited → WARN
 _STOP_UNEDITED_RATIO = 0.80    # 80 % unedited → STOP
 
-# M1 Pro training estimate: seconds per epoch per photo at batch 16
+# Cross-platform training estimate: seconds per epoch per photo at batch 16.
+# Treat this as a rough planning number; CUDA, MPS, and CPU hosts vary a lot.
 _SECONDS_PER_EPOCH_PER_PHOTO = 0.045  # ~45s / 1000 photos
 
 
@@ -63,7 +64,7 @@ def _slider_stats(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def _estimate_training_time(n_photos: int, n_epochs: int = 100) -> tuple[float, str]:
-    """Estimate training minutes on M1 Pro for n_photos at batch 16."""
+    """Estimate training minutes for n_photos at batch 16 on a typical laptop GPU."""
     seconds = _SECONDS_PER_EPOCH_PER_PHOTO * n_photos * n_epochs
     minutes = seconds / 60
     if minutes < 60:
@@ -221,7 +222,7 @@ def _build_report(
 
     # --- Hardware estimate ---
     lines += [
-        f"## Hardware Estimate (M1 Pro, batch 16, 100 epochs)",
+        "## Hardware Estimate (batch 16, 100 epochs)",
         f"",
         f"| | |",
         f"|---|---|",

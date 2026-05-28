@@ -1,12 +1,20 @@
 #!/usr/bin/env python3
-"""Verify the Sonna Editor development environment is correctly set up."""
+"""Verify the Sonna Editor development environment is correctly set up.
+
+The project can run on macOS, Windows, and Linux. GPU checks are informative:
+CUDA/MPS acceleration is preferred for training, but CPU-only machines are still
+valid for development, tests, metadata work, and small inference runs.
+"""
 
 import platform
 import sys
-from pathlib import Path
+
+from sonna_editor.config import DNG_CONVERTER_ENV_VAR, DNG_CONVERTER_PATH
+from sonna_editor.runtime import preferred_torch_device
 
 
 def check(label: str, ok: bool, detail: str = "") -> bool:
+    """Print one pass/fail row and return the boolean for summary counting."""
     status = "OK" if ok else "FAIL"
     line = f"  [{status}] {label}"
     if detail:
@@ -16,6 +24,7 @@ def check(label: str, ok: bool, detail: str = "") -> bool:
 
 
 def main() -> int:
+    """Run import, device, and optional external-tool checks for this host."""
     print("\n=== Sonna Editor — Environment Verification ===\n")
     results = []
 
@@ -36,21 +45,32 @@ def main() -> int:
         import torch
         results.append(check("PyTorch import", True, f"v{torch.__version__}"))
 
+        cuda_available = torch.cuda.is_available()
         mps_available = torch.backends.mps.is_available()
-        results.append(check("MPS (Apple GPU) available", mps_available))
+        device_name = preferred_torch_device()
+        print(f"  [INFO] Preferred torch device: {device_name}")
+        print(f"  [INFO] CUDA available: {cuda_available}")
+        print(f"  [INFO] MPS available: {mps_available}")
 
-        if mps_available:
-            device = torch.device("mps")
+        if device_name in {"cuda", "mps"}:
+            device = torch.device(device_name)
             a = torch.randn(1000, 1000, device=device)
             b = torch.randn(1000, 1000, device=device)
             c = torch.matmul(a, b)
             results.append(check(
-                "MPS matmul (1000×1000)",
+                f"{device_name.upper()} matmul (1000x1000)",
                 c.shape == (1000, 1000),
-                "tensor op succeeded on M1 GPU",
+                "tensor op succeeded on accelerator",
             ))
         else:
-            results.append(check("MPS matmul", False, "skipped — MPS not available"))
+            a = torch.randn(256, 256)
+            b = torch.randn(256, 256)
+            c = torch.matmul(a, b)
+            results.append(check(
+                "CPU matmul (256x256)",
+                c.shape == (256, 256),
+                "CPU fallback is working",
+            ))
     except ImportError as e:
         results.append(check("PyTorch import", False, str(e)))
 
@@ -62,13 +82,14 @@ def main() -> int:
         except ImportError:
             results.append(check(f"{pkg} import", False, "not installed"))
 
-    # Adobe DNG Converter
-    dng_path = Path("/Applications/Adobe DNG Converter.app/Contents/MacOS/Adobe DNG Converter")
-    results.append(check(
-        "Adobe DNG Converter",
-        dng_path.exists(),
-        str(dng_path) if dng_path.exists() else "not found at expected path",
-    ))
+    # Adobe DNG Converter is optional for tests and UI development, but required
+    # for RAW-to-DNG normalisation workflows. Report it without failing the
+    # whole environment on machines that only do app/backend work.
+    dng_path = DNG_CONVERTER_PATH
+    dng_detail = str(dng_path) if dng_path.exists() else (
+        f"not found; set {DNG_CONVERTER_ENV_VAR} or install Adobe DNG Converter"
+    )
+    print(f"  [INFO] Adobe DNG Converter: {dng_detail}")
 
     if dng_path.exists():
         import subprocess
@@ -88,7 +109,7 @@ def main() -> int:
     print(f"\n{'='*48}")
     print(f"  {passed}/{total} checks passed")
     if passed == total:
-        print("  Environment is ready. Proceed to Task 0.2 complete.")
+        print("  Environment is ready for cross-platform development.")
     else:
         print("  Fix the FAIL items above before proceeding.")
     print()

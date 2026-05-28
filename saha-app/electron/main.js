@@ -11,12 +11,12 @@ const PORT = 8765;
 const HEALTH_URL = `http://127.0.0.1:${PORT}/api/health`;
 
 // Repo-root resolution:
-//   dev:        electron/main.js sits at saha-app/electron/, repo root is two up.
-//   packaged:   the .app contains no Python; v1 hardcodes Darshil's repo path.
-//               7.2c+ will either bundle a Python venv or read SAHA_REPO_ROOT.
+//   dev:      electron/main.js sits at saha-app/electron/, repo root is two up.
+//   package:  prefer SAHA_REPO_ROOT, otherwise use an app-data checkout path.
+//             Packaging can later replace this with a bundled backend runtime.
 const REPO_ROOT = isDev
   ? path.resolve(__dirname, '..', '..')
-  : (process.env.SAHA_REPO_ROOT || '/Users/darshil/sonnaeditor');
+  : (process.env.SAHA_REPO_ROOT || path.join(app.getPath('userData'), 'sonna-editor'));
 
 // Tracks whether we owned the spawn (only then do we kill on quit).
 let backend = null;
@@ -42,13 +42,10 @@ async function waitForHealth(maxAttempts = 50, intervalMs = 200) {
 }
 
 function spawnBackend() {
-  const cmd = process.platform === 'win32'
-    ? `cd /d "${REPO_ROOT}" && uv run scripts/serve.py --port ${PORT}`
-    : `cd "${REPO_ROOT}" && exec uv run scripts/serve.py --port ${PORT}`;
-  const shellExe = process.platform === 'win32' ? 'cmd.exe' : '/bin/bash';
-  const shellArgs = process.platform === 'win32' ? ['/c', cmd] : ['-lc', cmd];
+  const uvCommand = process.platform === 'win32' ? 'uv.cmd' : 'uv';
 
-  const proc = spawn(shellExe, shellArgs, {
+  const proc = spawn(uvCommand, ['run', 'python', 'scripts/serve.py', '--port', String(PORT)], {
+    cwd: REPO_ROOT,
     stdio: ['ignore', 'pipe', 'pipe'],
     detached: false,
   });
@@ -83,7 +80,7 @@ function createWindow() {
     minWidth: 1100,
     minHeight: 720,
     backgroundColor: '#16140F',
-    titleBarStyle: 'hiddenInset',
+    titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'default',
     icon: path.join(__dirname, '..', 'build', 'icon.png'),
     show: false,
     webPreferences: {
@@ -119,14 +116,13 @@ function getAppPaths() {
 }
 
 async function bootstrap() {
-  // If a backend is already responding (e.g. dev where Darshil ran serve.py
-  // himself, or a previous Electron session left it behind), reuse it and
-  // skip the spawn-and-kill lifecycle.
+  // If a backend is already responding, reuse it and skip the spawn/kill
+  // lifecycle. This is common during development on any OS.
   if (await probeHealth(500)) {
     externalBackend = true;
     console.log('[backend] external server detected on :8765, reusing');
   } else {
-    console.log(`[backend] spawning via bash -lc, repo root: ${REPO_ROOT}`);
+    console.log(`[backend] spawning via uv, repo root: ${REPO_ROOT}`);
     backend = spawnBackend();
     const ready = await waitForHealth();
     if (!ready) {
@@ -167,9 +163,8 @@ ipcMain.handle('saha:pick-file', async (_event, opts) => {
   return result.filePaths[0];
 });
 
-// IPC: open a path in Finder / Explorer (used by the profile view's
-// "Profiles directory" link).
-ipcMain.handle('saha:reveal-in-finder', async (_event, p) => {
+// IPC: reveal a path in the host file manager.
+ipcMain.handle('saha:reveal-path', async (_event, p) => {
   if (typeof p !== 'string' || !p) return false;
   await shell.openPath(p);
   return true;

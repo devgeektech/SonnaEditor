@@ -2,15 +2,15 @@
 
 from __future__ import annotations
 
-import torch
 from fastapi.testclient import TestClient
 
 
 from sonna_editor import config
+from sonna_editor.runtime import preferred_torch_device
 
 
 def test_health_returns_ok_with_device(client: TestClient) -> None:
-    expected_device = "mps" if torch.backends.mps.is_available() else "cpu"
+    expected_device = preferred_torch_device()
     expected_model_loaded = (
         config.CHECKPOINTS_DIR.is_dir()
         and any(config.CHECKPOINTS_DIR.glob("model-v*.ckpt"))

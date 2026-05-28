@@ -8,8 +8,11 @@
     "dev": "concurrently -k -n vite,electron -c blue,magenta \"vite\" \"wait-on tcp:5173 && electron .\"",
     "vite": "vite",
     "build:vite": "vite build",
-    "build": "vite build && electron-builder --mac --dir",
-    "build:dist": "vite build && electron-builder --mac",
+    "build": "vite build && electron-builder --dir",
+    "build:dist": "vite build && electron-builder",
+    "build:mac": "vite build && electron-builder --mac",
+    "build:win": "vite build && electron-builder --win",
+    "build:linux": "vite build && electron-builder --linux",
     "icon": "node build/generate-icon.js"
   },
   "dependencies": {
@@ -45,6 +48,19 @@
             "arm64"
           ]
         }
+      ]
+    },
+    "win": {
+      "icon": "build/icon.ico",
+      "target": [
+        "dir"
+      ]
+    },
+    "linux": {
+      "category": "Graphics",
+      "icon": "build/icon.png",
+      "target": [
+        "dir"
       ]
     }
   }

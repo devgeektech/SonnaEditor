@@ -288,6 +288,7 @@ class SonnaEditor(nn.Module):
         _pretrained_backbone: bool = True,
         arch_version: int = 1,
         slider_set_version: str = "v2",
+        use_wb_metadata_skip: bool = True,
     ) -> None:
         super().__init__()
 
@@ -309,6 +310,7 @@ class SonnaEditor(nn.Module):
                 f"expected one of 'v1', 'v2'"
             )
         self._slider_set_version = slider_set_version
+        self._use_wb_metadata_skip = bool(use_wb_metadata_skip and arch_version >= 1)
 
         self.registry = registry or EmbeddingRegistry()
 
@@ -346,6 +348,17 @@ class SonnaEditor(nn.Module):
         self.tone_head          = _make_head(self._FUSION_DIM, [256, 128], 8)
         self.presence_head      = _make_head(self._FUSION_DIM, [128, 64], 3)
         self.wb_head            = _make_head(self._FUSION_DIM, [128, 64], 2)
+        if self._use_wb_metadata_skip:
+            # The v1.2.3 audit found that AsShot Temperature/Tint were present
+            # in metadata but got diluted by the shared fusion MLP. This
+            # identity-initialised residual gives the WB head a direct route:
+            # output = learned residual + [log(as_shot_temperature), as_shot_tint].
+            self.wb_metadata_skip = nn.Linear(2, 2)
+            with torch.no_grad():
+                self.wb_metadata_skip.weight.zero_()
+                self.wb_metadata_skip.weight[0, 0] = 1.0
+                self.wb_metadata_skip.weight[1, 1] = 1.0
+                self.wb_metadata_skip.bias.zero_()
         self.hsl_head           = _make_head(self._FUSION_DIM, [256, 128], 24)
         self.parametric_head    = _make_head(self._FUSION_DIM, [128, 64], 7)
         self.color_grading_head = _make_head(self._FUSION_DIM, [128, 64], 14)
@@ -466,10 +479,21 @@ class SonnaEditor(nn.Module):
         # Fuse and run heads — concat order matches SLIDER_FIELDS exactly
         fused = torch.cat([img_feat, meta_feat], dim=-1)  # [B, 832]
 
+        wb_out = self.wb_head(fused)
+        if self._use_wb_metadata_skip:
+            as_shot_temp = torch.nan_to_num(
+                metadata["as_shot_temperature"].float(), nan=5500.0
+            ).clamp(min=1.0)
+            as_shot_tint = torch.nan_to_num(
+                metadata["as_shot_tint"].float(), nan=0.0
+            ).clamp(min=-100.0, max=100.0)
+            wb_skip_in = torch.stack([torch.log(as_shot_temp), as_shot_tint], dim=-1)
+            wb_out = wb_out + self.wb_metadata_skip(wb_skip_in)
+
         outputs = [
             self.tone_head(fused),           # [B, 8]   idx 0-7
             self.presence_head(fused),       # [B, 3]   idx 8-10
-            self.wb_head(fused),             # [B, 2]   idx 11-12: [log_temperature, tint]
+            wb_out,                          # [B, 2]   idx 11-12: [log_temperature, tint]
             self.hsl_head(fused),            # [B, 24]  idx 13-36
             self.parametric_head(fused),     # [B, 7]   idx 37-43
             self.color_grading_head(fused),  # [B, 14]  idx 44-57
@@ -518,6 +542,7 @@ class SonnaEditor(nn.Module):
                     "num_sliders": output_count,
                     "arch_version": self._arch_version,
                     "slider_set_version": self._slider_set_version,
+                    "use_wb_metadata_skip": self._use_wb_metadata_skip,
                 },
             },
             path,
@@ -577,6 +602,7 @@ class SonnaEditor(nn.Module):
             if target_slider_set_version is not None
             else source_slider_set_version
         )
+        use_wb_metadata_skip = bool(arch_config.get("use_wb_metadata_skip", False))
 
         # Reject v2 → v1 loads explicitly. Loading a v2 ckpt as a v1 model would
         # silently drop the 5 extension-head weight tensors, masking real
@@ -614,6 +640,7 @@ class SonnaEditor(nn.Module):
             _pretrained_backbone=False,
             arch_version=int(arch_version),
             slider_set_version=effective_slider_set_version,
+            use_wb_metadata_skip=use_wb_metadata_skip,
         )
         model.load_state_dict(state, strict=strict_load)
         return model

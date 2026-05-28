@@ -11,7 +11,6 @@ import logging
 import math
 import os
 import re
-import shutil
 import tempfile
 import threading
 from datetime import datetime, timezone
@@ -20,8 +19,14 @@ from typing import Any, Callable, Optional
 
 import pandas as pd
 import pytorch_lightning as pl
-import torch
 from pytorch_lightning.callbacks import EarlyStopping, LearningRateMonitor, ModelCheckpoint
+
+from sonna_editor import config
+from sonna_editor.inference.engine import _load_from_checkpoint
+from sonna_editor.model.architecture import SonnaEditor
+from sonna_editor.runtime import preferred_lightning_accelerator
+from sonna_editor.training.datamodule import SonnaDataModule
+from sonna_editor.training.module import SonnaLightningModule
 
 _logger = logging.getLogger(__name__)
 
@@ -59,12 +64,6 @@ class _BridgeCallback(pl.Callback):
 
         if self._cancel_event is not None and self._cancel_event.is_set():
             trainer.should_stop = True
-
-from sonna_editor import config
-from sonna_editor.inference.engine import _load_from_checkpoint
-from sonna_editor.model.architecture import SonnaEditor
-from sonna_editor.training.datamodule import SonnaDataModule
-from sonna_editor.training.module import SonnaLightningModule
 
 _VERSION_RE = re.compile(r"model-v(\d+)\.(\d+)\.(\d+)")
 
@@ -134,6 +133,7 @@ def _evaluate(
         batch_size=batch_size,
         num_workers=num_workers,
         registry=model.registry,
+        slider_set_version=model._slider_set_version,
     )
     trainer = pl.Trainer(
         accelerator="cpu",
@@ -255,6 +255,7 @@ def finetune_model(
         num_workers=num_workers,
         sample_weight_col="sample_weight",
         registry=base_model.registry,
+        slider_set_version=base_model._slider_set_version,
     )
 
     # --- Lightning module ---
@@ -287,11 +288,8 @@ def finetune_model(
                 cancel_event=cancel_event,
             ))
 
-        # --- Determine accelerator ---
-        accelerator = "mps" if torch.backends.mps.is_available() else "cpu"
-
         trainer = pl.Trainer(
-            accelerator=accelerator,
+            accelerator=preferred_lightning_accelerator(),
             devices=1,
             precision="32-true",
             max_epochs=max_epochs,
@@ -316,7 +314,7 @@ def finetune_model(
     # tmp_dir and its Lightning checkpoints are now cleaned up
 
     # --- Evaluate fine-tuned model ---
-    print(f"\nEvaluating fine-tuned model on validation set...")
+    print("\nEvaluating fine-tuned model on validation set...")
     ft_val_loss, ft_per_field_mae = _evaluate(
         best_model, val_parquet, batch_size=batch_size, num_workers=num_workers
     )

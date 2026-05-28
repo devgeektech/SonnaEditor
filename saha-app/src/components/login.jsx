@@ -119,7 +119,7 @@ export function SahaLogin({ onSubmit }) {
           }}>
             Saha learns your taste from the photos you've already kept, then
             sorts the next shoot the way you would. Your edits, profiles and
-            folders stay on your Mac.
+            folders stay on your machine.
           </div>
         </div>
 
@@ -144,7 +144,7 @@ export function SahaLogin({ onSubmit }) {
             </li>
             <li style={{ display: 'flex', gap: 10 }}>
               <span style={{ color: SONNA.ochre, ...Tnum }}>+</span>
-              <span>2.4× faster on Apple Silicon, lower memory ceiling</span>
+              <span>GPU acceleration where available, CPU fallback everywhere</span>
             </li>
             <li style={{ display: 'flex', gap: 10 }}>
               <span style={{ color: SONNA.fgDim, ...Tnum }}>·</span>
@@ -161,7 +161,7 @@ export function SahaLogin({ onSubmit }) {
           <span style={{ width: 1, height: 9, background: SONNA.line }} />
           <span>RAF · NEF · ARW · CR3 · DNG</span>
           <span style={{ width: 1, height: 9, background: SONNA.line }} />
-          <span>macOS 13+</span>
+          <span>macOS · Windows · Linux</span>
         </div>
       </div>
 
@@ -212,7 +212,7 @@ export function SahaLogin({ onSubmit }) {
                   <path d="M1.5 4.5L3.5 6.5L7.5 2.5" stroke="#1A1209" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
                 </svg>
               </span>
-              Stay signed in on this Mac
+              Stay signed in on this device
             </label>
           </div>
 

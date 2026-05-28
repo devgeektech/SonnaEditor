@@ -11,6 +11,7 @@ __pycache__/
 .mypy_cache/
 .ruff_cache/
 dist/
+dist-app/
 build/
 *.egg-info/
 tests/fixtures/*.cr3

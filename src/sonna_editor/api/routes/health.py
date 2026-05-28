@@ -6,17 +6,18 @@ import subprocess
 from functools import lru_cache
 from pathlib import Path
 
-import torch
 from fastapi import APIRouter
 
 from sonna_editor import config
 from sonna_editor.api.models import HealthResponse
+from sonna_editor.runtime import preferred_torch_device
 
 router = APIRouter()
 
 
 def _detect_device() -> str:
-    return "mps" if torch.backends.mps.is_available() else "cpu"
+    """Report the runtime's preferred PyTorch device for UI diagnostics."""
+    return preferred_torch_device()
 
 
 @lru_cache(maxsize=1)
