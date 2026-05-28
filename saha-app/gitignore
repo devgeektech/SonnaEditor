@@ -1,0 +1,14 @@
+node_modules/
+dist/
+dist-app/
+.vite/
+.DS_Store
+
+# The repo-root .gitignore has `build/` (Python convention). Re-include
+# the saha-app build/ directory so icon source + generator are tracked,
+# then re-ignore the derived artefacts.
+!build/
+!build/**
+build/icon.iconset/
+build/icon.icns
+build/icon.png

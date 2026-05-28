@@ -1,0 +1,51 @@
+{
+  "name": "saha-app",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Saha — Electron + React shell for the Sonna Editor pipeline",
+  "main": "electron/main.js",
+  "scripts": {
+    "dev": "concurrently -k -n vite,electron -c blue,magenta \"vite\" \"wait-on tcp:5173 && electron .\"",
+    "vite": "vite",
+    "build:vite": "vite build",
+    "build": "vite build && electron-builder --mac --dir",
+    "build:dist": "vite build && electron-builder --mac",
+    "icon": "node build/generate-icon.js"
+  },
+  "dependencies": {
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.3.4",
+    "concurrently": "^9.1.0",
+    "electron": "^33.2.1",
+    "electron-builder": "^25.1.8",
+    "sharp": "^0.34.5",
+    "vite": "^6.0.3",
+    "wait-on": "^8.0.1"
+  },
+  "build": {
+    "appId": "studio.sonna.saha",
+    "productName": "Saha",
+    "directories": {
+      "output": "dist-app"
+    },
+    "files": [
+      "electron/**",
+      "dist/**"
+    ],
+    "mac": {
+      "category": "public.app-category.photography",
+      "icon": "build/icon.icns",
+      "target": [
+        {
+          "target": "dir",
+          "arch": [
+            "arm64"
+          ]
+        }
+      ]
+    }
+  }
+}
