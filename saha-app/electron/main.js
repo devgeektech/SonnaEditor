@@ -3,6 +3,7 @@
 
 const { app, BrowserWindow, dialog, ipcMain, shell } = require('electron');
 const { spawn } = require('node:child_process');
+const fs = require('node:fs');
 const path = require('node:path');
 const http = require('node:http');
 
@@ -41,21 +42,60 @@ async function waitForHealth(maxAttempts = 50, intervalMs = 200) {
   return false;
 }
 
-function spawnBackend() {
-  const uvCommand = process.platform === 'win32' ? 'uv.cmd' : 'uv';
+function getBackendCommand() {
+  const venvPython = process.platform === 'win32'
+    ? path.join(REPO_ROOT, '.venv', 'Scripts', 'python.exe')
+    : path.join(REPO_ROOT, '.venv', 'bin', 'python');
+  if (fs.existsSync(venvPython)) {
+    return {
+      command: venvPython,
+      args: ['scripts/serve.py', '--port', String(PORT)],
+      label: 'repo venv python',
+    };
+  }
 
-  const proc = spawn(uvCommand, ['run', 'python', 'scripts/serve.py', '--port', String(PORT)], {
+  const uvCommand = process.platform === 'win32' ? 'uv.cmd' : 'uv';
+  return {
+    command: uvCommand,
+    args: ['run', 'python', 'scripts/serve.py', '--port', String(PORT)],
+    label: 'uv',
+  };
+}
+
+function spawnBackend() {
+  const backendCommand = getBackendCommand();
+  console.log(`[backend] spawning via ${backendCommand.label}: ${backendCommand.command}`);
+
+  const proc = spawn(backendCommand.command, backendCommand.args, {
     cwd: REPO_ROOT,
     stdio: ['ignore', 'pipe', 'pipe'],
     detached: false,
   });
   proc.stdout.on('data', (d) => process.stdout.write(`[backend] ${d}`));
   proc.stderr.on('data', (d) => process.stderr.write(`[backend] ${d}`));
+  proc.on('error', (err) => {
+    console.error(`[backend] failed to spawn: ${err.message}`);
+  });
   proc.on('exit', (code, signal) => {
     console.log(`[backend] exited code=${code} signal=${signal}`);
     backend = null;
   });
   return proc;
+}
+
+async function waitForBackendReady(proc) {
+  return new Promise((resolve) => {
+    let settled = false;
+    const finish = (result) => {
+      if (settled) return;
+      settled = true;
+      proc.off('error', onError);
+      resolve(result);
+    };
+    const onError = (err) => finish({ ready: false, error: err });
+    proc.once('error', onError);
+    waitForHealth().then((ready) => finish({ ready, error: null }));
+  });
 }
 
 async function killBackend() {
@@ -122,14 +162,18 @@ async function bootstrap() {
     externalBackend = true;
     console.log('[backend] external server detected on :8765, reusing');
   } else {
-    console.log(`[backend] spawning via uv, repo root: ${REPO_ROOT}`);
+    console.log(`[backend] repo root: ${REPO_ROOT}`);
     backend = spawnBackend();
-    const ready = await waitForHealth();
+    const { ready, error } = await waitForBackendReady(backend);
     if (!ready) {
+      const spawnHint = error
+        ? `\n\nSpawn error: ${error.message}`
+        : '';
       dialog.showErrorBox(
         'Saha — backend failed to start',
         `The Python API server at ${HEALTH_URL} did not respond within 10s.\n\n` +
-        `Check that 'uv' is on your PATH and the repo at ${REPO_ROOT} is intact.`,
+        `Check that the repo virtual environment exists at ${path.join(REPO_ROOT, '.venv')} ` +
+        `or that 'uv' is on your PATH.${spawnHint}`,
       );
       await killBackend();
       app.quit();
@@ -172,7 +216,11 @@ ipcMain.handle('saha:reveal-path', async (_event, p) => {
 
 ipcMain.handle('saha:get-app-paths', async () => getAppPaths());
 
-app.whenReady().then(bootstrap);
+app.whenReady().then(bootstrap).catch((err) => {
+  console.error('[electron] bootstrap failed', err);
+  dialog.showErrorBox('Saha — startup failed', String(err && err.stack ? err.stack : err));
+  app.quit();
+});
 
 app.on('activate', () => {
   if (BrowserWindow.getAllWindows().length === 0) createWindow();

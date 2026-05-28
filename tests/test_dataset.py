@@ -304,6 +304,7 @@ def test_build_dataset_has_expected_columns(tmp_path: Path) -> None:
 
     required = {"id", "profile", "raw_path", "thumbnail_path", "shoot_id", "histogram"}
     required |= set(SLIDER_FIELDS)
+    required |= {"as_shot_temperature", "as_shot_tint"}
     assert required.issubset(df.columns)
 
 

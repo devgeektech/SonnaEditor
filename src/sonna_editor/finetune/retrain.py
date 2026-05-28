@@ -13,9 +13,16 @@ import os
 import re
 import tempfile
 import threading
+import warnings
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Optional
+
+warnings.filterwarnings(
+    "ignore",
+    message=r".*isinstance\\(treespec, LeafSpec\\) is deprecated.*",
+    category=DeprecationWarning,
+)
 
 import pandas as pd
 import pytorch_lightning as pl

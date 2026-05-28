@@ -48,6 +48,7 @@ import argparse
 import json
 import logging
 import sys
+import warnings
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -61,6 +62,12 @@ sys.path.insert(0, str(PROJECT_ROOT / "src"))
 import sonna_editor.config as _cfg
 from sonna_editor.runtime import preferred_lightning_accelerator
 _cfg.IMAGE_RESOLUTION = 256
+
+warnings.filterwarnings(
+    "ignore",
+    message=r".*isinstance\\(treespec, LeafSpec\\) is deprecated.*",
+    category=DeprecationWarning,
+)
 
 import pytorch_lightning as pl
 from pytorch_lightning.callbacks import (

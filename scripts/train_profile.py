@@ -13,7 +13,14 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import warnings
 from pathlib import Path
+
+warnings.filterwarnings(
+    "ignore",
+    message=r".*isinstance\\(treespec, LeafSpec\\) is deprecated.*",
+    category=DeprecationWarning,
+)
 
 import pytorch_lightning as pl
 import torch

@@ -22,7 +22,14 @@ import shutil
 import subprocess
 import sys
 import time
+import warnings
 from pathlib import Path
+
+warnings.filterwarnings(
+    "ignore",
+    message=r".*isinstance\\(treespec, LeafSpec\\) is deprecated.*",
+    category=DeprecationWarning,
+)
 
 import pandas as pd
 import pytorch_lightning as pl

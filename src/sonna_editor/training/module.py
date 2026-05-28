@@ -82,12 +82,13 @@ class SonnaLightningModule(pl.LightningModule):
         if "_all_rows_skipped" in components:
             print(f"⚠ training_step: ALL rows in batch {batch_idx} were masked "
                   f"out by the loss layer's validity check.", flush=True)
-        self.log("train_loss",             loss,                    on_step=True, on_epoch=True, prog_bar=True)
-        self.log("train_loss_mse",         components["mse"],        on_step=False, on_epoch=True)
-        self.log("train_loss_spread",      components["spread"],     on_step=False, on_epoch=True)
-        self.log("train_loss_temp_bucket", components["temp_bucket"], on_step=False, on_epoch=True)
-        self.log("train_loss_tint_bucket", components["tint_bucket"], on_step=False, on_epoch=True)
-        self.log("train_loss_sign_wrong",  components["sign_wrong"],  on_step=False, on_epoch=True)
+        batch_size = images.size(0)
+        self.log("train_loss",             loss,                    on_step=True, on_epoch=True, prog_bar=True, batch_size=batch_size)
+        self.log("train_loss_mse",         components["mse"],        on_step=False, on_epoch=True, batch_size=batch_size)
+        self.log("train_loss_spread",      components["spread"],     on_step=False, on_epoch=True, batch_size=batch_size)
+        self.log("train_loss_temp_bucket", components["temp_bucket"], on_step=False, on_epoch=True, batch_size=batch_size)
+        self.log("train_loss_tint_bucket", components["tint_bucket"], on_step=False, on_epoch=True, batch_size=batch_size)
+        self.log("train_loss_sign_wrong",  components["sign_wrong"],  on_step=False, on_epoch=True, batch_size=batch_size)
         return loss
 
     def validation_step(
@@ -96,15 +97,16 @@ class SonnaLightningModule(pl.LightningModule):
         batch_idx: int,
     ) -> None:
         images, metadata, targets = batch
+        batch_size = images.size(0)
         predictions = self.model(images, metadata)
         components = self.loss_fn(predictions, targets, metadata, return_components=True)
         loss = components["total"]
-        self.log("val_loss",             loss,                    on_step=False, on_epoch=True, prog_bar=True, sync_dist=True)
-        self.log("val_loss_mse",         components["mse"],        on_step=False, on_epoch=True, sync_dist=True)
-        self.log("val_loss_spread",      components["spread"],     on_step=False, on_epoch=True, sync_dist=True)
-        self.log("val_loss_temp_bucket", components["temp_bucket"], on_step=False, on_epoch=True, sync_dist=True)
-        self.log("val_loss_tint_bucket", components["tint_bucket"], on_step=False, on_epoch=True, sync_dist=True)
-        self.log("val_loss_sign_wrong",  components["sign_wrong"],  on_step=False, on_epoch=True, sync_dist=True)
+        self.log("val_loss",             loss,                    on_step=False, on_epoch=True, prog_bar=True, sync_dist=True, batch_size=batch_size)
+        self.log("val_loss_mse",         components["mse"],        on_step=False, on_epoch=True, sync_dist=True, batch_size=batch_size)
+        self.log("val_loss_spread",      components["spread"],     on_step=False, on_epoch=True, sync_dist=True, batch_size=batch_size)
+        self.log("val_loss_temp_bucket", components["temp_bucket"], on_step=False, on_epoch=True, sync_dist=True, batch_size=batch_size)
+        self.log("val_loss_tint_bucket", components["tint_bucket"], on_step=False, on_epoch=True, sync_dist=True, batch_size=batch_size)
+        self.log("val_loss_sign_wrong",  components["sign_wrong"],  on_step=False, on_epoch=True, sync_dist=True, batch_size=batch_size)
 
         mae = self.loss_fn.per_field_mae(predictions, targets)
         self._val_mae_outputs.append(mae)
@@ -119,9 +121,10 @@ class SonnaLightningModule(pl.LightningModule):
         batch_idx: int,
     ) -> None:
         images, metadata, targets = batch
+        batch_size = images.size(0)
         predictions = self.model(images, metadata)
         loss = self.loss_fn(predictions, targets, metadata)
-        self.log("test_loss", loss, on_step=False, on_epoch=True, sync_dist=True)
+        self.log("test_loss", loss, on_step=False, on_epoch=True, sync_dist=True, batch_size=batch_size)
 
         mae = self.loss_fn.per_field_mae(predictions, targets)
         self._test_mae_outputs.append(mae)

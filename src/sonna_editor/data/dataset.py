@@ -99,6 +99,11 @@ def _process_pair(args: tuple[Path, Path | None, str, Path]) -> dict | None:
 
     shoot_id = _derive_shoot_id(cap_dt, data.get("camera_body"))
 
+    as_shot_temperature = None
+    as_shot_tint = None
+    if data.get("as_shot_wb") is not None:
+        as_shot_temperature, as_shot_tint = data["as_shot_wb"]
+
     row: dict = {
         "id": file_id,
         "profile": profile_name,
@@ -122,6 +127,8 @@ def _process_pair(args: tuple[Path, Path | None, str, Path]) -> dict | None:
         "camera_profile": data.get("camera_profile"),
         "width": data.get("width"),
         "height": data.get("height"),
+        "as_shot_temperature": as_shot_temperature,
+        "as_shot_tint": as_shot_tint,
         # Histogram as bytes blob
         "histogram": _histogram_to_bytes(data["histogram"]),
     }
