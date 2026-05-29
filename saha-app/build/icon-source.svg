@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Saha app icon — 1024×1024 source, FLAT variant.
+  Mirrors the SahaMark default (non-gradient) from src/components/logo.jsx,
+  which is what the login screen lockup uses. Keeping these in sync means
+  the desktop/dock icon and the in-app logo are visually identical.
+
+  Coordinate scale: original viewBox is 128, this file is 8× → 1024.
+    rx          29  → 232
+    text x      64  → 512
+    text y (flat)   80 → 640   (gradient variant uses 84 → 672 — not used here)
+    fontSize (flat) 50 → 400   (gradient variant uses 62 → 496 — not used here)
+    letter-spacing  -2.4 → -19.2
+    inner stroke 1px @ rgba(255,255,255,0.06) → 8px
+
+  Colours from tokens.js:
+    bg   = SONNA.bgPanel  #1F1D17
+    text = BONE constant  #E8E2D6
+-->
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <defs>
+    <clipPath id="clip">
+      <rect x="0" y="0" width="1024" height="1024" rx="232" ry="232"/>
+    </clipPath>
+  </defs>
+  <g clip-path="url(#clip)">
+    <rect width="1024" height="1024" fill="#1F1D17"/>
+    <text x="512" y="640" text-anchor="middle"
+          font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Helvetica Neue', Helvetica, sans-serif"
+          font-size="400"
+          font-weight="600"
+          letter-spacing="-19.2"
+          fill="#E8E2D6">saha</text>
+  </g>
+  <rect x="4" y="4" width="1016" height="1016" rx="232" ry="232"
+        fill="none" stroke="#FFFFFF" stroke-opacity="0.06" stroke-width="8"/>
+</svg>

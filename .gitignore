@@ -12,7 +12,6 @@ __pycache__/
 .ruff_cache/
 dist/
 dist-app/
-build/
 *.egg-info/
 tests/fixtures/*.cr3
 tests/fixtures/sample*.xmp

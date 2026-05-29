@@ -222,6 +222,27 @@ def persist(record: JobRecord) -> None:
 
 # ── Recovery ───────────────────────────────────────────────────────────────
 
+def _pid_exists(pid: int) -> bool:
+    if pid <= 0:
+        return False
+
+    if os.name == "nt":
+        import ctypes
+
+        PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+        handle = ctypes.windll.kernel32.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, False, pid)
+        if not handle:
+            return False
+        ctypes.windll.kernel32.CloseHandle(handle)
+        return True
+
+    try:
+        os.kill(pid, 0)  # signal 0 = liveness probe
+        return True
+    except OSError:
+        return False
+
+
 def _check_pidfile() -> bool:
     """Return True if we can claim the pidfile (no other live serve process)."""
     JOBS_DIR.mkdir(parents=True, exist_ok=True)
@@ -231,16 +252,13 @@ def _check_pidfile() -> bool:
         except (ValueError, OSError):
             old_pid = None
         if old_pid is not None and old_pid != os.getpid():
-            try:
-                os.kill(old_pid, 0)  # signal 0 = liveness probe
+            if _pid_exists(old_pid):
                 logger.warning(
                     "another serve process (pid=%d) is already running; "
                     "skipping orphan recovery",
                     old_pid,
                 )
                 return False
-            except OSError:
-                pass  # process dead, claim the file
     PIDFILE.write_text(str(os.getpid()))
     return True
 

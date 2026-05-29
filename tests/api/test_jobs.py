@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 
 import pytest
@@ -81,3 +82,16 @@ def test_recover_orphaned_jobs(isolated_paths: dict[str, Path]) -> None:
 
     defjson = json.loads((jobs_dir / "def.json").read_text())
     assert defjson["state"] == "complete"
+
+
+def test_check_pidfile_rejects_live_process(isolated_paths: dict[str, Path], monkeypatch: pytest.MonkeyPatch) -> None:
+    jobs.PIDFILE.write_text("12345")
+    monkeypatch.setattr(jobs, "_pid_exists", lambda pid: True)
+    assert jobs._check_pidfile() is False
+
+
+def test_check_pidfile_claims_stale_pidfile(isolated_paths: dict[str, Path], monkeypatch: pytest.MonkeyPatch) -> None:
+    jobs.PIDFILE.write_text("12345")
+    monkeypatch.setattr(jobs, "_pid_exists", lambda pid: False)
+    assert jobs.recover_orphaned_jobs() == 0
+    assert jobs.PIDFILE.read_text().strip() == str(os.getpid())

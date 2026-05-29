@@ -5,7 +5,7 @@
   "description": "Saha — Electron + React shell for the Sonna Editor pipeline",
   "main": "electron/main.js",
   "scripts": {
-    "dev": "concurrently -k -n vite,electron -c blue,magenta \"vite\" \"wait-on tcp:5173 && electron .\"",
+    "dev": "concurrently -k -n vite,electron -c blue,magenta \"vite\" \"wait-on http://localhost:5173/ && npx electron .\"",
     "vite": "vite",
     "build:vite": "vite build",
     "build": "vite build && electron-builder --dir",
@@ -22,7 +22,7 @@
   "devDependencies": {
     "@vitejs/plugin-react": "^4.3.4",
     "concurrently": "^9.1.0",
-    "electron": "^33.2.1",
+    "electron": "^33.4.11",
     "electron-builder": "^25.1.8",
     "sharp": "^0.34.5",
     "vite": "^6.0.3",
