@@ -65,9 +65,9 @@ _cfg.IMAGE_RESOLUTION = 256
 
 warnings.filterwarnings(
     "ignore",
-    message=r".*isinstance\\(treespec, LeafSpec\\) is deprecated.*",
-    category=DeprecationWarning,
+    message=r".*isinstance\(treespec, LeafSpec\).*is deprecated.*",
 )
+logging.getLogger("torch.utils.flop_counter").setLevel(logging.ERROR)
 
 import pytorch_lightning as pl
 from pytorch_lightning.callbacks import (

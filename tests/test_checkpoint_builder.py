@@ -11,14 +11,14 @@ import pytest
 import torch
 
 from sonna_editor import config
-from sonna_editor.data.xmp import LR_DEFAULTS
 from sonna_editor.mode_b import survey as survey_mod
 from sonna_editor.mode_b.checkpoint_builder import (
     HEAD_SLICES,
+    HEAD_SLICES_BY_VERSION,
     INHERITED_SKIP_FIELDS,
     PROFILE_TYPE,
-    SLIDER_SET_VERSION,
     V1_OUTPUT_COUNT,
+    V2_OUTPUT_COUNT,
     apply_biases_to_model,
     build_mode_b_checkpoint,
     compute_bias_vector,
@@ -57,6 +57,32 @@ def _make_v1_base_ckpt(tmp_path: Path) -> Path:
         slider_set_version="v1",
     )
     path = tmp_path / "base-v1.ckpt"
+    model.save_checkpoint(path)
+    return path
+
+
+def _make_v2_base_ckpt(tmp_path: Path) -> Path:
+    """Build a minimal v2 SonnaEditor and save it as a base ckpt for tests."""
+    reg = EmbeddingRegistry()
+    reg.camera_makes = {"unknown": 0}
+    reg.camera_models = {"unknown": 0}
+    reg.lenses = {"unknown": 0}
+    reg.camera_profiles = {"unknown": 0}
+    reg.wb_presets = {"unknown": 0}
+    model = SonnaEditor(
+        registry=reg,
+        _embedding_sizes={
+            "num_makes": 4,
+            "num_models": 4,
+            "num_lenses": 4,
+            "num_profiles": 4,
+            "num_wb_presets": 4,
+        },
+        _pretrained_backbone=False,
+        arch_version=2,
+        slider_set_version="v2",
+    )
+    path = tmp_path / "base-v2.ckpt"
     model.save_checkpoint(path)
     return path
 
@@ -161,6 +187,17 @@ def test_compute_bias_vector_returns_exactly_135_fields() -> None:
     deltas = compute_bias_vector(preset, _balanced_survey())
     assert len(deltas) == V1_OUTPUT_COUNT
     assert set(deltas.keys()) == set(config.SLIDER_FIELDS[:V1_OUTPUT_COUNT])
+
+
+def test_compute_bias_vector_returns_v2_fields_when_requested() -> None:
+    preset = {f: None for f in config.SLIDER_FIELDS}
+    deltas = compute_bias_vector(
+        preset,
+        _balanced_survey(),
+        slider_set_version="v2",
+    )
+    assert len(deltas) == V2_OUTPUT_COUNT
+    assert set(deltas.keys()) == set(config.SLIDER_FIELDS[:V2_OUTPUT_COUNT])
 
 
 def test_compute_bias_vector_string_preset_value_falls_back_to_default() -> None:
@@ -271,7 +308,7 @@ def test_apply_biases_adds_delta_to_inherited_bias(tmp_path: Path) -> None:
             )
 
 
-def test_apply_biases_rejects_v2_model() -> None:
+def test_apply_biases_supports_v2_model_and_preserves_extension_weights() -> None:
     reg = EmbeddingRegistry()
     model = SonnaEditor(
         registry=reg,
@@ -280,12 +317,20 @@ def test_apply_biases_rejects_v2_model() -> None:
         _pretrained_backbone=False,
         slider_set_version="v2",
     )
+    extension_weights = {
+        head_name: getattr(model, head_name)[-1].weight.detach().clone()
+        for head_name, _, _ in HEAD_SLICES_BY_VERSION["v2"]
+        if head_name not in {name for name, _, _ in HEAD_SLICES}
+    }
     biases = compute_bias_vector(
         {f: None for f in config.SLIDER_FIELDS},
         _balanced_survey(),
+        slider_set_version="v2",
     )
-    with pytest.raises(ValueError, match="v1 model"):
-        apply_biases_to_model(model, biases)
+    apply_biases_to_model(model, biases)
+    for head_name, before in extension_weights.items():
+        after = getattr(model, head_name)[-1].weight
+        assert torch.equal(after, before)
 
 
 # ---------------------------------------------------------------------------
@@ -446,7 +491,7 @@ def test_build_mode_b_checkpoint_sidecar_schema(tmp_path: Path) -> None:
     side = json.loads(sidecar_path.read_text())
     assert side["profile_type"] == PROFILE_TYPE
     assert side["display_name"] == "Mode B - Wedding Lite"
-    assert side["slider_set_version"] == SLIDER_SET_VERSION
+    assert side["slider_set_version"] == "v1"
     # Survey-vs-skip subtraction: survey-covered sliders are removed from
     # the inherited skip list so the user's calibration isn't silently
     # stripped at XMP-write time. The dedicated test below exercises this
@@ -560,26 +605,30 @@ def test_build_mode_b_checkpoint_empty_preset_raises(tmp_path: Path) -> None:
     assert output.exists()
 
 
-def test_build_mode_b_checkpoint_v2_base_ckpt_rejected(tmp_path: Path) -> None:
-    """Loading a v2 ckpt as v1 must error (locked-append-only protection)."""
-    reg = EmbeddingRegistry()
-    v2_model = SonnaEditor(
-        registry=reg,
-        _embedding_sizes={"num_makes": 4, "num_models": 4, "num_lenses": 4,
-                          "num_profiles": 4, "num_wb_presets": 4},
-        _pretrained_backbone=False,
-        slider_set_version="v2",
-    )
-    v2_ckpt = tmp_path / "v2.ckpt"
-    v2_model.save_checkpoint(v2_ckpt)
+def test_build_mode_b_checkpoint_preserves_v2_base_ckpt(tmp_path: Path) -> None:
+    """Lite creation from a v2 base must not down-convert or drop extension heads."""
+    v2_ckpt = _make_v2_base_ckpt(tmp_path)
     survey = _write_survey(tmp_path, _balanced_survey())
-    with pytest.raises(ValueError, match="v2 checkpoint"):
-        build_mode_b_checkpoint(
-            preset_path=FIXTURE_PRESET,
-            survey_path=survey,
-            base_ckpt_path=v2_ckpt,
-            output_ckpt_path=tmp_path / "out.ckpt",
-            profile_name="Mode B Test",
+    output = tmp_path / "out.ckpt"
+    sidecar_path = build_mode_b_checkpoint(
+        preset_path=FIXTURE_PRESET,
+        survey_path=survey,
+        base_ckpt_path=v2_ckpt,
+        output_ckpt_path=output,
+        profile_name="Mode B Test",
+    )
+
+    reloaded = SonnaEditor.from_checkpoint(output)
+    assert reloaded._slider_set_version == "v2"
+    side = json.loads(sidecar_path.read_text())
+    assert side["slider_set_version"] == "v2"
+
+    base_model = SonnaEditor.from_checkpoint(v2_ckpt)
+    out_model = SonnaEditor.from_checkpoint(output)
+    for head_name, _, _ in HEAD_SLICES_BY_VERSION["v2"]:
+        assert torch.equal(
+            getattr(out_model, head_name)[-1].weight,
+            getattr(base_model, head_name)[-1].weight,
         )
 
 

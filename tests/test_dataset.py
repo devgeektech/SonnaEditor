@@ -8,7 +8,7 @@ import pandas as pd
 import pytest
 from PIL import Image
 
-from sonna_editor.config import SLIDER_FIELDS
+from sonna_editor.config import SCENE_STAT_FIELDS, SLIDER_FIELDS
 from sonna_editor.data.dataset import (
     _bytes_to_histogram,
     _derive_shoot_id,
@@ -42,6 +42,14 @@ def _make_fake_extract_result(raw_path: Path, xmp_path: Path | None = None) -> d
         "xmp_path": str(xmp_path) if xmp_path else None,
         "preview": img,
         "histogram": hist,
+        "scene_stats": {
+            "mean_luminance": 0.45,
+            "median_luminance": 0.44,
+            "luminance_std": 0.18,
+            "highlight_clip_pct": 0.01,
+            "shadow_clip_pct": 0.02,
+            "dynamic_range": 0.65,
+        },
         "iso": 200,
         "shutter_speed": 1 / 125,
         "aperture": 2.8,
@@ -202,6 +210,7 @@ def test_process_pair_returns_row(tmp_path: Path) -> None:
     assert row["Exposure2012"] == pytest.approx(1.0)
     assert row["Temperature"] == pytest.approx(5200.0)
     assert isinstance(row["histogram"], bytes)
+    assert row["mean_luminance"] == pytest.approx(0.45)
 
 
 def test_process_pair_saves_thumbnail(tmp_path: Path) -> None:
@@ -303,6 +312,7 @@ def test_build_dataset_has_expected_columns(tmp_path: Path) -> None:
     required = {"id", "profile", "raw_path", "thumbnail_path", "shoot_id", "histogram"}
     required |= set(SLIDER_FIELDS)
     required |= {"as_shot_temperature", "as_shot_tint"}
+    required |= set(SCENE_STAT_FIELDS)
     assert required.issubset(df.columns)
 
 

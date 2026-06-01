@@ -10,6 +10,7 @@ import torch
 import torch.nn as nn
 
 from sonna_editor.config import (
+    EXPOSURE_SCENE_LOSS_WEIGHT,
     SIGN_WRONG_PENALTY_WEIGHT,
     SLIDER_FIELDS,
     SLIDER_LOSS_WEIGHTS,
@@ -25,6 +26,7 @@ from sonna_editor.slider_set import fields_for_version
 # safe across both slider_set_versions.
 _TEMPERATURE_IDX: int = SLIDER_FIELDS.index("Temperature")
 _TINT_IDX: int = SLIDER_FIELDS.index("Tint")
+_EXPOSURE_IDX: int = SLIDER_FIELDS.index("Exposure2012")
 
 # ---------------------------------------------------------------------------
 # Per-row skipped-row logging
@@ -145,7 +147,7 @@ class WeightedSliderLoss(nn.Module):
         return_components: bool = False,
     ) -> torch.Tensor | dict[str, torch.Tensor]:
         """Returns scalar total loss, OR (if return_components=True) a dict with
-        keys: total, mse, spread, temp_bucket, tint_bucket, sign_wrong. All
+        keys: total, mse, exposure_scene, spread, temp_bucket, tint_bucket, sign_wrong. All
         scalars on the same device as predictions. Components with no valid
         data return 0.
 
@@ -240,6 +242,7 @@ class WeightedSliderLoss(nn.Module):
                 return {
                     "total":       zero,
                     "mse":         zero.detach(),
+                    "exposure_scene": zero.detach(),
                     "spread":      zero.detach(),
                     "temp_bucket": zero.detach(),
                     "tint_bucket": zero.detach(),
@@ -291,6 +294,18 @@ class WeightedSliderLoss(nn.Module):
         # ── Term 2: spread penalty (one-sided hinge, averaged over fields) ──
         spread = self._spread_term(pred_norm, tgt_norm, mask)
 
+        # ── Term 2b: focused Exposure2012 penalty for low-light collapse ──
+        # The all-slider MSE averages over 135/147 fields, so even a bumped
+        # Exposure2012 field weight can be diluted. This term keeps exposure
+        # directly visible to the optimiser and gives low-luminance/high-lift
+        # rows more influence without changing their target slider values.
+        exposure_scene = self._exposure_scene_term(
+            pred_exposure=predictions[:, _EXPOSURE_IDX],
+            truth_exposure=targets[:, _EXPOSURE_IDX],
+            tgt_mask=mask[:, _EXPOSURE_IDX],
+            scene_stats=metadata.get("scene_stats") if metadata is not None else None,
+        )
+
         # ── Term 3: per-bucket Temperature penalty (log-space) ──
         # Uses predictions+targets in raw model-output Kelvin units (predictions
         # at idx_temp is log-K; targets in the SAME `tgt` tensor we already
@@ -337,6 +352,7 @@ class WeightedSliderLoss(nn.Module):
 
         total = (
             mse
+            + EXPOSURE_SCENE_LOSS_WEIGHT    * exposure_scene
             + SPREAD_LOSS_WEIGHT             * spread
             + TEMPERATURE_BUCKET_LOSS_WEIGHT * temp_bucket
             + TINT_BUCKET_LOSS_WEIGHT        * tint_bucket
@@ -347,6 +363,7 @@ class WeightedSliderLoss(nn.Module):
             return {
                 "total":       total,
                 "mse":         mse.detach(),
+                "exposure_scene": exposure_scene.detach(),
                 "spread":      spread.detach(),
                 "temp_bucket": temp_bucket.detach(),
                 "tint_bucket": tint_bucket.detach(),
@@ -401,6 +418,63 @@ class WeightedSliderLoss(nn.Module):
 
         denom = has_data.sum().clamp(min=1.0)
         return per_field.sum() / denom
+
+    def _exposure_scene_term(
+        self,
+        pred_exposure: torch.Tensor,   # [B] raw Exposure2012 stops
+        truth_exposure: torch.Tensor,  # [B] raw Exposure2012 stops
+        tgt_mask: torch.Tensor,        # [B] bool — True where truth is valid
+        scene_stats: Optional[torch.Tensor],  # [B, 6], mean luminance at col 0
+    ) -> torch.Tensor:
+        """Direct Exposure2012 loss with dark-scene emphasis.
+
+        The regular all-slider MSE is intentionally broad, but exposure mistakes
+        dominate visual acceptance. This term uses the same range-normalised
+        units as the main loss, with a multiplier for dark previews and large
+        positive exposure targets. The multiplier is normalised back to mean 1
+        over the valid batch, so it redistributes emphasis rather than simply
+        inflating loss based on batch composition.
+        """
+        zero = pred_exposure.new_zeros(())
+        if scene_stats is None:
+            return zero
+        valid = tgt_mask & ~torch.isnan(truth_exposure)
+        if valid.sum() == 0:
+            return zero
+
+        exposure_range = (self._hi[_EXPOSURE_IDX] - self._lo[_EXPOSURE_IDX]).clamp(min=1e-6)
+        err = ((pred_exposure - truth_exposure.nan_to_num(0.0)) / exposure_range) ** 2
+
+        weights = torch.ones_like(err)
+        if scene_stats.ndim != 2 or scene_stats.shape[1] == 0:
+            return zero
+        mean_luminance = scene_stats[:, 0].float()
+        finite_lum = torch.isfinite(mean_luminance)
+        dark_strength = ((0.35 - mean_luminance.nan_to_num(0.35)) / 0.35).clamp(0.0, 1.0)
+        weights = weights + torch.where(finite_lum, 2.0 * dark_strength, torch.zeros_like(weights))
+
+        lift_strength = ((truth_exposure.nan_to_num(0.0) - 0.50) / 1.0).clamp(0.0, 1.0)
+        weights = weights + 1.5 * lift_strength
+        weights = weights / weights[valid].mean().clamp(min=1e-6)
+
+        per_photo = (err * weights * valid.float()).sum() / valid.float().sum().clamp(min=1.0)
+        bucket_loss = zero
+        n_buckets = 0
+        finite_lum = torch.isfinite(mean_luminance)
+        buckets = (
+            valid & finite_lum & (mean_luminance < 0.25),
+            valid & finite_lum & (mean_luminance >= 0.25) & (mean_luminance < 0.45),
+            valid & finite_lum & (mean_luminance >= 0.45),
+        )
+        for bucket in buckets:
+            if bucket.sum() < 2:
+                continue
+            mean_gap = ((pred_exposure - truth_exposure.nan_to_num(0.0)) / exposure_range)[bucket].mean()
+            bucket_loss = bucket_loss + mean_gap.square()
+            n_buckets += 1
+        if n_buckets == 0:
+            return per_photo
+        return per_photo + bucket_loss / float(n_buckets)
 
     def _temperature_bucket_term(
         self,

@@ -9,7 +9,8 @@ Current local workspace state as of 2026-06-01:
 - Python 3.11.15 via uv 0.11.17
 - PyTorch `2.11.0+cu128`, CUDA active on NVIDIA GeForce RTX 3050
 - `v1_learning/dataset/dataset.parquet` has 189 rows; balanced shoot-grouped splits are train=132, val=27, test=30
-- frontend-visible `v1_learning/model-v2.0.0.ckpt` and matching JSON sidecar are present locally
+- frontend-visible `v1_learning/model-v2.0.0.ckpt` and matching JSON sidecar are present locally and remain active
+- `data/models/sonna-v2-scene-stats-run01/` contains a rejected scene-stat candidate: low test MAE but worse collapse than `model-v2.0.0`; do not promote it
 
 The core inference flow is:
 - extract RAW preview + metadata
@@ -36,7 +37,7 @@ This section tracks what each backend source file/folder does. Keep it updated w
 | Path | Purpose |
 |---|---|
 | `src/sonna_editor/__init__.py` | Package marker for the backend Python package. |
-| `src/sonna_editor/config.py` | Central constants: paths, supported RAW extensions, model resolution, 147-slider field order, slider ranges, defaults, loss weights, confidence settings, and frontend-visible checkpoint directory `v1_learning/`. |
+| `src/sonna_editor/config.py` | Central constants: paths, supported RAW extensions, model resolution, six scene-stat metadata field names, 147-slider field order, slider ranges, defaults, loss weights, confidence settings, and frontend-visible checkpoint directory `v1_learning/`. |
 | `src/sonna_editor/runtime.py` | Runtime helpers for selecting CUDA, Apple MPS, or CPU and configuring data-loader pinned memory safely across platforms. |
 | `src/sonna_editor/slider_set.py` | Slider-set version helpers for `v1`/`v2`, preventing checkpoint and tensor shape mismatches. |
 
@@ -47,10 +48,10 @@ This section tracks what each backend source file/folder does. Keep it updated w
 | `src/sonna_editor/data/__init__.py` | Package marker for data extraction/building modules. |
 | `src/sonna_editor/data/audit.py` | Dataset quality audit utilities: unedited detection, outlier checks, high-variance checks, plots, and Markdown reports. |
 | `src/sonna_editor/data/catalog.py` | Read-only Lightroom Classic `.lrcat` SQLite reader. Refuses lock/journal files, opens the catalog in read-only/query-only mode, finds edited photos, extracts develop settings, and can export XMP sidecars without overwriting existing files. |
-| `src/sonna_editor/data/catalog_dataset.py` | Lightroom catalog dataset builder. This prepares supervised training rows from catalog develop settings, without requiring matching XMP sidecars. It still reads accessible RAW files for previews, metadata, histograms, and AsShot WB. |
-| `src/sonna_editor/data/dataset.py` | RAW + XMP dataset builder. Finds RAW files with matching XMP sidecars, skips RAW-only files, extracts labels from XMP, writes deterministic Parquet rows, thumbnails, and shoot-grouped train/val/test splits. |
+| `src/sonna_editor/data/catalog_dataset.py` | Lightroom catalog dataset builder. This prepares supervised training rows from catalog develop settings, without requiring matching XMP sidecars. It still reads accessible RAW files for previews, metadata, histograms, AsShot WB, and scene luminance stats. |
+| `src/sonna_editor/data/dataset.py` | RAW + XMP dataset builder. Finds RAW files with matching XMP sidecars, skips RAW-only files, extracts labels from XMP, writes deterministic Parquet rows, thumbnails, scene luminance stats, and shoot-grouped train/val/test splits. |
 | `src/sonna_editor/data/dng.py` | Adobe DNG Converter wrapper for format-normalisation workflows. It should only read originals and write converted outputs, never mutate RAW files. |
-| `src/sonna_editor/data/extract.py` | RAW preview, metadata, AsShot WB, and histogram extraction. `extract_all()` combines image input features with optional XMP labels for dataset building or inference preparation. |
+| `src/sonna_editor/data/extract.py` | RAW preview, metadata, AsShot WB, RGB histogram extraction, and preview-derived scene luminance stats. `extract_all()` combines image input features with optional XMP labels for dataset building or inference preparation. |
 | `src/sonna_editor/data/xmp.py` | Lightroom XMP read/write logic, slider parsing, tone curve handling, AsShot WB helper, Lightroom namespace/process-version handling, and XMP sidecar output for inference. |
 
 ### Model Package
@@ -58,7 +59,7 @@ This section tracks what each backend source file/folder does. Keep it updated w
 | Path | Purpose |
 |---|---|
 | `src/sonna_editor/model/__init__.py` | Package marker for model code. |
-| `src/sonna_editor/model/architecture.py` | Main PyTorch model stack: `EmbeddingRegistry`, `MetadataEncoder`, `SonnaEditor`, ConvNeXt image backbone, metadata fusion, slider-group heads, WB metadata-skip residual behavior, and native checkpoint save/load. |
+| `src/sonna_editor/model/architecture.py` | Main PyTorch model stack: `EmbeddingRegistry`, `MetadataEncoder`, `SonnaEditor`, ConvNeXt image backbone, metadata fusion, slider-group heads, WB metadata-skip residual behavior, scene-stat metadata path for fresh `arch_version=2` models, and native checkpoint save/load. |
 | `src/sonna_editor/model/augmentation.py` | Image-only training/validation augmentation. Target slider values are never augmented. |
 | `src/sonna_editor/model/losses.py` | `WeightedSliderLoss`, range-normalized MSE, per-field weights, WB bucket losses, sign-wrong penalty, direction stats, and per-field MAE metrics. |
 | `src/sonna_editor/model/postprocess.py` | Converts raw model outputs into Lightroom units, including log-Kelvin Temperature exponentiation, range clamping, and tensor-to-slider-dict mapping. |
@@ -69,8 +70,8 @@ This section tracks what each backend source file/folder does. Keep it updated w
 |---|---|
 | `src/sonna_editor/training/__init__.py` | Package marker for training code. |
 | `src/sonna_editor/training/callbacks.py` | Training alert callbacks for NaN loss, overfitting, disk space, ETA, loss balance, critical MAE, and overcorrection warnings. |
-| `src/sonna_editor/training/datamodule.py` | Lightning data module and dataset wrapper. Builds embedding registries from parquet rows, loads thumbnails/metadata/histograms, emits image tensors, metadata tensors, targets, and sample weights. |
-| `src/sonna_editor/training/module.py` | Lightning module around `SonnaEditor`: forward pass, train/val/test steps, optimizer/scheduler setup, loss logging, and MAE aggregation. |
+| `src/sonna_editor/training/datamodule.py` | Lightning data module and dataset wrapper. Builds embedding registries from parquet rows, loads thumbnails/metadata/histograms/scene stats, emits image tensors, metadata tensors, targets, and sample weights. Old parquets without scene-stat columns are approximated from RGB histograms. |
+| `src/sonna_editor/training/module.py` | Lightning module around `SonnaEditor`: forward pass, train/val/test steps, optimizer/scheduler setup, loss logging, MAE aggregation, and validation distribution/std-ratio logging for key sliders. |
 | `src/sonna_editor/training/unfreeze_callback.py` | Backbone-unfreeze callback that resets early stopping after frozen-backbone warmup completes. |
 
 ### Inference Package
@@ -78,7 +79,7 @@ This section tracks what each backend source file/folder does. Keep it updated w
 | Path | Purpose |
 |---|---|
 | `src/sonna_editor/inference/__init__.py` | Package marker for inference code. |
-| `src/sonna_editor/inference/engine.py` | Checkpoint loading and batched prediction engine. Builds tensors from extracted previews/metadata, maps categorical metadata through the checkpoint registry, supports uncertainty sampling, and postprocesses outputs. |
+| `src/sonna_editor/inference/engine.py` | Checkpoint loading and batched prediction engine. Builds tensors from extracted previews/metadata plus scene stats, maps categorical metadata through the checkpoint registry, supports uncertainty sampling, and postprocesses outputs. |
 | `src/sonna_editor/inference/pipeline.py` | End-to-end shoot processing: scan RAW files, extract features, run inference, apply WB/skip semantics, write XMP sidecars, write `sonna_predictions.json`, and emit progress callbacks. |
 
 ### Fine-Tune Package
@@ -95,7 +96,7 @@ This section tracks what each backend source file/folder does. Keep it updated w
 | Path | Purpose |
 |---|---|
 | `src/sonna_editor/mode_b/__init__.py` | Package marker for Lite/Mode B profile creation. |
-| `src/sonna_editor/mode_b/checkpoint_builder.py` | Builds a Mode B initial checkpoint from a base checkpoint, Lightroom preset, and style survey by shifting output-head biases while preserving base model weights. This is not supervised photo training. |
+| `src/sonna_editor/mode_b/checkpoint_builder.py` | Builds a Mode B initial checkpoint from a base checkpoint, Lightroom preset, and style survey by shifting output-head biases while preserving base model weights. It inherits the base checkpoint's slider set, so v2 bases keep the 12 extension fields instead of being down-converted to v1. This is not supervised photo training. |
 | `src/sonna_editor/mode_b/survey.py` | Style survey models and conversion from user answers into slider offsets for exposure, temperature, tint, contrast, saturation, and shadows. |
 | `src/sonna_editor/preset/__init__.py` | Package marker for preset code. |
 | `src/sonna_editor/preset/adjuster.py` | Heuristic content-aware preset adjustments for exposure, WB, shadows/highlights, and similar safe corrections. |
@@ -205,17 +206,20 @@ This section tracks what each backend source file/folder does. Keep it updated w
 - `SonnaDataset`: dataset wrapper for parquet rows and metadata tensors
 - maps training rows to model input tensors
 - emits target tensors sized to the requested `slider_set_version`
+- emits six scene-stat metadata values; old parquet rows without these columns get histogram-derived approximations
 - uses `unknown` fallback IDs consistent with inference behavior
 
 ### `scripts/train_profile.py`
 - current supported training entry point for new Mode A profiles
-- default v2 recipe: 512px input, `slider_set_version="v2"`, batch size 16, lr 1e-4, freeze backbone for 3 epochs, WB metadata skip enabled
-- default loss recipe: Temperature=6.0, Tint=6.0, Exposure2012=4.0, temperature bucket=0.15, tint bucket=2.0, sign-wrong penalty=0.2
+- default v2 recipe: 512px input, `slider_set_version="v2"`, fresh `arch_version=2`, batch size 16, lr 1e-4, freeze backbone for 3 epochs, WB metadata skip enabled
+- default loss recipe: Exposure2012=5.0, Temperature=4.0, Tint=4.0, Contrast/Highlights/Shadows=3.0, Whites/Blacks/Saturation/Vibrance=2.0 minimums, temperature bucket=0.15, tint bucket=2.0, sign-wrong penalty=0.2
 - fresh v2 training initialises output-head biases from training-set target medians; with the current split the priors are Exposure2012=0.22, Temperature=5191K, Tint=5
 - default training augmentation is geometry-only; photometric brightness/contrast/saturation jitter is disabled by default because XMP labels are tied to the original image exposure and colour
 - dataset splitting is still by shoot, but now balances Temperature correction, Exposure2012, and Tint correction instead of Temperature alone
+- validation logs distribution/std-ratio metrics for key sliders so collapse is visible during training
 - inference XMP writing stabilises RGB tone-curve endpoints: `ToneCurveRed/Green/Blue_Pt1` are forced to `0,0` and `Pt6` to `255,255` before writing. This prevents model-predicted channel-curve endpoint drift from turning neutral white highlights pink/red while preserving model-predicted mid-curve shape.
 - logs default recipe changes as `Training recipe ...`; only user-supplied CLI flags log as `Override ...`
+- adapts `log_every_n_steps` to the actual train-batch count so small local splits do not trigger Lightning's logging-interval warning
 - saves a native `model.ckpt` from the best validation checkpoint and publishes a versioned copy into `v1_learning/` unless `--no-publish` is set
 
 ### `src/sonna_editor/api/`
@@ -242,6 +246,8 @@ This section tracks what each backend source file/folder does. Keep it updated w
 - `scripts/process_shoot_preset.py`: direct preset-to-XMP execution with heuristic per-photo corrections, without creating a model checkpoint
 - `scripts/train_v1_2_0_full_production.py`: train the main v1 model
 - `scripts/train_profile.py`: current supported training entry point for new profiles
+- `scripts/analyse_prediction_collapse.py`: runs a checkpoint on a validation parquet and reports per-slider prediction variance, target variance, MAE, and collapsed sliders
+- `scripts/audit_dataset_diversity.py`: audits scene/edit diversity buckets from a parquet, using scene-stat columns or histogram-derived approximations
 - `scripts/finetune_profile.py`: fine-tune a profile checkpoint
 - `scripts/process_shoot_model.py`: inference wrapper for processing a shoot
 - `scripts/audit_catalog.py`: catalog consistency audits
@@ -251,7 +257,7 @@ This section tracks what each backend source file/folder does. Keep it updated w
 
 Preset-based execution has two paths:
 
-- **Mode B/Lite checkpoint path:** `run_style_survey.py` writes survey JSON, `build_mode_b_checkpoint.py` combines that survey with a Lightroom `.xmp` preset and a trained base checkpoint, then `process_shoot_model.py` runs the generated checkpoint through the normal inference pipeline. This is the preferred path when the preset should become a selectable frontend profile.
+- **Mode B/Lite checkpoint path:** `run_style_survey.py` writes survey JSON, `build_mode_b_checkpoint.py` combines that survey with a Lightroom `.xmp` preset and a trained base checkpoint, then `process_shoot_model.py` runs the generated checkpoint through the normal inference pipeline. The builder keeps the base checkpoint's native `slider_set_version`: v1 bases produce v1 Lite profiles, v2 bases produce v2 Lite profiles. This is the preferred path when the preset should become a selectable frontend profile.
 - **Direct preset path:** `process_shoot_preset.py` parses a preset, applies heuristic per-photo corrections, and writes XMP files directly. This is fast but does not create a model checkpoint and is not trainable by itself.
 
 Mode B checkpoints are marked with `profile_type: mode_b_initial` in the sidecar JSON and are discovered by `/api/profiles` when written under `v1_learning/model-v*.ckpt`.
@@ -260,6 +266,10 @@ Mode B checkpoints are marked with `profile_type: mode_b_initial` in the sidecar
 
 - CUDA environment fix, 2026-06-01: `torch` and `torchvision` are pinned to the PyTorch CUDA 12.8 wheel index for Windows/Linux x86_64 in `pyproject.toml` and `uv.lock`. This resolved the CPU-only `torch 2.11.0+cpu` install that caused Lightning to report `GPU available: False` despite an RTX 3050 being present.
 - Training log clarity fix, 2026-06-01: `scripts/train_profile.py` no longer labels default v2 recipe settings as overrides. It reports defaults as `Training recipe ...` and reserves `Override ...` for explicit CLI flags.
+- Anti-collapse diagnostics, 2026-06-01: `model-v2.0.0` collapse audit on the 27-row val split found 14 collapsed sliders and Exposure2012 std_ratio=0.115. A fresh `arch_version=2` scene-stats candidate at `data/models/sonna-v2-scene-stats-run01` lowered test MAE but worsened collapse to 29 sliders and near-zero Exposure spread, so it was rejected and not kept frontend-visible.
+- Dark-image mismatch diagnosis, 2026-06-01: the Lightroom mismatch on `0H5A4599` is an Exposure2012 model-collapse issue, not an XMP writer issue. The reference/training XMP uses `Exposure2012=+1.11`; active `model-v2.0.0` writes about `+0.105` while nearby tone/WB sliders and curves are close to the reference. Across the 189-row dataset, target Exposure std is ~0.454 but model output std is ~0.061, and the darkest luminance quartile needs ~`+0.695` on average while the model predicts only ~`+0.090`.
+- Lite profile v2 compatibility fix, 2026-06-01: `src/sonna_editor/mode_b/checkpoint_builder.py` no longer forces `target_slider_set_version="v1"` when creating Mode B/Lite checkpoints. This fixes frontend Lite creation while `v1_learning/model-v2.0.0.ckpt` is active and preserves v2 extension-head weights.
+- Training warning cleanup, 2026-06-01: current training suppresses the upstream Lightning `LeafSpec` deprecation and optional Torch Triton FLOP-counter warning, and adjusts `log_every_n_steps` for tiny datasets. A one-epoch smoke run on the local 132-row split with two workers completed without those three warnings.
 - Earlier UI progress fix: `src/sonna_editor/inference/pipeline.py::process_shoot_with_model()` fires the per-photo `on_photo_complete` callback immediately after predictions are available, before the XMP write.
 
 ## Important behavior notes
@@ -267,11 +277,12 @@ Mode B checkpoints are marked with `profile_type: mode_b_initial` in the sidecar
 - `Temperature` is predicted in log-Kelvin space by the model and is exponentiated in postprocessing.
 - XMP write semantics intentionally distinguish generic skip fields from WB skip fields.
 - Legacy v1 checkpoint support is preserved via checkpoint sidecar heuristics and output count gating.
+- Lite profile creation from a v2 base must keep `slider_set_version="v2"`; down-converting via `from_checkpoint(target_slider_set_version="v1")` is intentionally rejected by the model loader.
 - Raw metadata extraction uses embedded JPEG EXIF first, then supplements from a `.xmp` sidecar if present.
+- Fresh `arch_version=2` models consume preview-derived scene luminance statistics. Existing `arch_version=1` checkpoints load unchanged and ignore the extra metadata.
 
 ## Recommended next checks
 
 - Restore local gitignored test fixtures (`tests/fixtures/sample.cr3`, `sample.xmp`, `sample_edit.xmp`) or mark fixture-dependent tests as integration/local-data tests. Full `uv run pytest tests` currently fails only in `tests/test_extract.py` and `tests/test_xmp.py` because those fixtures are absent and Windows symlink privileges are unavailable.
-- confirm UI progress callbacks are invoked in the early extraction and inference phases
-- verify `process_shoot_with_model()` passes full model predictions into `sonna_predictions.json`
-- audit any Mode B patch paths for the same metadata registry mapping behavior
+- Build a larger edited dataset before trying another full model improvement run; the 189-photo local dataset lets median-prior models look good on MAE while failing prediction-spread/collapse checks.
+- Run `scripts/analyse_prediction_collapse.py` after every candidate training run before publishing or activating it.

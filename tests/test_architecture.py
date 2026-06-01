@@ -42,6 +42,7 @@ def _dummy_metadata(batch_size: int, device: str = "cpu") -> dict[str, torch.Ten
         "camera_profile_id": torch.zeros(batch_size, dtype=torch.long, device=device),
         "wb_preset_id": torch.zeros(batch_size, dtype=torch.long, device=device),
         "histogram": torch.rand(batch_size, 96, device=device),
+        "scene_stats": torch.rand(batch_size, 6, device=device),
         # v1.1.0 AsShot inputs. arch_version=0 tests ignore these by design;
         # arch_version=1 (default) reads them.
         "as_shot_temperature": torch.full((batch_size,), 5500.0, device=device),

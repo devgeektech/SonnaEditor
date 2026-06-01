@@ -83,6 +83,19 @@ TRAIN_AUG_CONTRAST = 0.0
 TRAIN_AUG_SATURATION = 0.0
 TRAIN_AUG_HUE = 0.0
 
+# Scene-level brightness features derived from the preview image. These are
+# explicit metadata inputs for the v2 quality pass so Exposure/Highlights/
+# Shadows heads do not have to infer basic luminance statistics only from the
+# ConvNeXt embedding.
+SCENE_STAT_FIELDS: list[str] = [
+    "mean_luminance",
+    "median_luminance",
+    "luminance_std",
+    "highlight_clip_pct",
+    "shadow_clip_pct",
+    "dynamic_range",
+]
+
 # Supported RAW file extensions
 SUPPORTED_RAW_EXTENSIONS = {
     ".cr3", ".cr2", ".nef", ".arw", ".raf", ".rw2",
@@ -429,8 +442,16 @@ assert set(SLIDER_DEFAULTS.keys()) == set(SLIDER_FIELDS[135:]), (
 #   GrainFrequency. Tint stays at 4.0 (already at audit ceiling); the new
 #   sign-wrong term + bumped Tint bucket carry that field.
 SLIDER_LOSS_WEIGHTS: dict[str, float] = {field: 1.0 for field in SLIDER_FIELDS}
-SLIDER_LOSS_WEIGHTS["Temperature"] = 3.0
+SLIDER_LOSS_WEIGHTS["Exposure2012"] = 5.0
+SLIDER_LOSS_WEIGHTS["Temperature"] = 4.0
 SLIDER_LOSS_WEIGHTS["Tint"] = 4.0
+SLIDER_LOSS_WEIGHTS["Contrast2012"] = 3.0
+SLIDER_LOSS_WEIGHTS["Highlights2012"] = 3.0
+SLIDER_LOSS_WEIGHTS["Shadows2012"] = 3.0
+SLIDER_LOSS_WEIGHTS["Whites2012"] = 2.0
+SLIDER_LOSS_WEIGHTS["Blacks2012"] = 2.0
+SLIDER_LOSS_WEIGHTS["Saturation"] = 2.0
+SLIDER_LOSS_WEIGHTS["Vibrance"] = 2.0
 for _pt in (2, 3, 4, 5):
     SLIDER_LOSS_WEIGHTS[f"ToneCurve_Pt{_pt}_Y"]      = 3.0
     SLIDER_LOSS_WEIGHTS[f"ToneCurveRed_Pt{_pt}_Y"]   = 3.0
@@ -476,6 +497,21 @@ _TUNED_TIMID_BUMPS: dict[str, float] = {
 for _f, _w in _TUNED_TIMID_BUMPS.items():
     SLIDER_LOSS_WEIGHTS[_f] = _w
 
+_VISUAL_PRIORITY_MIN_WEIGHTS: dict[str, float] = {
+    "Exposure2012": 5.0,
+    "Temperature": 4.0,
+    "Tint": 4.0,
+    "Contrast2012": 3.0,
+    "Highlights2012": 3.0,
+    "Shadows2012": 3.0,
+    "Whites2012": 2.0,
+    "Blacks2012": 2.0,
+    "Saturation": 2.0,
+    "Vibrance": 2.0,
+}
+for _f, _w in _VISUAL_PRIORITY_MIN_WEIGHTS.items():
+    SLIDER_LOSS_WEIGHTS[_f] = max(SLIDER_LOSS_WEIGHTS[_f], _w)
+
 # ── Stage 2 loss-term coefficients ────────────────────────────────────────
 # Spread penalty: one-sided hinge on per-field std (pred under-predicts spread).
 # Per-bucket Temperature: bucket by AsShot Kelvin, penalise mean(pred_corr - truth_corr).
@@ -490,6 +526,7 @@ for _f, _w in _TUNED_TIMID_BUMPS.items():
 # the end-of-epoch-1 ratio to ~2× MSE, well under the 5× threshold.
 # Per-bucket Tint and spread terms came in fine at 0.10× and 0.05× MSE.
 SPREAD_LOSS_WEIGHT: float = 0.5
+EXPOSURE_SCENE_LOSS_WEIGHT: float = 4.0
 TEMPERATURE_BUCKET_LOSS_WEIGHT: float = 0.10
 # v1.1.0-c3k-tuned bumped 1.0 → 2.0; dialled back to 1.5 pre-12.9K after
 # the 3K diagnostic overfit: the 2.0 weight + sign-wrong 0.3 jointly

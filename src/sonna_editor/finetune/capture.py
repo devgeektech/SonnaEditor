@@ -14,7 +14,12 @@ import pandas as pd
 from PIL import Image
 
 from sonna_editor import config
-from sonna_editor.data.extract import compute_histogram, extract_metadata, extract_preview
+from sonna_editor.data.extract import (
+    compute_histogram,
+    compute_scene_statistics,
+    extract_metadata,
+    extract_preview,
+)
 from sonna_editor.data.xmp import read_xmp
 from sonna_editor.inference.pipeline import RAW_EXTENSIONS
 
@@ -167,6 +172,7 @@ def capture_user_edits(
 
         meta = extract_metadata(raw_path)
         histogram = _histogram_to_bytes(compute_histogram(preview))
+        scene_stats = compute_scene_statistics(preview)
 
         # --- Capture time ---
         capture_dt = meta.get("capture_datetime")
@@ -205,6 +211,9 @@ def capture_user_edits(
             "predicted_values": json.dumps(predicted),
             "deltas": deltas_json,
         }
+
+        for field in config.SCENE_STAT_FIELDS:
+            row[field] = scene_stats.get(field)
 
         # Final slider values (training targets) — 135 individual columns
         for field in config.SLIDER_FIELDS:

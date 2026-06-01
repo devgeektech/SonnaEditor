@@ -14,7 +14,7 @@ import torchvision.transforms.functional as TF
 from PIL import Image
 
 from sonna_editor import config
-from sonna_editor.data.extract import compute_histogram
+from sonna_editor.data.extract import compute_histogram, compute_scene_statistics
 from sonna_editor.model.architecture import EmbeddingRegistry, SonnaEditor
 from sonna_editor.model.augmentation import ValidationAugmentation
 from sonna_editor.model.postprocess import postprocess_predictions, predictions_to_dict
@@ -37,8 +37,12 @@ def _load_from_checkpoint(path: Path, device: str) -> SonnaEditor:
         # Lightning ckpts don't carry our arch_config field; detect arch from
         # the state_dict keys. v1.1.0 has make_emb (the canonical v1.1.0
         # marker — distinct from v1.0.x's body_emb).
-        is_v1_1 = "metadata_encoder.make_emb.weight" in model_state
-        arch_version = 1 if is_v1_1 else 0
+        if "metadata_encoder.scene_stats_mlp.0.weight" in model_state:
+            arch_version = 2
+        elif "metadata_encoder.make_emb.weight" in model_state:
+            arch_version = 1
+        else:
+            arch_version = 0
 
         embedding_sizes: dict[str, int] = {
             "num_lenses":     model_state["metadata_encoder.lens_emb.weight"].shape[0],
@@ -164,6 +168,7 @@ class InferenceEngine:
             "camera_profile_id": torch.zeros(1, dtype=torch.long, device=self._device),
             "wb_preset_id":      torch.zeros(1, dtype=torch.long, device=self._device),
             "histogram":         torch.zeros(1, 96, device=self._device),
+            "scene_stats":       torch.zeros(1, 6, device=self._device),
             # v1.1.0+ inputs; v1.0.x models ignore them.
             "as_shot_temperature": torch.full((1,), 5500.0, device=self._device),
             "as_shot_tint":        torch.zeros(1, device=self._device),
@@ -180,6 +185,7 @@ class InferenceEngine:
     ) -> tuple[torch.Tensor, dict[str, torch.Tensor]]:
         img_tensors = []
         hist_tensors = []
+        scene_stat_tensors = []
         for pil_img in images[start:end]:
             rgb = pil_img.convert("RGB")
             t = TF.pil_to_tensor(rgb)       # uint8 [C, H, W]
@@ -188,9 +194,15 @@ class InferenceEngine:
 
             hist = compute_histogram(rgb)    # (3, 32) float32
             hist_tensors.append(torch.from_numpy(hist.flatten()))  # (96,)
+            scene_stats = [
+                compute_scene_statistics(rgb)[field]
+                for field in config.SCENE_STAT_FIELDS
+            ]
+            scene_stat_tensors.append(torch.tensor(scene_stats, dtype=torch.float32))
 
         img_batch = torch.stack(img_tensors).to(self._device)   # [B, 3, H, W]
         hist_batch = torch.stack(hist_tensors).to(self._device)  # [B, 96]
+        scene_stats_batch = torch.stack(scene_stat_tensors).to(self._device)  # [B, 6]
 
         chunk = metadata_list[start:end]
 
@@ -259,6 +271,7 @@ class InferenceEngine:
             "camera_profile_id": torch.tensor(profile_ids, dtype=torch.long, device=self._device),
             "wb_preset_id":      torch.tensor(wb_preset_ids, dtype=torch.long, device=self._device),
             "histogram":         hist_batch,
+            "scene_stats":       scene_stats_batch,
             "as_shot_temperature": torch.tensor(as_shot_temps, dtype=torch.float32, device=self._device),
             "as_shot_tint":        torch.tensor(as_shot_tints, dtype=torch.float32, device=self._device),
         }

@@ -14,7 +14,7 @@ from PIL import Image
 from sklearn.model_selection import GroupShuffleSplit
 from tqdm import tqdm
 
-from sonna_editor.config import SLIDER_FIELDS, SUPPORTED_RAW_EXTENSIONS
+from sonna_editor.config import SCENE_STAT_FIELDS, SLIDER_FIELDS, SUPPORTED_RAW_EXTENSIONS
 from sonna_editor.data.extract import extract_all
 
 logger = logging.getLogger(__name__)
@@ -133,6 +133,10 @@ def _process_pair(args: tuple[Path, Path | None, str, Path]) -> dict | None:
         # Histogram as bytes blob
         "histogram": _histogram_to_bytes(data["histogram"]),
     }
+
+    scene_stats = data.get("scene_stats") or {}
+    for field in SCENE_STAT_FIELDS:
+        row[field] = scene_stats.get(field)
 
     # Slider values — 119 float columns
     sliders: dict = data.get("sliders") or {}

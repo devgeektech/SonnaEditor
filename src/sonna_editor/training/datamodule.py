@@ -13,6 +13,7 @@ import torch
 from torch.utils.data import DataLoader, Dataset, WeightedRandomSampler
 from torchvision.io import read_image
 
+from sonna_editor.config import SCENE_STAT_FIELDS
 from sonna_editor.model.architecture import EmbeddingRegistry
 from sonna_editor.model.augmentation import TrainingAugmentation, ValidationAugmentation
 from sonna_editor.runtime import supports_pinned_memory
@@ -45,6 +46,49 @@ def _decode_histogram(data: bytes) -> torch.Tensor:
     """Decode a numpy-serialised (3, 32) histogram to a 96-d float tensor."""
     arr = np.load(io.BytesIO(data)).astype(np.float32)  # (3, 32)
     return torch.from_numpy(arr.flatten())               # (96,)
+
+
+def _scene_stats_from_histogram(hist: torch.Tensor) -> torch.Tensor:
+    """Approximate scene stats from stored RGB histograms for old parquets."""
+    hist_3x32 = hist.reshape(3, 32).float()
+    brightness_hist = hist_3x32.mean(dim=0)
+    brightness_hist = brightness_hist / brightness_hist.sum().clamp(min=1e-8)
+    centers = (torch.arange(32, dtype=torch.float32) + 0.5) / 32.0
+    cdf = torch.cumsum(brightness_hist, dim=0)
+    mean = (brightness_hist * centers).sum()
+    median = centers[torch.searchsorted(cdf, torch.tensor(0.5)).clamp(max=31)]
+    var = (brightness_hist * (centers - mean).square()).sum()
+    p5 = centers[torch.searchsorted(cdf, torch.tensor(0.05)).clamp(max=31)]
+    p95 = centers[torch.searchsorted(cdf, torch.tensor(0.95)).clamp(max=31)]
+    shadow = brightness_hist[0]
+    highlight = brightness_hist[-1]
+    return torch.stack([
+        mean,
+        median,
+        var.clamp(min=0).sqrt(),
+        highlight,
+        shadow,
+        (p95 - p5).clamp(min=0, max=1),
+    ])
+
+
+def _scene_stats_from_row(row: pd.Series, hist: torch.Tensor) -> torch.Tensor:
+    values: list[float] = []
+    missing = False
+    for field in SCENE_STAT_FIELDS:
+        value = row.get(field)
+        try:
+            f = float(value)
+        except (TypeError, ValueError):
+            missing = True
+            break
+        if np.isnan(f):
+            missing = True
+            break
+        values.append(f)
+    if missing:
+        return _scene_stats_from_histogram(hist)
+    return torch.tensor(values, dtype=torch.float32)
 
 
 def build_registry(df: pd.DataFrame) -> EmbeddingRegistry:
@@ -172,6 +216,8 @@ class SonnaDataset(Dataset):
             except (TypeError, ValueError):
                 return float("nan")
 
+        hist = _decode_histogram(row["histogram"])
+
         metadata: dict[str, torch.Tensor] = {
             "iso":            torch.tensor(_safe_float(row.get("iso")),            dtype=torch.float32),
             "shutter_speed":  torch.tensor(_safe_float(row.get("shutter_speed")), dtype=torch.float32),
@@ -184,7 +230,8 @@ class SonnaDataset(Dataset):
             "lens_id":        torch.tensor(_cat_id(reg.lenses,          row.get("lens_model")),            dtype=torch.long),
             "camera_profile_id": torch.tensor(_cat_id(reg.camera_profiles, row.get("camera_profile")),    dtype=torch.long),
             "wb_preset_id":   torch.tensor(_cat_id(reg.wb_presets,      row.get("white_balance_preset")), dtype=torch.long),
-            "histogram":      _decode_histogram(row["histogram"]),
+            "histogram":      hist,
+            "scene_stats":    _scene_stats_from_row(row, hist),
             "as_shot_temperature": torch.tensor(_opt_float("as_shot_temperature"), dtype=torch.float32),
             "as_shot_tint":        torch.tensor(_opt_float("as_shot_tint"),        dtype=torch.float32),
             # Pass through the parquet's raw_path so the loss layer can log which

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import math
-from collections import defaultdict
 from typing import Any
 
 import pytorch_lightning as pl
@@ -11,11 +10,20 @@ import torch.optim as optim
 from sonna_editor.config import SLIDER_FIELDS
 from sonna_editor.model.architecture import SonnaEditor
 from sonna_editor.model.losses import WeightedSliderLoss
+from sonna_editor.slider_set import fields_for_version
 
 # Fields logged individually at validation time
 _KEY_FIELDS = ["Exposure2012", "Temperature", "Shadows2012", "Highlights2012",
                "Whites2012", "Blacks2012", "Clarity2012", "Vibrance", "Saturation"]
 _HSL_FIELDS = [f for f in SLIDER_FIELDS if "Adjustment" in f]  # 24 fields
+_DISTRIBUTION_FIELDS = [
+    "Exposure2012",
+    "Contrast2012",
+    "Highlights2012",
+    "Shadows2012",
+    "Temperature",
+    "Tint",
+]
 
 
 class SonnaLightningModule(pl.LightningModule):
@@ -51,6 +59,7 @@ class SonnaLightningModule(pl.LightningModule):
         # Per-batch direction-stat counts. Each entry: dict[field, (n_wrong, n_total)].
         # Consumed by OvercorrectionWarningCallback at validation_epoch_end.
         self._val_direction_outputs: list[dict[str, tuple[int, int]]] = []
+        self._val_distribution_outputs: list[dict[str, torch.Tensor]] = []
 
         self.save_hyperparameters(ignore=["model"])
 
@@ -85,6 +94,7 @@ class SonnaLightningModule(pl.LightningModule):
         batch_size = images.size(0)
         self.log("train_loss",             loss,                    on_step=True, on_epoch=True, prog_bar=True, batch_size=batch_size)
         self.log("train_loss_mse",         components["mse"],        on_step=False, on_epoch=True, batch_size=batch_size)
+        self.log("train_loss_exposure_scene", components["exposure_scene"], on_step=False, on_epoch=True, batch_size=batch_size)
         self.log("train_loss_spread",      components["spread"],     on_step=False, on_epoch=True, batch_size=batch_size)
         self.log("train_loss_temp_bucket", components["temp_bucket"], on_step=False, on_epoch=True, batch_size=batch_size)
         self.log("train_loss_tint_bucket", components["tint_bucket"], on_step=False, on_epoch=True, batch_size=batch_size)
@@ -103,6 +113,7 @@ class SonnaLightningModule(pl.LightningModule):
         loss = components["total"]
         self.log("val_loss",             loss,                    on_step=False, on_epoch=True, prog_bar=True, sync_dist=True, batch_size=batch_size)
         self.log("val_loss_mse",         components["mse"],        on_step=False, on_epoch=True, sync_dist=True, batch_size=batch_size)
+        self.log("val_loss_exposure_scene", components["exposure_scene"], on_step=False, on_epoch=True, sync_dist=True, batch_size=batch_size)
         self.log("val_loss_spread",      components["spread"],     on_step=False, on_epoch=True, sync_dist=True, batch_size=batch_size)
         self.log("val_loss_temp_bucket", components["temp_bucket"], on_step=False, on_epoch=True, sync_dist=True, batch_size=batch_size)
         self.log("val_loss_tint_bucket", components["tint_bucket"], on_step=False, on_epoch=True, sync_dist=True, batch_size=batch_size)
@@ -114,6 +125,10 @@ class SonnaLightningModule(pl.LightningModule):
         # Per-field direction stats — fed to OvercorrectionWarningCallback.
         dir_stats = self.loss_fn.direction_stats(predictions, targets, metadata)
         self._val_direction_outputs.append(dir_stats)
+        self._val_distribution_outputs.append({
+            "predictions": predictions.detach().cpu(),
+            "targets": targets.detach().cpu(),
+        })
 
     def test_step(
         self,
@@ -136,9 +151,11 @@ class SonnaLightningModule(pl.LightningModule):
     def on_validation_epoch_start(self) -> None:
         self._val_mae_outputs.clear()
         self._val_direction_outputs.clear()
+        self._val_distribution_outputs.clear()
 
     def on_validation_epoch_end(self) -> None:
         self._log_aggregated_mae(self._val_mae_outputs, prefix="val")
+        self._log_distribution_stats()
 
     def on_test_epoch_start(self) -> None:
         self._test_mae_outputs.clear()
@@ -167,6 +184,40 @@ class SonnaLightningModule(pl.LightningModule):
         hsl_vals = [field_means[f] for f in _HSL_FIELDS if not math.isnan(field_means.get(f, math.nan))]
         if hsl_vals:
             self.log(f"{prefix}_mae_hsl_avg", sum(hsl_vals) / len(hsl_vals), prog_bar=(prefix == "val"))
+
+    def _log_distribution_stats(self) -> None:
+        if not self._val_distribution_outputs:
+            return
+        predictions = torch.cat(
+            [d["predictions"] for d in self._val_distribution_outputs],
+            dim=0,
+        )
+        targets = torch.cat(
+            [d["targets"] for d in self._val_distribution_outputs],
+            dim=0,
+        )
+        fields = fields_for_version(self.model._slider_set_version)
+        for field in _DISTRIBUTION_FIELDS:
+            if field not in fields:
+                continue
+            idx = fields.index(field)
+            pred = predictions[:, idx].float()
+            target = targets[:, idx].float()
+            mask = ~torch.isnan(target)
+            if field == "Temperature":
+                pred = torch.exp(pred)
+                mask &= target > 0
+            if int(mask.sum().item()) < 2:
+                continue
+            pred_valid = pred[mask]
+            target_valid = target[mask]
+            pred_std = torch.std(pred_valid, unbiased=False)
+            target_std = torch.std(target_valid, unbiased=False)
+            ratio = pred_std / target_std.clamp(min=1e-8)
+            safe_name = field.replace("2012", "").lower()
+            self.log(f"val_dist_{safe_name}_pred_std", float(pred_std), prog_bar=False)
+            self.log(f"val_dist_{safe_name}_target_std", float(target_std), prog_bar=False)
+            self.log(f"val_dist_{safe_name}_std_ratio", float(ratio), prog_bar=False)
 
     # ------------------------------------------------------------------
     # Optimiser + scheduler

@@ -14,7 +14,7 @@ from pathlib import Path
 import pandas as pd
 from tqdm import tqdm
 
-from sonna_editor.config import SLIDER_FIELDS
+from sonna_editor.config import SCENE_STAT_FIELDS, SLIDER_FIELDS
 from sonna_editor.data.catalog import (
     DevelopSettingsParseError,
     connect_catalog,
@@ -26,10 +26,13 @@ from sonna_editor.data.dataset import (
     _derive_shoot_id,
     _file_id,
     _histogram_to_bytes,
-    save_split,
-    split_dataset,
 )
-from sonna_editor.data.extract import compute_histogram, extract_metadata, extract_preview
+from sonna_editor.data.extract import (
+    compute_histogram,
+    compute_scene_statistics,
+    extract_metadata,
+    extract_preview,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -75,6 +78,7 @@ def _process_catalog_row(args: tuple) -> dict | None:
         preview = extract_preview(raw_path)
         metadata = extract_metadata(raw_path)
         histogram = compute_histogram(preview)
+        scene_stats = compute_scene_statistics(preview)
 
         file_id = _file_id(raw_path)
         thumb_path = thumbnail_dir / f"{file_id}.jpg"
@@ -123,6 +127,9 @@ def _process_catalog_row(args: tuple) -> dict | None:
             "as_shot_tint": as_shot_tint,
             "histogram": _histogram_to_bytes(histogram),
         }
+
+        for field in SCENE_STAT_FIELDS:
+            row[field] = scene_stats.get(field)
 
         for field in SLIDER_FIELDS:
             row[field] = sliders.get(field)

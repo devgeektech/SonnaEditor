@@ -7,7 +7,7 @@ Usage:
     uv run python scripts/build_mode_b_checkpoint.py \\
         --preset path/to/preset.xmp \\
         --survey path/to/survey.json \\
-        --base-ckpt v1_learning/model-v1.2.3-prod256.ckpt \\
+        --base-ckpt v1_learning/model-v2.0.0.ckpt \\
         --profile-name "Mode B - Wedding Lite" \\
         [--profile-id custom-slug]
 
@@ -50,7 +50,7 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--survey", type=Path, required=True,
                         help="Style-survey JSON from Step 1")
     parser.add_argument("--base-ckpt", type=Path, required=True,
-                        help="Base SonnaEditor checkpoint (v1.2.3 recommended)")
+                        help="Base SonnaEditor checkpoint")
     parser.add_argument("--output", type=Path, default=None,
                         help=(
                             "Path for the new Mode B checkpoint. If omitted, "

@@ -24,9 +24,9 @@ from typing import Callable
 
 warnings.filterwarnings(
     "ignore",
-    message=r".*isinstance\\(treespec, LeafSpec\\) is deprecated.*",
-    category=DeprecationWarning,
+    message=r".*isinstance\(treespec, LeafSpec\).*is deprecated.*",
 )
+logging.getLogger("torch.utils.flop_counter").setLevel(logging.ERROR)
 
 import pytorch_lightning as pl
 import torch
@@ -70,11 +70,11 @@ def _parse_args() -> argparse.Namespace:
                    help="Disable fresh-model output bias initialisation from train target medians.")
     p.add_argument("--image-resolution", type=int, default=512,
                    help="Model input resolution for training (default: 512)")
-    p.add_argument("--temperature-weight", type=float, default=6.0,
+    p.add_argument("--temperature-weight", type=float, default=4.0,
                    help="Override the per-slider loss weight for Temperature")
-    p.add_argument("--tint-weight", type=float, default=6.0,
+    p.add_argument("--tint-weight", type=float, default=4.0,
                    help="Override the per-slider loss weight for Tint")
-    p.add_argument("--exposure-weight", type=float, default=4.0,
+    p.add_argument("--exposure-weight", type=float, default=5.0,
                    help="Override the per-slider loss weight for Exposure2012")
     p.add_argument("--temperature-bucket-loss-weight", type=float, default=0.15,
                    help="Override TEMPERATURE_BUCKET_LOSS_WEIGHT")
@@ -82,6 +82,8 @@ def _parse_args() -> argparse.Namespace:
                    help="Override TINT_BUCKET_LOSS_WEIGHT")
     p.add_argument("--spread-loss-weight", type=float, default=None,
                    help="Override SPREAD_LOSS_WEIGHT")
+    p.add_argument("--exposure-scene-loss-weight", type=float, default=4.0,
+                   help="Override EXPOSURE_SCENE_LOSS_WEIGHT")
     p.add_argument("--sign-wrong-penalty-weight", type=float, default=0.2,
                    help="Override SIGN_WRONG_PENALTY_WEIGHT")
     p.add_argument("--profile-name", default=None,
@@ -177,6 +179,14 @@ def _apply_training_overrides(args: argparse.Namespace) -> None:
         fmt="%0.2f",
     )
     apply_value(
+        flag="--exposure-scene-loss-weight",
+        label="EXPOSURE_SCENE_LOSS_WEIGHT",
+        current=config.EXPOSURE_SCENE_LOSS_WEIGHT,
+        value=args.exposure_scene_loss_weight,
+        setter=lambda v: setattr(config, "EXPOSURE_SCENE_LOSS_WEIGHT", float(v)),
+        fmt="%0.2f",
+    )
+    apply_value(
         flag="--sign-wrong-penalty-weight",
         label="SIGN_WRONG_PENALTY_WEIGHT",
         current=config.SIGN_WRONG_PENALTY_WEIGHT,
@@ -242,6 +252,7 @@ def _profile_sidecar_payload(
     display_name: str,
     profile_id: str,
     slider_set_version: str,
+    arch_version: int,
     use_wb_metadata_skip: bool,
     train_rows: int,
     val_loss: float,
@@ -255,6 +266,7 @@ def _profile_sidecar_payload(
         "resolution": config.IMAGE_RESOLUTION,
         "image_resolution": config.IMAGE_RESOLUTION,
         "slider_set_version": slider_set_version,
+        "arch_version": arch_version,
         "use_wb_metadata_skip": use_wb_metadata_skip,
         "default_skip_fields": [],
         "train_rows": train_rows,
@@ -294,6 +306,13 @@ def _training_target_priors(train_parquet: Path, slider_set_version: str) -> dic
     return priors
 
 
+def _trainer_log_every_n_steps(num_train_batches: int, preferred: int = 10) -> int:
+    """Pick a Lightning log interval that stays valid on tiny datasets."""
+    if num_train_batches <= 0:
+        return 1
+    return max(1, min(preferred, num_train_batches))
+
+
 def _publish_profile_checkpoint(
     *,
     source_ckpt: Path,
@@ -301,6 +320,7 @@ def _publish_profile_checkpoint(
     publish_version: str | None,
     display_name: str,
     slider_set_version: str,
+    arch_version: int,
     use_wb_metadata_skip: bool,
     train_rows: int,
     val_loss: float,
@@ -327,6 +347,7 @@ def _publish_profile_checkpoint(
             display_name=display_name,
             profile_id=profile_id,
             slider_set_version=slider_set_version,
+            arch_version=arch_version,
             use_wb_metadata_skip=use_wb_metadata_skip,
             train_rows=train_rows,
             val_loss=val_loss,
@@ -363,11 +384,19 @@ def main() -> None:
         "Dataset: train=%d  val=%d  test=%d",
         len(dm._train_ds), len(dm._val_ds), len(dm._test_ds),
     )
+    num_train_batches = len(dm.train_dataloader())
+    log_every_n_steps = _trainer_log_every_n_steps(num_train_batches)
+    if log_every_n_steps < 10:
+        log.info(
+            "Small training split: %d train batches; using log_every_n_steps=%d",
+            num_train_batches,
+            log_every_n_steps,
+        )
     reg = dm.registry
     log.info(
-        "Registry: %d bodies  %d lenses  %d profiles  %d WB presets",
-        len(reg.camera_bodies), len(reg.lenses),
-        len(reg.camera_profiles), len(reg.wb_presets),
+        "Registry: %d bodies  %d makes  %d models  %d lenses  %d profiles  %d WB presets",
+        len(reg.camera_bodies), len(reg.camera_makes), len(reg.camera_models),
+        len(reg.lenses), len(reg.camera_profiles), len(reg.wb_presets),
     )
 
     # -----------------------------------------------------------------------
@@ -446,7 +475,7 @@ def main() -> None:
         max_epochs=args.max_epochs,
         callbacks=callbacks,
         logger=tb_logger,
-        log_every_n_steps=10,
+        log_every_n_steps=log_every_n_steps,
         enable_progress_bar=True,
     )
 
@@ -487,6 +516,7 @@ def main() -> None:
             display_name=display_name,
             profile_id=_slugify(display_name),
             slider_set_version=lightning_module.model._slider_set_version,
+            arch_version=lightning_module.model._arch_version,
             use_wb_metadata_skip=lightning_module.model._use_wb_metadata_skip,
             train_rows=len(dm._train_ds),
             val_loss=best_val_loss,
@@ -502,6 +532,7 @@ def main() -> None:
             publish_version=args.publish_version,
             display_name=display_name,
             slider_set_version=lightning_module.model._slider_set_version,
+            arch_version=lightning_module.model._arch_version,
             use_wb_metadata_skip=lightning_module.model._use_wb_metadata_skip,
             train_rows=len(dm._train_ds),
             val_loss=best_val_loss,
@@ -517,6 +548,7 @@ def main() -> None:
         "test_results": test_results[0] if test_results else {},
         "epochs_trained": trainer.current_epoch,
         "hparams": {
+            "arch_version": lightning_module.model._arch_version,
             "lr": args.lr,
             "weight_decay": args.weight_decay,
             "batch_size": args.batch_size,
@@ -531,6 +563,7 @@ def main() -> None:
             "temperature_bucket_loss_weight": args.temperature_bucket_loss_weight,
             "tint_bucket_loss_weight": args.tint_bucket_loss_weight,
             "spread_loss_weight": args.spread_loss_weight,
+            "exposure_scene_loss_weight": args.exposure_scene_loss_weight,
             "sign_wrong_penalty_weight": args.sign_wrong_penalty_weight,
         },
     }

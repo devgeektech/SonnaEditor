@@ -73,13 +73,13 @@ def test_weight_tensor_shape() -> None:
 
 
 def test_tuned_weight_tensor() -> None:
-    """v1.1.0-c3k-tuned weights: Temperature/Tint baseline retained, ToneCurveBlue
-    reduced (audit overshoot), HSL Hue bumped 1.5×, BlueHue/GreenHue bumped 1.5×,
-    Whites2012 bumped from 1.0 default. Direction-at-chance fields untouched."""
+    """Current visual-priority weights are reflected in the loss tensor."""
     w = _build_weight_tensor("v2")
-    # Baseline retained
-    assert w[SLIDER_FIELDS.index("Temperature")].item() == 3.0
+    assert w[SLIDER_FIELDS.index("Exposure2012")].item() == 5.0
+    assert w[SLIDER_FIELDS.index("Temperature")].item() == 4.0
     assert w[SLIDER_FIELDS.index("Tint")].item() == 4.0
+    assert w[SLIDER_FIELDS.index("Whites2012")].item() == 2.0
+    assert w[SLIDER_FIELDS.index("Saturation")].item() == 2.0
     assert w[SLIDER_FIELDS.index("ToneCurve_Pt3_Y")].item() == 3.0
     assert w[SLIDER_FIELDS.index("ToneCurveRed_Pt3_Y")].item() == 3.0
     assert w[SLIDER_FIELDS.index("RedHue")].item() == 2.0
@@ -89,15 +89,11 @@ def test_tuned_weight_tensor() -> None:
     assert w[SLIDER_FIELDS.index("HueAdjustmentRed")].item() == 2.25
     assert w[SLIDER_FIELDS.index("BlueHue")].item() == 3.0
     assert w[SLIDER_FIELDS.index("GreenHue")].item() == 3.0
-    assert w[SLIDER_FIELDS.index("Whites2012")].item() == 1.5
     assert w[SLIDER_FIELDS.index("ToneCurveRed_Pt2_Y")].item() == 4.5
     # Direction-at-chance fields explicitly NOT bumped
-    assert w[SLIDER_FIELDS.index("Saturation")].item() == 1.0
     assert w[SLIDER_FIELDS.index("SaturationAdjustmentRed")].item() == 1.5  # HSL default
     assert w[SLIDER_FIELDS.index("ToneCurve_Pt4_Y")].item() == 3.0  # curve default
     assert w[SLIDER_FIELDS.index("GrainFrequency")].item() == 1.0
-    # Untouched non-flagged field
-    assert w[SLIDER_FIELDS.index("Exposure2012")].item() == 1.0
 
 
 # ---------------------------------------------------------------------------

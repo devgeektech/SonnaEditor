@@ -73,6 +73,9 @@ class MetadataEncoder(nn.Module):
         + make(4) + model(12) + lens(8) + profile(8) + wb(8) + hist(32)
         + as_shot_temp(8) + as_shot_tint(8)                   =  128
 
+    arch_version = 2  (v2.1 — scene-stat quality pass)
+        v1.1.0 inputs + preview luminance scene_stats(16)       =  144
+
     The fusion MLP first layer matches the concat dim. v1.0.x camera_body is
     replaced by separate make + model embeddings in v1.1.0 (total dim
     unchanged: 16 → 4 + 12).
@@ -80,6 +83,7 @@ class MetadataEncoder(nn.Module):
 
     _CONCAT_DIM_V1_0: int = 112
     _CONCAT_DIM_V1_1: int = 128
+    _CONCAT_DIM_V2_1: int = 144
 
     def __init__(
         self,
@@ -93,7 +97,7 @@ class MetadataEncoder(nn.Module):
     ) -> None:
         super().__init__()
 
-        if arch_version not in (0, 1):
+        if arch_version not in (0, 1, 2):
             raise ValueError(f"unknown arch_version={arch_version}")
         self._arch_version = arch_version
 
@@ -134,7 +138,18 @@ class MetadataEncoder(nn.Module):
             self.as_shot_temp_fc = nn.Linear(1, 8)
             self.as_shot_tint_fc = nn.Linear(1, 8)
 
-        concat_dim = self._CONCAT_DIM_V1_1 if arch_version >= 1 else self._CONCAT_DIM_V1_0
+        if arch_version >= 2:
+            self.scene_stats_mlp = nn.Sequential(
+                nn.Linear(6, 16),
+                nn.GELU(),
+            )
+
+        if arch_version >= 2:
+            concat_dim = self._CONCAT_DIM_V2_1
+        elif arch_version >= 1:
+            concat_dim = self._CONCAT_DIM_V1_1
+        else:
+            concat_dim = self._CONCAT_DIM_V1_0
         self.fusion_mlp = nn.Sequential(
             nn.Linear(concat_dim, 128),
             nn.GELU(),
@@ -206,7 +221,22 @@ class MetadataEncoder(nn.Module):
             ).clamp(min=-100.0, max=100.0).unsqueeze(-1)
             parts.append(self.as_shot_tint_fc(atn))
 
-        concat = torch.cat(parts, dim=-1)  # [B, 112] (v1.0.x) or [B, 128] (v1.1.0)
+        if self._arch_version >= 2:
+            raw_scene_stats = metadata.get("scene_stats")
+            if raw_scene_stats is None:
+                batch = iso_f.shape[0]
+                raw_scene_stats = torch.zeros(
+                    batch,
+                    6,
+                    dtype=iso_f.dtype,
+                    device=iso_f.device,
+                )
+            scene_stats = torch.nan_to_num(
+                raw_scene_stats.float(), nan=0.0, posinf=1.0, neginf=0.0
+            ).clamp(min=0.0, max=1.0)
+            parts.append(self.scene_stats_mlp(scene_stats))
+
+        concat = torch.cat(parts, dim=-1)
         # NaN-proofing: assert no non-finite values flowed into the fusion MLP.
         # Cheap (one reduction op per batch) and gives a clear failure point if
         # any future input path skips a clamp.
@@ -294,7 +324,7 @@ class SonnaEditor(nn.Module):
         freeze_backbone: bool = False,
         _embedding_sizes: Optional[dict[str, int]] = None,
         _pretrained_backbone: bool = True,
-        arch_version: int = 1,
+        arch_version: int = 2,
         slider_set_version: str = "v2",
         use_wb_metadata_skip: bool = True,
     ) -> None:
@@ -303,7 +333,9 @@ class SonnaEditor(nn.Module):
         # arch_version selects the metadata-encoder layout:
         #   0 = v1.0.x legacy (combined camera_body, one-hot focal, raw aperture)
         #   1 = v1.1.0       (separate make+model, log focal, log aperture, AsShot)
-        if arch_version not in (0, 1):
+        #   2 = v2.1         (v1.1.0 + luminance scene statistics)
+        #   2 = v2.1         (v1.1.0 + luminance scene statistics)
+        if arch_version not in (0, 1, 2):
             raise ValueError(f"unknown arch_version={arch_version}")
         self._arch_version = arch_version
 
@@ -652,9 +684,12 @@ class SonnaEditor(nn.Module):
         # shape detection so v1.0.x ckpts continue to load unchanged.
         arch_version = arch_config.get("arch_version")
         if arch_version is None:
-            arch_version = 1 if (
-                "metadata_encoder.make_emb.weight" in state
-            ) else 0
+            if "metadata_encoder.scene_stats_mlp.0.weight" in state:
+                arch_version = 2
+            elif "metadata_encoder.make_emb.weight" in state:
+                arch_version = 1
+            else:
+                arch_version = 0
 
         # slider_set_version: canonical field added in v2 prep. Pre-v2 ckpts
         # (including v1.2.3) don't have it — infer from num_sliders, falling

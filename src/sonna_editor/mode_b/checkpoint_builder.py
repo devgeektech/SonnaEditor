@@ -37,13 +37,12 @@ to a Mode A checkpoint and is ready for Phase 5 fine-tuning. A sidecar
 JSON marks ``profile_type: "mode_b_initial"`` for Step 3 (inference path)
 to identify.
 
-Targets v1 slider set (135 outputs) since the production base checkpoint
-is v1.2.3. v2 (147) is not addressed here; once a v2 backbone exists, the
-converter generalises by extending HEAD_SLICES with the five extension
-heads.
+Targets the base checkpoint's native slider set. v1 bases produce 135-output
+Lite checkpoints; v2 bases produce 147-output Lite checkpoints and preserve
+the v2 extension heads instead of down-converting them.
 
 Public surface:
-- HEAD_SLICES: head attr name -> (start, end) in the 135-vector.
+- HEAD_SLICES_BY_VERSION: slider_set_version -> head slices in output order.
 - PROFILE_TYPE: sidecar JSON marker constant.
 - INHERITED_SKIP_FIELDS: default_skip_fields inherited from v1.2.3.
 - compute_bias_vector(): preset + survey -> {slider_field: pred_space_DELTA}.
@@ -66,11 +65,10 @@ from sonna_editor import config
 from sonna_editor.data.xmp import LR_DEFAULTS, read_xmp
 from sonna_editor.mode_b.survey import QUESTION_SLIDER_MAP, load_survey
 from sonna_editor.model.architecture import SonnaEditor
+from sonna_editor.slider_set import V1_OUTPUT_COUNT, V2_OUTPUT_COUNT, fields_for_version
 
 
 PROFILE_TYPE: Final[str] = "mode_b_initial"
-SLIDER_SET_VERSION: Final[str] = "v1"
-V1_OUTPUT_COUNT: Final[int] = 135
 
 # default_skip_fields inherited from v1.2.3 production profile
 # (v1_learning/model-v1.2.3-prod256.json). Mode B initial checkpoints adopt
@@ -82,10 +80,9 @@ INHERITED_SKIP_FIELDS: Final[list[str]] = [
     "Tint",
 ]
 
-# Maps each v1 output head's attribute name to its (start, end) slice in the
-# 135-element prediction vector. Order matches architecture.SonnaEditor.forward.
-# Single source of truth — used by both apply_biases_to_model and verification.
-HEAD_SLICES: Final[list[tuple[str, int, int]]] = [
+# Maps output head attribute names to their (start, end) slices. Order matches
+# architecture.SonnaEditor.forward.
+_V1_HEAD_SLICES: Final[list[tuple[str, int, int]]] = [
     ("tone_head",           0,   8),
     ("presence_head",       8,  11),
     ("wb_head",            11,  13),  # [0]=log_temperature, [1]=tint
@@ -100,23 +97,44 @@ HEAD_SLICES: Final[list[tuple[str, int, int]]] = [
     ("transform_head",     82,  87),
     ("tone_curve_head",    87, 135),
 ]
+_V2_EXTENSION_HEAD_SLICES: Final[list[tuple[str, int, int]]] = [
+    ("noise_ext_head",       135, 137),
+    ("defringe_head",        137, 143),
+    ("lens_profile_head",    143, 145),
+    ("calibration_ext_head", 145, 146),
+    ("curve_ext_head",       146, 147),
+]
+HEAD_SLICES_BY_VERSION: Final[dict[str, list[tuple[str, int, int]]]] = {
+    "v1": _V1_HEAD_SLICES,
+    "v2": _V1_HEAD_SLICES + _V2_EXTENSION_HEAD_SLICES,
+}
+# Backward-compatible alias for v1 tests and scripts that inspect the old
+# public constant directly.
+HEAD_SLICES: Final[list[tuple[str, int, int]]] = _V1_HEAD_SLICES
 
-# Sanity at import time. If the v1 head sequence ever changes, the slices
-# above must be updated in lockstep — fail loudly rather than silently
-# misroute biases.
-_total_head_outputs = sum(end - start for _, start, end in HEAD_SLICES)
-assert _total_head_outputs == V1_OUTPUT_COUNT, (
-    f"HEAD_SLICES total {_total_head_outputs} != v1 output count {V1_OUTPUT_COUNT}"
-)
-for _i, (_, _s, _e) in enumerate(HEAD_SLICES):
-    if _i == 0:
-        assert _s == 0, "first head must start at 0"
-    else:
-        prev_end = HEAD_SLICES[_i - 1][2]
-        assert _s == prev_end, (
-            f"head slice {_i} ({HEAD_SLICES[_i][0]}) starts at {_s}, "
-            f"expected {prev_end} for contiguous coverage"
+def _validate_head_slices(
+    slider_set_version: str,
+    slices: list[tuple[str, int, int]],
+) -> None:
+    expected_count = V2_OUTPUT_COUNT if slider_set_version == "v2" else V1_OUTPUT_COUNT
+    total_head_outputs = sum(end - start for _, start, end in slices)
+    assert total_head_outputs == expected_count, (
+        f"{slider_set_version} head slices total {total_head_outputs} "
+        f"!= output count {expected_count}"
+    )
+    for i, (_, start, end) in enumerate(slices):
+        if i == 0:
+            assert start == 0, "first head must start at 0"
+            continue
+        prev_end = slices[i - 1][2]
+        assert start == prev_end, (
+            f"{slider_set_version} head slice {i} ({slices[i][0]}) starts "
+            f"at {start}, expected {prev_end} for contiguous coverage"
         )
+
+
+for _version, _slices in HEAD_SLICES_BY_VERSION.items():
+    _validate_head_slices(_version, _slices)
 
 
 # ---------------------------------------------------------------------------
@@ -159,15 +177,17 @@ def _preset_value(preset: dict, field: str) -> float:
 def compute_bias_vector(
     preset: dict,
     survey: dict,
+    *,
+    slider_set_version: str = "v1",
 ) -> dict[str, float]:
-    """Build the 135-entry bias-DELTA vector in prediction space.
+    """Build the bias-DELTA vector in prediction space.
 
     Returns the shift to ADD to each head's inherited bias — NOT the
     absolute target value. ``apply_biases_to_model`` is the consumer; it
     calls ``final_linear.bias.add_(...)`` so the output becomes
     ``y = W_inherited · x + (b_base + delta)`` per slider.
 
-    For each slider in the v1 slider set:
+    For each slider in the requested slider set:
     1. Pick the preset value (or LR_DEFAULTS if absent).
     2. Add the survey offset if this slider is survey-addressable.
        Survey offsets live in human units (Kelvin for Temperature, raw
@@ -188,9 +208,9 @@ def compute_bias_vector(
 
     survey_offsets = _extract_survey_offsets(survey)
 
-    v1_fields = config.SLIDER_FIELDS[:V1_OUTPUT_COUNT]
+    fields = fields_for_version(slider_set_version)
     deltas: dict[str, float] = {}
-    for field in v1_fields:
+    for field in fields:
         target = _preset_value(preset, field)
         if field in survey_offsets:
             target = target + survey_offsets[field]
@@ -209,8 +229,9 @@ def compute_bias_vector(
         else:
             deltas[field] = target_clamped - default_clamped
 
-    assert len(deltas) == V1_OUTPUT_COUNT, (
-        f"Delta vector length {len(deltas)} != {V1_OUTPUT_COUNT}"
+    assert len(deltas) == len(fields), (
+        f"Delta vector length {len(deltas)} != {len(fields)} "
+        f"for slider_set_version={slider_set_version!r}"
     )
     return deltas
 
@@ -223,7 +244,7 @@ def apply_biases_to_model(
     model: SonnaEditor,
     bias_vector: dict[str, float],
 ) -> None:
-    """Add the per-slider calibration delta to each v1 head's final bias.
+    """Add the per-slider calibration delta to each output head's final bias.
 
     ``bias_vector`` is a delta vector (the return of compute_bias_vector
     after the 2026-05 fix). Mutates ``model`` in place. After this call,
@@ -236,21 +257,16 @@ def apply_biases_to_model(
     v1.2.x exactly. This is the property that makes Lite calibration
     additive rather than destructive.
     """
-    if model._slider_set_version != SLIDER_SET_VERSION:
-        raise ValueError(
-            f"apply_biases_to_model requires a v1 model "
-            f"(slider_set_version={SLIDER_SET_VERSION!r}); got "
-            f"{model._slider_set_version!r}"
-        )
-
-    v1_fields = config.SLIDER_FIELDS[:V1_OUTPUT_COUNT]
-    missing = [f for f in v1_fields if f not in bias_vector]
+    slider_set_version = model._slider_set_version
+    fields = fields_for_version(slider_set_version)
+    missing = [f for f in fields if f not in bias_vector]
     if missing:
         raise ValueError(
-            f"bias_vector missing {len(missing)} v1 sliders: {missing[:5]}..."
+            f"bias_vector missing {len(missing)} {slider_set_version} sliders: "
+            f"{missing[:5]}..."
         )
 
-    for head_name, start, end in HEAD_SLICES:
+    for head_name, start, end in HEAD_SLICES_BY_VERSION[slider_set_version]:
         head = getattr(model, head_name)
         final_linear = head[-1]
         if not isinstance(final_linear, torch.nn.Linear):
@@ -265,7 +281,7 @@ def apply_biases_to_model(
                 f"!= slice width {head_dim}"
             )
 
-        deltas = [bias_vector[v1_fields[i]] for i in range(start, end)]
+        deltas = [bias_vector[fields[i]] for i in range(start, end)]
         with torch.no_grad():
             final_linear.bias.add_(
                 torch.tensor(deltas, dtype=final_linear.bias.dtype)
@@ -292,6 +308,7 @@ def _neutral_metadata_for(model: SonnaEditor) -> dict[str, torch.Tensor]:
         "camera_profile_id": torch.tensor([0], dtype=torch.long),
         "wb_preset_id":      torch.tensor([0], dtype=torch.long),
         "histogram":         torch.zeros(1, 96),
+        "scene_stats":       torch.zeros(1, 6),
     }
     if model._arch_version == 0:
         common["camera_body_id"] = torch.tensor([0], dtype=torch.long)
@@ -321,17 +338,20 @@ def verify_checkpoint(
 
     Raises RuntimeError with a descriptive message on first mismatch.
     """
-    new_model = SonnaEditor.from_checkpoint(
-        ckpt_path, target_slider_set_version=SLIDER_SET_VERSION
-    )
-    base_model = SonnaEditor.from_checkpoint(
-        base_ckpt_path, target_slider_set_version=SLIDER_SET_VERSION
-    )
+    new_model = SonnaEditor.from_checkpoint(ckpt_path)
+    base_model = SonnaEditor.from_checkpoint(base_ckpt_path)
+    if new_model._slider_set_version != base_model._slider_set_version:
+        raise RuntimeError(
+            "Verification failed: Mode B checkpoint changed slider_set_version "
+            f"from {base_model._slider_set_version!r} to "
+            f"{new_model._slider_set_version!r}."
+        )
     new_model.eval()
     base_model.eval()
 
-    v1_fields = config.SLIDER_FIELDS[:V1_OUTPUT_COUNT]
-    for head_name, start, end in HEAD_SLICES:
+    slider_set_version = new_model._slider_set_version
+    fields = fields_for_version(slider_set_version)
+    for head_name, start, end in HEAD_SLICES_BY_VERSION[slider_set_version]:
         new_lin = getattr(new_model, head_name)[-1]
         base_lin = getattr(base_model, head_name)[-1]
 
@@ -344,7 +364,7 @@ def verify_checkpoint(
             )
 
         for i in range(start, end):
-            field = v1_fields[i]
+            field = fields[i]
             base_b = float(base_lin.bias[i - start].item())
             delta = bias_vector[field]
             expected = base_b + delta
@@ -404,7 +424,7 @@ def build_mode_b_checkpoint(
     1. Validate inputs exist.
     2. Parse the preset XMP (read_xmp); if all fields come back None, raise.
     3. Load the survey JSON.
-    4. Load the base checkpoint as a v1 SonnaEditor.
+    4. Load the base checkpoint as its native slider-set SonnaEditor.
     5. Compute bias vector and apply to the model in place.
     6. Save the new checkpoint to output_ckpt_path (does NOT touch base ckpt).
     7. Write the sidecar JSON next to the checkpoint.
@@ -450,15 +470,24 @@ def build_mode_b_checkpoint(
         base_ckpt_path, map_location="cpu", weights_only=False
     )
     _base_arch_cfg = _base_ckpt_blob.get("arch_config") or {}
+    base_slider_set_version = str(
+        _base_arch_cfg.get("slider_set_version")
+        or ("v2" if int(_base_arch_cfg.get("num_sliders", V1_OUTPUT_COUNT)) >= V2_OUTPUT_COUNT else "v1")
+    )
+    fields_for_version(base_slider_set_version)
     base_resolution: int = int(
         _base_arch_cfg.get("image_resolution") or config.IMAGE_RESOLUTION
     )
 
-    model = SonnaEditor.from_checkpoint(
-        base_ckpt_path, target_slider_set_version=SLIDER_SET_VERSION
-    )
+    # Keep the Lite checkpoint on the same slider set as the active base; forcing
+    # v1 here would discard v2 extension-head weights.
+    model = SonnaEditor.from_checkpoint(base_ckpt_path)
 
-    bias_vector = compute_bias_vector(preset, survey)
+    bias_vector = compute_bias_vector(
+        preset,
+        survey,
+        slider_set_version=base_slider_set_version,
+    )
     apply_biases_to_model(model, bias_vector)
 
     model.save_checkpoint(output_ckpt_path)
@@ -489,7 +518,7 @@ def build_mode_b_checkpoint(
         "source_survey": str(survey_path),
         "survey_version": survey.get("version"),
         "default_skip_fields": effective_skip_fields,
-        "slider_set_version": SLIDER_SET_VERSION,
+        "slider_set_version": model._slider_set_version,
         "arch_version": model._arch_version,
         "date_iso": _dt.datetime.now(_dt.timezone.utc).replace(
             microsecond=0

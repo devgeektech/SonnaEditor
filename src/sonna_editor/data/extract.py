@@ -10,7 +10,7 @@ from PIL import Image
 from PIL.ExifTags import TAGS
 from lxml import etree
 
-from sonna_editor.config import IMAGE_RESOLUTION, SLIDER_FIELDS
+from sonna_editor.config import IMAGE_RESOLUTION, SCENE_STAT_FIELDS, SLIDER_FIELDS
 from sonna_editor.data.xmp import compute_as_shot_wb, read_xmp
 
 # -----------------------------------------------------------------------
@@ -301,6 +301,32 @@ def compute_histogram(image: Image.Image, bins: int = 32) -> np.ndarray:
     return hist
 
 
+def compute_scene_statistics(image: Image.Image) -> dict[str, float]:
+    """Return luminance statistics in stable 0-1 units.
+
+    These features are intentionally simple and preview-derived. They give the
+    regression heads direct access to exposure-relevant information such as
+    clipping and dynamic range without requiring a full RAW decode.
+    """
+    rgb = np.asarray(image.convert("RGB"), dtype=np.float32) / 255.0
+    luminance = (
+        0.2126 * rgb[..., 0]
+        + 0.7152 * rgb[..., 1]
+        + 0.0722 * rgb[..., 2]
+    )
+    p5 = float(np.percentile(luminance, 5))
+    p95 = float(np.percentile(luminance, 95))
+    stats = {
+        "mean_luminance": float(luminance.mean()),
+        "median_luminance": float(np.median(luminance)),
+        "luminance_std": float(luminance.std()),
+        "highlight_clip_pct": float((luminance >= 0.98).mean()),
+        "shadow_clip_pct": float((luminance <= 0.02).mean()),
+        "dynamic_range": max(0.0, min(1.0, p95 - p5)),
+    }
+    return {field: stats[field] for field in SCENE_STAT_FIELDS}
+
+
 def extract_all(raw_path: Path, xmp_path: Path | None = None) -> dict:
     """Combine preview, metadata, histogram, and XMP slider values into one dict.
 
@@ -315,6 +341,7 @@ def extract_all(raw_path: Path, xmp_path: Path | None = None) -> dict:
     preview = extract_preview(raw_path)
     metadata = extract_metadata(raw_path)
     histogram = compute_histogram(preview)
+    scene_stats = compute_scene_statistics(preview)
 
     sliders: dict = {field: None for field in SLIDER_FIELDS}
     if xmp_path is not None:
@@ -325,6 +352,7 @@ def extract_all(raw_path: Path, xmp_path: Path | None = None) -> dict:
         "xmp_path": str(xmp_path) if xmp_path else None,
         "preview": preview,
         "histogram": histogram,
+        "scene_stats": scene_stats,
         **metadata,
         "sliders": sliders,
     }

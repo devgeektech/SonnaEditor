@@ -11,9 +11,12 @@ This is the practical runbook for preparing a dataset, training a model, and mak
 - Current stratified splits: train=132, val=27, test=30.
 - Split generation is shoot-grouped and now balances Temperature correction, Exposure2012, and Tint correction. The previous local split had train Exposure mean ~0.212 versus val/test ~0.480/~0.504, which could make brightness look poor even when training loss improved.
 - `v1_learning\model-v2.0.0.ckpt` and `v1_learning\model-v2.0.0.json` are currently present in this workspace, so the frontend can discover one local v2 profile.
+- `v1_learning\model-v2.0.0.ckpt` remains the active local frontend profile. A fresh scene-stats candidate was trained at `data\models\sonna-v2-scene-stats-run01`, but it failed collapse analysis and was not kept frontend-visible.
 - `scripts\train_profile.py` now logs default recipe values as `Training recipe ...`; only values explicitly supplied as CLI flags are logged as `Override ...`.
 - Fresh training now initialises output-head biases from the training-set target medians. With the current split those priors are Exposure2012=0.22, Temperature=5191K, Tint=5. WB residual heads start at zero when AsShot WB skip is enabled.
 - Default image augmentation is geometry-only. Photometric jitter is disabled by default because changing input brightness/colour without changing XMP labels adds noise to Exposure and white-balance learning.
+- Fresh v2 models now use `arch_version=2`, adding six preview-derived luminance scene stats to the metadata path. Existing checkpoints load with their saved architecture version.
+- Validation logs key-slider distribution ratios (`val_dist_*_std_ratio`) so prediction collapse is visible during training.
 
 ## Project Flow
 
@@ -310,9 +313,12 @@ image_resolution=512
 lr=1e-4
 max_epochs=50
 freeze_backbone_epochs=3
-Temperature loss weight=6.0
-Tint loss weight=6.0
-Exposure loss weight=4.0
+arch_version=2 for fresh models
+Exposure loss weight=5.0
+Temperature loss weight=4.0
+Tint loss weight=4.0
+Contrast/Highlights/Shadows minimum loss weight=3.0
+Whites/Blacks/Saturation/Vibrance minimum loss weight=2.0
 Temperature bucket loss weight=0.15
 Tint bucket loss weight=2.0
 Sign-wrong penalty weight=0.2
@@ -322,6 +328,12 @@ photometric augmentation=disabled
 ```
 
 Use `--no-target-prior-init` only for an ablation. For the next quality evaluation, start fresh and do not resume the old unsatisfactory checkpoint, otherwise the new fresh-head initialisation and regenerated splits will not be evaluated cleanly.
+
+Important small-data caution:
+
+- On the current 189-photo dataset, `data\models\sonna-v2-scene-stats-run01` reached low MAE but collapsed harder than the existing `model-v2.0.0` (`29` collapsed sliders versus `14` on the same 27-photo validation split).
+- Treat collapse analysis as a promotion gate, not just validation loss or MAE.
+- Do not promote `data\models\sonna-v2-scene-stats-run01`; keep it as a diagnostic run.
 
 What this saves:
 
@@ -350,6 +362,25 @@ Before or after a training run you can run lightweight diagnostics to inspect th
 
 ```powershell
 uv run python scripts\quick_diagnostic.py
+```
+
+- Prediction collapse audit (runs a checkpoint on a parquet split and reports target/predicted spread):
+
+```powershell
+uv run python scripts\analyse_prediction_collapse.py `
+  --model-path v1_learning\model-v2.0.0.ckpt `
+  --parquet v1_learning\dataset\splits_v2_stratified\val.parquet `
+  --output data\audits\prediction_collapse.md `
+  --limit 50 `
+  --batch-size 16
+```
+
+- Dataset diversity audit (scene brightness, contrast, WB, and edit target buckets):
+
+```powershell
+uv run python scripts\audit_dataset_diversity.py `
+  --parquet v1_learning\dataset\dataset.parquet `
+  --output data\audits\dataset_diversity.md
 ```
 
 - Full all-slider audit (v1.2.3 audit example; this is read-only and produces markdown + parquet outputs in `scripts/output/`):

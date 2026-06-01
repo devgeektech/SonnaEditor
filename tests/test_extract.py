@@ -10,6 +10,7 @@ from PIL import Image
 from sonna_editor.config import IMAGE_RESOLUTION, SLIDER_FIELDS
 from sonna_editor.data.extract import (
     compute_histogram,
+    compute_scene_statistics,
     extract_all,
     extract_metadata,
     extract_preview,
@@ -150,6 +151,36 @@ class TestComputeHistogram:
 
 
 # -----------------------------------------------------------------------
+# compute_scene_statistics
+# -----------------------------------------------------------------------
+
+class TestComputeSceneStatistics:
+    def test_keys_and_ranges(self):
+        img = Image.new("RGB", (64, 64), (128, 128, 128))
+        stats = compute_scene_statistics(img)
+        expected = {
+            "mean_luminance",
+            "median_luminance",
+            "luminance_std",
+            "highlight_clip_pct",
+            "shadow_clip_pct",
+            "dynamic_range",
+        }
+        assert set(stats) == expected
+        assert all(0.0 <= value <= 1.0 for value in stats.values())
+
+    def test_bright_image_has_high_mean(self):
+        img = Image.new("RGB", (64, 64), (240, 240, 240))
+        stats = compute_scene_statistics(img)
+        assert stats["mean_luminance"] > 0.9
+
+    def test_dark_image_has_high_shadow_clip(self):
+        img = Image.new("RGB", (64, 64), (0, 0, 0))
+        stats = compute_scene_statistics(img)
+        assert stats["shadow_clip_pct"] == pytest.approx(1.0)
+
+
+# -----------------------------------------------------------------------
 # extract_all
 # -----------------------------------------------------------------------
 
@@ -159,6 +190,7 @@ class TestExtractAll:
         assert "raw_path" in result
         assert "preview" in result
         assert "histogram" in result
+        assert "scene_stats" in result
         assert "sliders" in result
         assert "iso" in result
 

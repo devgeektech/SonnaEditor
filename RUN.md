@@ -233,6 +233,10 @@ splits_v2_stratified/test.parquet: 30 rows
 
 The current split is grouped by shoot and balanced across Temperature correction, Exposure2012, and Tint correction. Fresh v2 training also starts output heads from the training-set target medians and uses geometry-only augmentation by default, which directly addresses the earlier brightness/WB drift in small-data runs.
 
+Fresh v2 models now use `arch_version=2`, which adds six preview-derived luminance scene statistics to the metadata path. The default loss recipe prioritises visually important sliders: Exposure=5.0, Temperature/Tint=4.0, Contrast/Highlights/Shadows=3.0, and Whites/Blacks/Saturation/Vibrance=2.0 minimums.
+
+Promotion gate: run `scripts/analyse_prediction_collapse.py` after training. The local `data/models/sonna-v2-scene-stats-run01` experiment lowered some MAE metrics but collapsed harder than `model-v2.0.0`, so it was not kept in `v1_learning/` for frontend use.
+
 Mode A inference also stabilises RGB tone-curve endpoints before writing XMP: per-channel black endpoints stay `0,0` and white endpoints stay `255,255`. This avoids pink/red casts in white highlights caused by model drift in the RGB curve endpoints.
 
 `v1_learning/model-v2.0.0.ckpt` and `v1_learning/model-v2.0.0.json` are present in this workspace at the time of this update, so one local v2 profile should appear in the UI.

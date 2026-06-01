@@ -3,6 +3,7 @@
 Original checkpoints are NEVER overwritten. All writes go to new versioned files.
 Fine-tuning is always invoked explicitly; this module never auto-triggers training.
 """
+# ruff: noqa: E402
 
 from __future__ import annotations
 
@@ -20,9 +21,9 @@ from typing import Any, Callable, Optional
 
 warnings.filterwarnings(
     "ignore",
-    message=r".*isinstance\\(treespec, LeafSpec\\) is deprecated.*",
-    category=DeprecationWarning,
+    message=r".*isinstance\(treespec, LeafSpec\).*is deprecated.*",
 )
+logging.getLogger("torch.utils.flop_counter").setLevel(logging.ERROR)
 
 import pandas as pd
 import pytorch_lightning as pl

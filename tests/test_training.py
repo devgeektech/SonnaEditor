@@ -66,6 +66,12 @@ def sample_df(tmp_dir: Path) -> pd.DataFrame:
             "camera_profile": "Standard",
             "white_balance_preset": "As Shot",
             "histogram": _make_histogram_bytes(),
+            "mean_luminance": 0.45 + i * 0.01,
+            "median_luminance": 0.44 + i * 0.01,
+            "luminance_std": 0.18,
+            "highlight_clip_pct": 0.01,
+            "shadow_clip_pct": 0.02,
+            "dynamic_range": 0.65,
         }
         for field in SLIDER_FIELDS:
             row[field] = 0.0 if field != "Temperature" else 5500.0
@@ -193,13 +199,18 @@ def test_dataset_metadata_keys(dataset: SonnaDataset) -> None:
     _, metadata, _ = dataset[0]
     required = {"iso", "shutter_speed", "aperture", "focal_length",
                 "camera_body_id", "lens_id", "camera_profile_id", "wb_preset_id",
-                "histogram"}
+                "histogram", "scene_stats"}
     assert required.issubset(metadata.keys())
 
 
 def test_dataset_metadata_histogram_shape(dataset: SonnaDataset) -> None:
     _, metadata, _ = dataset[0]
     assert metadata["histogram"].shape == (96,)
+
+
+def test_dataset_metadata_scene_stats_shape(dataset: SonnaDataset) -> None:
+    _, metadata, _ = dataset[0]
+    assert metadata["scene_stats"].shape == (6,)
 
 
 def test_dataset_metadata_ids_are_long(dataset: SonnaDataset) -> None:
@@ -296,6 +307,7 @@ def _make_batch(B: int = 2) -> tuple[torch.Tensor, dict[str, torch.Tensor], torc
         "camera_profile_id": torch.zeros(B, dtype=torch.long),
         "wb_preset_id":      torch.zeros(B, dtype=torch.long),
         "histogram":         torch.rand(B, 96),
+        "scene_stats":       torch.rand(B, 6),
         "as_shot_temperature": torch.full((B,), 5500.0),
         "as_shot_tint":        torch.zeros(B),
     }
@@ -362,6 +374,7 @@ def _make_loss_inputs(B: int = 16) -> tuple[torch.Tensor, torch.Tensor, dict[str
     meta = {
         "as_shot_temperature": 5500.0 + 500.0 * torch.randn(B),
         "as_shot_tint":        torch.randn(B),
+        "scene_stats":         torch.rand(B, 6),
     }
     return pred, tgt, meta
 
@@ -371,7 +384,15 @@ def test_loss_returns_components_dict() -> None:
     loss_fn = WeightedSliderLoss(slider_set_version="v2")
     pred, tgt, meta = _make_loss_inputs()
     c = loss_fn(pred, tgt, meta, return_components=True)
-    assert set(c.keys()) == {"total", "mse", "spread", "temp_bucket", "tint_bucket", "sign_wrong"}
+    assert set(c.keys()) == {
+        "total",
+        "mse",
+        "exposure_scene",
+        "spread",
+        "temp_bucket",
+        "tint_bucket",
+        "sign_wrong",
+    }
     for k, v in c.items():
         assert v.ndim == 0, f"{k} should be scalar"
         assert torch.isfinite(v), f"{k} should be finite"
@@ -392,6 +413,18 @@ def test_loss_spread_term_is_non_negative() -> None:
     pred, tgt, meta = _make_loss_inputs()
     c = loss_fn(pred, tgt, meta, return_components=True)
     assert c["spread"].item() >= 0.0
+
+
+def test_loss_exposure_scene_term_penalises_dark_underexposure() -> None:
+    from sonna_editor.model.losses import WeightedSliderLoss
+    loss_fn = WeightedSliderLoss(slider_set_version="v2")
+    pred, tgt, meta = _make_loss_inputs()
+    exp_idx = SLIDER_FIELDS.index("Exposure2012")
+    tgt[:, exp_idx] = 1.0
+    pred[:, exp_idx] = 0.0
+    meta["scene_stats"][:, 0] = 0.12
+    c = loss_fn(pred, tgt, meta, return_components=True)
+    assert c["exposure_scene"].item() > 0.0
 
 
 def test_loss_temp_bucket_zero_when_asshot_all_nan() -> None:
@@ -495,6 +528,7 @@ def _make_batch_with_as_shot(B: int = 2, resolution: int | None = None) -> tuple
         "camera_profile_id": torch.zeros(B, dtype=torch.long),
         "wb_preset_id":      torch.zeros(B, dtype=torch.long),
         "histogram":         torch.rand(B, 96),
+        "scene_stats":       torch.rand(B, 6),
         "as_shot_temperature": torch.tensor([5500.0, 3200.0][:B]),
         "as_shot_tint":        torch.tensor([0.0, 8.0][:B]),
     }
@@ -647,6 +681,14 @@ def test_output_prior_initialisation_sets_exposure_and_zero_wb_residual() -> Non
     assert tone_final.bias[0].item() == pytest.approx(0.42)
     assert torch.allclose(wb_final.weight, torch.zeros_like(wb_final.weight))
     assert torch.allclose(wb_final.bias, torch.zeros_like(wb_final.bias))
+
+
+def test_train_profile_log_interval_adapts_to_small_dataset() -> None:
+    from scripts.train_profile import _trainer_log_every_n_steps
+
+    assert _trainer_log_every_n_steps(9) == 9
+    assert _trainer_log_every_n_steps(1) == 1
+    assert _trainer_log_every_n_steps(32) == 10
 
 
 def test_v1_1_native_ckpt_backward_compat(tmp_path: Path) -> None:
