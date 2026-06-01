@@ -12,6 +12,7 @@ WRONG DIRECTION / SPARSE TARGET.
 """
 from __future__ import annotations
 
+import argparse
 import io
 import logging
 from pathlib import Path
@@ -37,11 +38,47 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(mess
 # Paths + config
 # ─────────────────────────────────────────────────────────────────────────────
 
-CKPT = Path("v1_learning/model-v1.2.3-prod256.ckpt")
-TEST_PARQUET = Path("v1_learning/dataset/splits_v2_stratified/test.parquet")
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+DEFAULT_CKPT = Path("v1_learning/model-v1.2.3-prod256.ckpt")
+DEFAULT_TEST_PARQUET = Path("v1_learning/dataset/splits_v2_stratified/test.parquet")
 OUTPUT_DIR = Path("scripts/output")
 REPORT_PATH = OUTPUT_DIR / "all_slider_audit_v1.2.3.md"
 STATS_PATH = OUTPUT_DIR / "all_slider_audit_v1.2.3_stats.parquet"
+
+
+def _find_published_checkpoints() -> list[Path]:
+    published_dir = PROJECT_ROOT / "v1_learning"
+    if not published_dir.exists():
+        return []
+    return sorted(published_dir.glob("model-v*.ckpt"))
+
+
+def _select_path(paths: list[Path], description: str) -> Path | None:
+    if not paths:
+        return None
+    if len(paths) == 1:
+        return paths[0]
+
+    print(f"Found {len(paths)} {description}:")
+    for index, path in enumerate(paths, start=1):
+        print(f"  {index}. {path}")
+
+    while True:
+        choice = input(f"Select a {description} by number (1-{len(paths)}), or ENTER to cancel: ").strip()
+        if choice == "":
+            return None
+        if choice.isdigit():
+            index = int(choice)
+            if 1 <= index <= len(paths):
+                return paths[index - 1]
+        print("Invalid choice. Try again.")
+
+
+def _locate_test_parquet(default: Path) -> Path | None:
+    if default.exists():
+        return default
+    candidates = sorted(PROJECT_ROOT.rglob("test.parquet"))
+    return candidates[0] if candidates else None
 
 BATCH_SIZE = 32
 IMAGE_RESOLUTION = 256
@@ -240,12 +277,14 @@ def _categorise(
 def run_inference(df: pd.DataFrame, model: SonnaEditor, device: str) -> np.ndarray:
     """Return [N, 135] tensor of RAW (unpostprocessed) predictions in prediction space.
 
+    The audit is defined over the first 135 v1 fields. If a v2 model is loaded,
+    the extra 12 outputs are ignored so the old audit remains valid.
     Temperature (idx 11) is in log-K, all other fields in native slider units.
     """
     transform = ValidationAugmentation(resolution=IMAGE_RESOLUTION)
     reg = model.registry
     n = len(df)
-    out = np.zeros((n, 135), dtype=np.float32)
+    out = np.zeros((n, len(V1_FIELDS)), dtype=np.float32)
 
     # Pull pandas Series once to avoid per-row column lookup overhead
     thumb_paths = df["thumbnail_path"].tolist()
@@ -324,8 +363,23 @@ def run_inference(df: pd.DataFrame, model: SonnaEditor, device: str) -> np.ndarr
         }
 
         with torch.no_grad():
-            preds = model(img_batch, meta)  # [B, 135] in prediction space
-        out[start:end] = preds.cpu().numpy()
+            preds = model(img_batch, meta)
+
+        preds_np = preds.cpu().numpy()
+        if preds_np.shape[1] < len(V1_FIELDS):
+            raise ValueError(
+                f"Model output has {preds_np.shape[1]} sliders, but v1 audit requires "
+                f"{len(V1_FIELDS)} fields. Use a v1 checkpoint or audit script matching the "
+                "model's slider_set_version."
+            )
+        if preds_np.shape[1] > len(V1_FIELDS):
+            _logger.warning(
+                "Model output has %d sliders; slicing to first %d v1 fields for this audit.",
+                preds_np.shape[1], len(V1_FIELDS)
+            )
+            preds_np = preds_np[:, : len(V1_FIELDS)]
+
+        out[start:end] = preds_np
 
     return out
 
@@ -348,6 +402,8 @@ def _panel_of(idx: int) -> str:
 
 
 def build_markdown_report(
+    ckpt_path: Path,
+    test_parquet_path: Path,
     stats_df: pd.DataFrame,
     temp_log_mae: float,
     temp_kelvin_mae: float,
@@ -361,8 +417,8 @@ def build_markdown_report(
 
     lines.append("# All-Slider Behaviour Audit — v1.2.3 (dp-event-v1.2.3)")
     lines.append("")
-    lines.append(f"**Model:** `{CKPT}`  ")
-    lines.append(f"**Test split:** `{TEST_PARQUET}`  ({n_rows} photos)  ")
+    lines.append(f"**Model:** `{ckpt_path}`  ")
+    lines.append(f"**Test split:** `{test_parquet_path}`  ({n_rows} photos)  ")
     lines.append(f"**Generated:** {pd.Timestamp.now().isoformat(timespec='seconds')}  ")
     lines.append("**Architecture:** v1, 13 heads, 135 outputs  ")
     lines.append("")
@@ -525,16 +581,59 @@ def build_markdown_report(
 # ─────────────────────────────────────────────────────────────────────────────
 
 def main() -> int:
+    parser = argparse.ArgumentParser(description="Audit all sliders against a published v1 checkpoint.")
+    parser.add_argument("--ckpt", type=Path, help="Published checkpoint path to audit.")
+    parser.add_argument("--test-parquet", type=Path, help="Path to the test parquet file.")
+    parser.add_argument("--list-checkpoints", action="store_true", help="List discovered published checkpoints and exit.")
+    args = parser.parse_args()
+
+    if args.list_checkpoints:
+        checkpoints = _find_published_checkpoints()
+        if not checkpoints:
+            print("No published checkpoints were found in v1_learning/model-v*.ckpt.")
+            return 0
+        print("Published checkpoints found:")
+        for path in checkpoints:
+            print(f"  {path}")
+        return 0
+
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
-    _logger.info("Loading model from %s", CKPT)
+    if args.ckpt:
+        ckpt_path = args.ckpt
+    else:
+        available_ckpts = _find_published_checkpoints()
+        if not available_ckpts:
+            print("No published checkpoints were found in v1_learning/model-v*.ckpt.")
+            return 1
+        ckpt_path = _select_path(available_ckpts, "published checkpoint")
+        if ckpt_path is None:
+            print("No checkpoint selected; aborting.")
+            return 1
+
+    if not ckpt_path.exists():
+        print(f"Checkpoint not found: {ckpt_path}")
+        return 1
+
+    test_parquet = args.test_parquet or _locate_test_parquet(DEFAULT_TEST_PARQUET)
+    if test_parquet is None or not test_parquet.exists():
+        print("Test parquet file not found.")
+        print("Expected at v1_learning/dataset/splits_v2_stratified/test.parquet or discoverable under the project tree.")
+        return 1
+
+    _logger.info("Loading model from %s", ckpt_path)
     device = preferred_torch_device()
-    model = SonnaEditor.from_checkpoint(CKPT, device="cpu")
+    model = SonnaEditor.from_checkpoint(ckpt_path, device="cpu")
     model.to(device)
     _logger.info("Model loaded: slider_set_version=%s, device=%s", model._slider_set_version, device)
+    if model._slider_set_version != "v1":
+        _logger.warning(
+            "Loaded a %s model. This audit targets v1 fields only; extra v2 outputs will be ignored.",
+            model._slider_set_version,
+        )
 
     _logger.info("Loading test parquet")
-    df = pd.read_parquet(TEST_PARQUET)
+    df = pd.read_parquet(test_parquet)
     _logger.info("Test rows: %d", len(df))
 
     # Targets [N, 135] in native slider units (Temperature in Kelvin)
@@ -712,6 +811,8 @@ def main() -> int:
     _logger.info("Wrote stats parquet to %s", STATS_PATH)
 
     report = build_markdown_report(
+        ckpt_path=ckpt_path,
+        test_parquet_path=test_parquet,
         stats_df=stats_df,
         temp_log_mae=temp_log_mae,
         temp_kelvin_mae=temp_kelvin_mae,
@@ -721,7 +822,7 @@ def main() -> int:
         surprises=surprises,
         n_rows=len(df),
     )
-    REPORT_PATH.write_text(report)
+    REPORT_PATH.write_text(report, encoding="utf-8")
     _logger.info("Wrote report to %s", REPORT_PATH)
 
     print()

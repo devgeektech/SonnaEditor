@@ -627,6 +627,28 @@ def test_v1_1_native_ckpt_round_trip(tmp_path: Path) -> None:
     assert torch.allclose(a, b, atol=1e-5)
 
 
+def test_output_prior_initialisation_sets_exposure_and_zero_wb_residual() -> None:
+    model = SonnaEditor(
+        arch_version=1,
+        _pretrained_backbone=False,
+        slider_set_version="v2",
+        use_wb_metadata_skip=True,
+    )
+    model.initialise_output_priors({
+        "Exposure2012": 0.42,
+        "Temperature": 5200.0,
+        "Tint": 6.0,
+    })
+
+    tone_final = model.tone_head[-1]
+    wb_final = model.wb_head[-1]
+    assert isinstance(tone_final, torch.nn.Linear)
+    assert isinstance(wb_final, torch.nn.Linear)
+    assert tone_final.bias[0].item() == pytest.approx(0.42)
+    assert torch.allclose(wb_final.weight, torch.zeros_like(wb_final.weight))
+    assert torch.allclose(wb_final.bias, torch.zeros_like(wb_final.bias))
+
+
 def test_v1_1_native_ckpt_backward_compat(tmp_path: Path) -> None:
     """Native ckpts without arch_config.arch_version default to old arch
     (state-dict shape detection: make_emb key absent → arch_version=0)."""

@@ -4,8 +4,22 @@
 **Owner:** Darshil (Founder/Director, Sonna Studios)
 **Platforms:** macOS, Windows, and Linux
 **Reference hardware:** M1 Pro MacBook Pro, 32GB RAM
-**Status:** v1.2.0 production shipped — Phases 0-7 complete; Phase 8 (team distribution) deferred
-**Last updated:** May 2026
+**Status:** v1.2.0 production shipped; v2 training prep active on the current Windows CUDA workstation; Phase 8 (team distribution) deferred
+**Last updated:** 2026-06-01
+
+---
+
+## Current workspace state (2026-06-01)
+
+This checkout is a Windows development/training workspace at `C:\Users\vikas.DESKTOP-61LEE8B\Projects\SonnaEditor`.
+
+- **Environment:** Python 3.11.15 via uv 0.11.17. PyTorch is installed as `2.11.0+cu128`; `sonna_editor.runtime.preferred_torch_device()` returns `cuda` on the local NVIDIA GeForce RTX 3050. `scripts/verify_environment.py` passes 11/11 checks.
+- **CUDA packaging:** `pyproject.toml` and `uv.lock` now pin `torch` and `torchvision` to the PyTorch CUDA 12.8 wheel index on Windows/Linux x86_64 so `uv sync --extra dev` does not fall back to CPU-only wheels.
+- **Local dataset:** `v1_learning/dataset/dataset.parquet` exists with 189 rows. Balanced by-shoot splits exist at `v1_learning/dataset/splits_v2_stratified/`: train=132, val=27, test=30. The splitter now balances Temperature correction, Exposure2012, and Tint correction, with tail coverage for rare edit styles.
+- **Local checkpoints:** `v1_learning/model-v2.0.0.ckpt` and `v1_learning/model-v2.0.0.json` are present in this workspace right now, so the frontend can discover one local v2 profile.
+- **Training script state:** `scripts/train_profile.py` uses the v2 recipe defaults (512px, WB metadata skip enabled, stronger Temperature/Tint/Exposure losses, Exposure2012 weight 4.0). Fresh models initialise output-head biases from training target medians, WB residual heads start at zero when AsShot WB skip is enabled, and default augmentation is geometry-only to avoid corrupting Exposure/WB labels. Default recipe values log as `Training recipe ...`; only explicitly supplied CLI flags log as `Override ...`.
+- **Inference colour-cast fix:** `src/sonna_editor/inference/pipeline.py` now stabilises RGB tone-curve endpoints before writing XMP. Diagnosis from `0H5A3190A-2.xmp`: WB/Tint were close to the expected output, but Green/Blue tone-curve white endpoints below `255/255` made neutral whites render pink/red in Lightroom. The pipeline preserves RGB black endpoints at `0/0` and white endpoints at `255/255` while leaving middle curve points model-driven.
+- **Verified this pass:** targeted backend tests (`tests/api/test_profiles.py`, `tests/api/test_health.py`, and two training smoke tests) pass, and `saha-app` Vite production build passes. Full `uv run pytest tests` is not clean in this workspace because gitignored fixture files are missing (`tests/fixtures/sample_edit.xmp`, `sample.xmp`, `sample.cr3`) and two extract tests require symlink privileges on Windows.
 
 ---
 
@@ -84,19 +98,20 @@ Trained model checkpoints follow `model-v{MAJOR}.{MINOR}.{ATTEMPT}[-{suffix}].ck
 
 **Audit / postprocess track (2026-05-13 to 2026-05-14):** v1.2.3 all-slider audit produced; Temperature epistemic clamp shipped (`55aa70b`, near-zero firing rate confirmed); Mode A WB AsShot substitution shipped (`dac535e`); default_skip_fields expanded (`97194cf`). **Extended 2026-05-14** with the slider_set v1/v2 shape-mismatch refactor: postprocess hotfix (`4133e8a`), version-aware helpers (`24756c1`), losses.py migration (`31e82ca`), predictions_to_dict migration (`8350903`), finetune capture/delta/retrain migrations (`7c58139`), production-pipeline integration test (`28f3290`). See Part 6 items 14–15 + 18 + Part 7 "Diagnostic reports".
 
-### Phase 0 environment record
+### Current environment record
 
-- Python 3.11.15 via uv 0.11.11
-- PyTorch 2.11.0, MPS confirmed available and working (M1 GPU)
+- Python 3.11.15 via uv 0.11.17 in the current Windows workspace
+- PyTorch 2.11.0+cu128, CUDA confirmed available and working on NVIDIA GeForce RTX 3050
+- macOS MPS remains supported by runtime device selection on Apple Silicon machines
 - All deps installed: torchvision, pytorch-lightning, rawpy, pillow, lxml, pandas, pyarrow, tqdm, pyqt6, scikit-learn, pytest, ruff, mypy
 - Adobe DNG Converter is discovered via `SONNA_DNG_CONVERTER`, OS default paths, or PATH
 - GitHub repo: https://github.com/darshilp16-byte/sonnaeditor (SSH, pushed)
 - Claude Code settings: use the current local checkout as the project root; avoid hardcoded user-home paths
-- `scripts/verify_environment.py` — 13/13 checks pass
+- `scripts/verify_environment.py` - 11/11 checks pass in this workspace
 
 ### Before starting each session
 
-Run `/save` at the end of each session to write `SESSION_STATE.md`. At the start of a new session, read `SESSION_STATE.md` alongside this document and `SONNA_EDITOR_BUILD_SPEC.md` for instant context.
+At the start of a new session, read `SESSION_STATE.md` alongside this document, `project_knowledge.md`, and `SONNA_EDITOR_BUILD_SPEC.md` for instant context. At the end of meaningful work, update `SESSION_STATE.md` and any other Markdown file whose facts changed.
 
 ---
 

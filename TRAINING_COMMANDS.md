@@ -2,6 +2,19 @@
 
 This is the practical runbook for preparing a dataset, training a model, and making the trained checkpoint visible in the Saha frontend.
 
+## Current Local State (2026-06-01)
+
+- Python 3.11.15 via uv 0.11.17.
+- PyTorch is `2.11.0+cu128`; CUDA is verified on the local NVIDIA GeForce RTX 3050.
+- `uv sync --extra dev` now preserves CUDA PyTorch on Windows/Linux x86_64 through the pinned PyTorch CUDA 12.8 index in `pyproject.toml` / `uv.lock`.
+- Current local dataset: `v1_learning\dataset\dataset.parquet` has 189 rows.
+- Current stratified splits: train=132, val=27, test=30.
+- Split generation is shoot-grouped and now balances Temperature correction, Exposure2012, and Tint correction. The previous local split had train Exposure mean ~0.212 versus val/test ~0.480/~0.504, which could make brightness look poor even when training loss improved.
+- `v1_learning\model-v2.0.0.ckpt` and `v1_learning\model-v2.0.0.json` are currently present in this workspace, so the frontend can discover one local v2 profile.
+- `scripts\train_profile.py` now logs default recipe values as `Training recipe ...`; only values explicitly supplied as CLI flags are logged as `Override ...`.
+- Fresh training now initialises output-head biases from the training-set target medians. With the current split those priors are Exposure2012=0.22, Temperature=5191K, Tint=5. WB residual heads start at zero when AsShot WB skip is enabled.
+- Default image augmentation is geometry-only. Photometric jitter is disabled by default because changing input brightness/colour without changing XMP labels adds noise to Exposure and white-balance learning.
+
 ## Project Flow
 
 1. Choose the training data source.
@@ -171,6 +184,15 @@ uv sync --extra dev
 uv run python scripts\verify_environment.py
 ```
 
+Expected on the current Windows workstation:
+
+```text
+PyTorch import: v2.11.0+cu128
+Preferred torch device: cuda
+CUDA available: True
+CUDA matmul: OK
+```
+
 ## 2. Prepare Lightroom Training Data
 
 In Lightroom Classic:
@@ -267,6 +289,20 @@ uv run python scripts\train_profile.py `
   --num-workers 4
 ```
 
+To resume an interrupted training run, add `--resume-from-checkpoint` and point it at one of the Lightning checkpoints under the run's `checkpoints\` directory:
+
+```powershell
+  --resume-from-checkpoint "data\models\sonna-v2-run01\checkpoints\epoch=...-val_loss=....ckpt" `
+```
+
+Omit `--resume-from-checkpoint` for a fresh model.
+
+Note on `--resume-from-checkpoint`:
+
+- Purpose: intended to restart an interrupted training run and continue training with the same training module state (optimizer, scheduler, epoch counters, callbacks) preserved by PyTorch Lightning.
+- Do not use it as the primary mechanism for one-off fine-tuning from a published frontend checkpoint. For intentional fine-tuning from an existing published checkpoint use `scripts/finetune_profile.py --base-model <ckpt>` which implements the capture-combined dataset, evaluation, and promotion workflow.
+- Technically you can resume and then change some hyperparameters, but this risks inconsistent optimizer/scheduler state. Prefer `finetune_profile.py` for controlled fine-tuning and `train_profile.py --resume-from-checkpoint` only for true restarts.
+
 Current `scripts/train_profile.py` defaults:
 
 ```text
@@ -276,12 +312,16 @@ max_epochs=50
 freeze_backbone_epochs=3
 Temperature loss weight=6.0
 Tint loss weight=6.0
-Exposure loss weight=2.0
+Exposure loss weight=4.0
 Temperature bucket loss weight=0.15
 Tint bucket loss weight=2.0
 Sign-wrong penalty weight=0.2
 WB metadata skip=enabled
+target prior init=enabled
+photometric augmentation=disabled
 ```
+
+Use `--no-target-prior-init` only for an ablation. For the next quality evaluation, start fresh and do not resume the old unsatisfactory checkpoint, otherwise the new fresh-head initialisation and regenerated splits will not be evaluated cleanly.
 
 What this saves:
 
@@ -301,6 +341,56 @@ v1_learning\model-v2.0.0.json
 ```
 
 If `model-v2.0.0.ckpt` already exists, the next run publishes as `model-v2.0.1.ckpt`, then `model-v2.0.2.ckpt`, and so on.
+
+### Diagnostics: quick checks and audits
+
+Before or after a training run you can run lightweight diagnostics to inspect the run summary and deeper slider audits.
+
+- Quick diagnostic (reads the saved training summary JSON and prints recommendations):
+
+```powershell
+uv run python scripts\quick_diagnostic.py
+```
+
+- Full all-slider audit (v1.2.3 audit example; this is read-only and produces markdown + parquet outputs in `scripts/output/`):
+
+```powershell
+uv run python scripts\audit_all_sliders_v1.2.3.py
+```
+
+Notes:
+- `quick_diagnostic.py` now discovers training summary JSON files automatically under the project tree and can also list published checkpoints in `v1_learning/` for selection.
+- `audit_all_sliders_v1.2.3.py` now discovers published checkpoints under `v1_learning/model-v*.ckpt` and will prompt you to choose one if multiple are found.
+- Audit scripts (like `audit_all_sliders_v1.2.3.py`) are read-only analyses that load a published checkpoint and a test split; they may take longer and require the test parquet to exist. Output goes to `scripts/output/` — keep those reports under version control only when intended.
+
+### Creating a foundation (base) model
+
+When we say "foundation model" here we mean a stable, broadly-trained base checkpoint that you will later fine-tune for specific clients or Mode B presets. To create one:
+
+1. Prepare a large, diverse dataset (see steps in Section 2/3) and ensure train/val/test splits are representative.
+2. Run `scripts/train_profile.py` on that dataset to train a production-quality checkpoint. Example (same as above):
+
+```powershell
+uv run python scripts\train_profile.py `
+  --train-parquet v1_learning\dataset\splits_v2_stratified\train.parquet `
+  --val-parquet v1_learning\dataset\splits_v2_stratified\val.parquet `
+  --test-parquet v1_learning\dataset\splits_v2_stratified\test.parquet `
+  --output-dir data\models\sonna-v2-foundation `
+  --profile-name "Sonna v2 Foundation" `
+  --max-epochs 100 `
+  --batch-size 16
+```
+
+3. Verify training summary (`data/models/sonna-v2-foundation/training_summary.json`) and run `quick_diagnostic.py` or targeted audits.
+4. Publish to the frontend-visible folder (the training CLI does this by default unless `--no-publish` is supplied). The published path under `v1_learning/` is then the base checkpoint you can pass to `scripts/finetune_profile.py --base-model v1_learning/model-vX.Y.Z.ckpt`.
+
+Alternatives:
+- To create a Mode B (preset-derived) initial checkpoint, use `scripts/build_mode_b_checkpoint.py --preset <preset.xmp> --survey <survey.json> --base-ckpt <published_base.ckpt>` — this preserves the base backbone and shifts output-head biases and is not a supervised photo-training run.
+
+Summary guidance:
+- Use `--resume-from-checkpoint` to recover interrupted training runs (same run continuation).
+- Use `scripts/finetune_profile.py --base-model <ckpt>` for deliberate fine-tuning on captured edits.
+- Use `scripts/train_profile.py` on a large dataset to create your foundation/base model, then promote/publish and use that published ckpt as the `--base-model` for fine-tuning.
 
 ## 5. Train With Explicit Published Version
 

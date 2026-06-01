@@ -1,6 +1,4 @@
 from __future__ import annotations
-
-import io
 from datetime import datetime
 from pathlib import Path
 from unittest.mock import patch
@@ -137,7 +135,7 @@ def test_find_pairs_multiple_formats(tmp_path: Path) -> None:
     for ext in [".cr3", ".nef", ".arw"]:
         raw = tmp_path / f"photo{ext}"
         raw.touch()
-        (tmp_path / f"photo.xmp").touch()
+        (tmp_path / "photo.xmp").touch()
     pairs = _find_pairs(tmp_path)
     assert len(pairs) == 3
 
@@ -491,6 +489,19 @@ def test_stratified_split_deterministic_with_seed() -> None:
     assert sorted(t1["shoot_id"].unique()) == sorted(t2["shoot_id"].unique())
     assert sorted(v1["shoot_id"].unique()) == sorted(v2["shoot_id"].unique())
     assert sorted(te1["shoot_id"].unique()) == sorted(te2["shoot_id"].unique())
+
+
+def test_split_dataset_balances_exposure_across_splits() -> None:
+    """Default split balancing must consider Exposure, not only WB deltas."""
+    df = _make_split_df(n_shoots=30, photos_per_shoot=5)
+    for shoot in range(30):
+        exposure = 1.2 if shoot % 3 == 0 else (-0.4 if shoot % 3 == 1 else 0.2)
+        df.loc[df["shoot_id"] == f"shoot_{shoot}", "Exposure2012"] = exposure
+
+    train, val, test = split_dataset(df, val_ratio=0.2, test_ratio=0.2)
+    global_mean = float(df["Exposure2012"].mean())
+    for split in (train, val, test):
+        assert abs(float(split["Exposure2012"].mean()) - global_mean) < 0.35
 
 
 def test_stratified_split_handles_missing_asshot() -> None:

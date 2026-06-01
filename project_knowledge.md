@@ -4,6 +4,13 @@
 
 Sonna Editor is a local desktop tool for predicting Lightroom slider adjustments from RAW images. It uses a PyTorch regression model trained on Lightroom-edited photos, then writes XMP sidecars alongside RAW files. The UI is Electron + React and the backend is Python. The runtime target is cross-platform: macOS, Windows, and Linux.
 
+Current local workspace state as of 2026-06-01:
+- Windows path: `C:\Users\vikas.DESKTOP-61LEE8B\Projects\SonnaEditor`
+- Python 3.11.15 via uv 0.11.17
+- PyTorch `2.11.0+cu128`, CUDA active on NVIDIA GeForce RTX 3050
+- `v1_learning/dataset/dataset.parquet` has 189 rows; balanced shoot-grouped splits are train=132, val=27, test=30
+- frontend-visible `v1_learning/model-v2.0.0.ckpt` and matching JSON sidecar are present locally
+
 The core inference flow is:
 - extract RAW preview + metadata
 - build image + metadata batches
@@ -200,10 +207,22 @@ This section tracks what each backend source file/folder does. Keep it updated w
 - emits target tensors sized to the requested `slider_set_version`
 - uses `unknown` fallback IDs consistent with inference behavior
 
+### `scripts/train_profile.py`
+- current supported training entry point for new Mode A profiles
+- default v2 recipe: 512px input, `slider_set_version="v2"`, batch size 16, lr 1e-4, freeze backbone for 3 epochs, WB metadata skip enabled
+- default loss recipe: Temperature=6.0, Tint=6.0, Exposure2012=4.0, temperature bucket=0.15, tint bucket=2.0, sign-wrong penalty=0.2
+- fresh v2 training initialises output-head biases from training-set target medians; with the current split the priors are Exposure2012=0.22, Temperature=5191K, Tint=5
+- default training augmentation is geometry-only; photometric brightness/contrast/saturation jitter is disabled by default because XMP labels are tied to the original image exposure and colour
+- dataset splitting is still by shoot, but now balances Temperature correction, Exposure2012, and Tint correction instead of Temperature alone
+- inference XMP writing stabilises RGB tone-curve endpoints: `ToneCurveRed/Green/Blue_Pt1` are forced to `0,0` and `Pt6` to `255,255` before writing. This prevents model-predicted channel-curve endpoint drift from turning neutral white highlights pink/red while preserving model-predicted mid-curve shape.
+- logs default recipe changes as `Training recipe ...`; only user-supplied CLI flags log as `Override ...`
+- saves a native `model.ckpt` from the best validation checkpoint and publishes a versioned copy into `v1_learning/` unless `--no-publish` is set
+
 ### `src/sonna_editor/api/`
 - backend HTTP/WS API bridge for the Electron UI
 - callbacks and job management for long-running inference and finetune jobs
 - exposes routes for profile management, processing, and health
+- `Profile.profile_type` is surfaced from checkpoint sidecar JSON: `None` for legacy/current Mode A trained profiles, `"mode_b_initial"` for Lite/Mode B preset-derived profiles
 
 ## UI and frontend
 
@@ -239,10 +258,9 @@ Mode B checkpoints are marked with `profile_type: mode_b_initial` in the sidecar
 
 ## Current fix and investigation notes
 
- - Adjusted `src/sonna_editor/inference/pipeline.py::process_shoot_with_model()` so the per-photo
-   `on_photo_complete` callback is fired immediately after predictions are available (before the
-   XMP write). This enables the UI to surface progress during extraction/inference rather than
-   waiting for the sidecar file write to complete.
+- CUDA environment fix, 2026-06-01: `torch` and `torchvision` are pinned to the PyTorch CUDA 12.8 wheel index for Windows/Linux x86_64 in `pyproject.toml` and `uv.lock`. This resolved the CPU-only `torch 2.11.0+cpu` install that caused Lightning to report `GPU available: False` despite an RTX 3050 being present.
+- Training log clarity fix, 2026-06-01: `scripts/train_profile.py` no longer labels default v2 recipe settings as overrides. It reports defaults as `Training recipe ...` and reserves `Override ...` for explicit CLI flags.
+- Earlier UI progress fix: `src/sonna_editor/inference/pipeline.py::process_shoot_with_model()` fires the per-photo `on_photo_complete` callback immediately after predictions are available, before the XMP write.
 
 ## Important behavior notes
 
@@ -253,6 +271,7 @@ Mode B checkpoints are marked with `profile_type: mode_b_initial` in the sidecar
 
 ## Recommended next checks
 
+- Restore local gitignored test fixtures (`tests/fixtures/sample.cr3`, `sample.xmp`, `sample_edit.xmp`) or mark fixture-dependent tests as integration/local-data tests. Full `uv run pytest tests` currently fails only in `tests/test_extract.py` and `tests/test_xmp.py` because those fixtures are absent and Windows symlink privileges are unavailable.
 - confirm UI progress callbacks are invoked in the early extraction and inference phases
 - verify `process_shoot_with_model()` passes full model predictions into `sonna_predictions.json`
 - audit any Mode B patch paths for the same metadata registry mapping behavior

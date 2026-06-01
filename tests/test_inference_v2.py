@@ -1,8 +1,15 @@
 """v2 inference-pipeline constants tests (commit 57ab8bf)."""
 from __future__ import annotations
 
+from pathlib import Path
+
 from sonna_editor import config
-from sonna_editor.inference.pipeline import ALWAYS_ON_POSTPROCESS, _V1_SKIP_FIELDS
+from sonna_editor.inference.pipeline import (
+    ALWAYS_ON_POSTPROCESS,
+    _V1_SKIP_FIELDS,
+    _apply_wb_skip_substitution,
+    _stabilise_rgb_tone_curve_endpoints,
+)
 
 
 def test_always_on_postprocess_constant() -> None:
@@ -26,9 +33,6 @@ def test_v1_skip_fields_does_not_intersect_v2_extension() -> None:
 # write AsShot values explicitly rather than omit. Documented on
 # _V1_SKIP_FIELDS; logic in _apply_wb_skip_substitution.
 # ──────────────────────────────────────────────────────────────────────
-
-from sonna_editor.inference.pipeline import _apply_wb_skip_substitution
-
 
 def test_wb_substitution_writes_asshot_for_skipped_temperature() -> None:
     d = {"Temperature": 5500.0, "Tint": 10.0, "Exposure2012": 0.5}
@@ -80,8 +84,41 @@ def test_wb_substitution_overwrites_model_prediction_when_already_in_dict() -> N
     assert d["Temperature"] == 3500.0  # AsShot wins
 
 
+def test_rgb_tone_curve_endpoint_stabilisation_preserves_neutral_black_and_white() -> None:
+    sliders = {
+        "ToneCurveRed_Pt1_X": 4.0,
+        "ToneCurveRed_Pt1_Y": 3.0,
+        "ToneCurveRed_Pt3_Y": 71.0,
+        "ToneCurveRed_Pt6_X": 218.0,
+        "ToneCurveRed_Pt6_Y": 255.0,
+        "ToneCurveGreen_Pt1_X": 1.0,
+        "ToneCurveGreen_Pt1_Y": 0.0,
+        "ToneCurveGreen_Pt4_Y": 129.0,
+        "ToneCurveGreen_Pt6_X": 240.0,
+        "ToneCurveGreen_Pt6_Y": 221.0,
+        "ToneCurveBlue_Pt1_X": 0.0,
+        "ToneCurveBlue_Pt1_Y": 2.0,
+        "ToneCurveBlue_Pt5_Y": 195.0,
+        "ToneCurveBlue_Pt6_X": 213.0,
+        "ToneCurveBlue_Pt6_Y": 234.0,
+        "ToneCurve_Pt6_Y": 245.0,
+    }
+
+    _stabilise_rgb_tone_curve_endpoints(sliders)
+
+    for prefix in ("ToneCurveRed", "ToneCurveGreen", "ToneCurveBlue"):
+        assert sliders[f"{prefix}_Pt1_X"] == 0.0
+        assert sliders[f"{prefix}_Pt1_Y"] == 0.0
+        assert sliders[f"{prefix}_Pt6_X"] == 255.0
+        assert sliders[f"{prefix}_Pt6_Y"] == 255.0
+    assert sliders["ToneCurveRed_Pt3_Y"] == 71.0
+    assert sliders["ToneCurveGreen_Pt4_Y"] == 129.0
+    assert sliders["ToneCurveBlue_Pt5_Y"] == 195.0
+    assert sliders["ToneCurve_Pt6_Y"] == 245.0
+
+
 def test_wb_substitution_falls_back_to_omission_when_as_shot_wb_missing_end_to_end(
-    tmp_path: "Path",
+    tmp_path: Path,
 ) -> None:
     """Full chain: filter + substitution(None) + write_xmp → crs:Tint absent.
 
@@ -94,7 +131,6 @@ def test_wb_substitution_falls_back_to_omission_when_as_shot_wb_missing_end_to_e
     """
     import re
 
-    from pathlib import Path  # noqa: F401  (used by type annotation above)
     from sonna_editor.data.xmp import write_xmp
 
     # Simulate the per-photo state

@@ -8,14 +8,29 @@ Internal AI photo editing tool for Sonna Studios. Trains a personalised model on
 
 Not for sale. Not competing with Imagen. Internal tooling for cost savings, IP control, and learning value.
 
-## Required reading before responding
+## Required reading before execution
 
-For any non-trivial task, read these first:
+For any non-trivial task, read these before proposing or executing changes:
 
-1. **HANDOVER.md** (project root) — full context, architectural reasoning, decisions, risks, Claude Code workflow patterns
-2. **SONNA_EDITOR_BUILD_SPEC.md** (project root) — task-by-task build spec with workflow guidance per task
+1. **HANDOVER.md** and **SESSION_STATE.md** - current project status, active risks, recent decisions, and next-step context
+2. **project_knowledge.md** - source map and behavior notes for the current codebase
+3. **SONNA_EDITOR_BUILD_SPEC.md** - task-by-task build spec with workflow guidance per task
+4. **TRAINING_COMMANDS.md** and **RUN.md** when touching setup, runtime, training, inference, frontend startup, or operator commands
 
-If you haven't read these in the current session and the user asks you to implement anything beyond a trivial fix, read them now.
+If you have not read the relevant files in the current session and the user asks you to implement anything beyond a trivial fix, read them now before executing commands or editing files.
+
+## Documentation update rule
+
+After every non-trivial execution, update the Markdown file that owns the changed truth:
+
+- **SESSION_STATE.md**: always update after meaningful work so the next session starts from reality.
+- **HANDOVER.md**: update when status, architecture, model lineage, training recipe, known risks, or environment assumptions change.
+- **project_knowledge.md**: update when source files, source-map responsibilities, APIs, scripts, or behavior notes change.
+- **TRAINING_COMMANDS.md**: update when dataset, training, resume, publishing, inference, or fine-tune commands change.
+- **RUN.md** and **README.md**: update when setup, runtime verification, backend/frontend startup, or user-facing quick-start behavior changes.
+- **SONNA_EDITOR_BUILD_SPEC.md**: update only when the planned build workflow itself changes. Do not rewrite historical task specs for minor implementation notes.
+
+Do not modify generated diagnostic reports under `scripts/output/` unless the task is specifically to rerun or revise that report.
 
 ## Owner context
 
@@ -77,6 +92,7 @@ Without the pauses, multi-agent collapses into rationalising the first answer. T
 ## Key gotchas
 
 - GPU availability differs by OS and machine; use `sonna_editor.runtime` helpers instead of hardcoding `mps`, `cuda`, or `cpu`
+- On Windows/Linux x86_64 this repo pins PyTorch/TorchVision to CUDA 12.8 wheels via `pyproject.toml` / `uv.lock`; `uv sync --extra dev` should preserve GPU support when an NVIDIA driver is present.
 - MPS is not bit-reproducible across runs even with seeded RNG (acceptable for our use case, document if it becomes an issue)
 - Lightroom .lrcat is SQLite but schema is partially undocumented; if reverse-engineering gets ugly, fall back to "Save Metadata to File" workflow and read XMPs directly
 - Embedded RAW preview JPEG is sufficient for model input at 384-768px; we do NOT need full RAW decode

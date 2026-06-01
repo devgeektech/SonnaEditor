@@ -1,8 +1,8 @@
 # All-Slider Behaviour Audit — v1.2.3 (dp-event-v1.2.3)
 
-**Model:** `v1_learning/model-v1.2.3-prod256.ckpt`  
-**Test split:** `v1_learning/dataset/splits_v2_stratified/test.parquet`  (1694 photos)  
-**Generated:** 2026-05-13T16:22:11  
+**Model:** `C:\Users\vikas.DESKTOP-61LEE8B\Projects\SonnaEditor\v1_learning\model-v2.0.0.ckpt`  
+**Test split:** `v1_learning\dataset\splits_v2_stratified\test.parquet`  (30 photos)  
+**Generated:** 2026-06-01T15:20:19  
 **Architecture:** v1, 13 heads, 135 outputs  
 
 Read-only diagnostic against the live production checkpoint. Raw
@@ -14,11 +14,11 @@ log-K and Kelvin views.
 
 | Category | Count | % of 135 |
 |---|---:|---:|
-| HEALTHY | 11 | 8.1% |
-| HIGH ERROR | 50 | 37.0% |
-| COLLAPSED | 11 | 8.1% |
-| WRONG DIRECTION | 11 | 8.1% |
-| SPARSE TARGET | 52 | 38.5% |
+| HEALTHY | 3 | 2.2% |
+| HIGH ERROR | 70 | 51.9% |
+| COLLAPSED | 13 | 9.6% |
+| WRONG DIRECTION | 0 | 0.0% |
+| SPARSE TARGET | 49 | 36.3% |
 
 ## 2. Per-panel breakdown (all 135 sliders)
 
@@ -30,988 +30,1096 @@ sparse = fraction of test rows at default.
 
 | idx | field | range | category | mae | std_ratio | dir | corr | sparse |
 |---:|---|---|---|---:|---:|---:|---:|---:|
-| 0 | Exposure2012 | [-5, 5] | HIGH ERROR | 0.342 | 0.54 | 0.78 | 0.45 | 14% |
-| 1 | Contrast2012 | [-100, 100] | WRONG DIRECTION | 7.396 | 0.39 | 0.53 | 0.17 | 5% |
-| 2 | Highlights2012 | [-100, 100] | HIGH ERROR | 7.323 | 0.36 | 1.00 | 0.17 | 4% |
-| 3 | Shadows2012 | [-100, 100] | HIGH ERROR | 15.162 | 0.35 | 1.00 | 0.36 | 7% |
-| 4 | Whites2012 | [-100, 100] | WRONG DIRECTION | 15.383 | 0.52 | 0.38 | 0.25 | 38% |
-| 5 | Blacks2012 | [-100, 100] | HIGH ERROR | 10.265 | 0.50 | 0.78 | 0.35 | 8% |
-| 6 | Clarity2012 | [-100, 100] | HIGH ERROR | 3.933 | 0.23 | 1.00 | 0.06 | 3% |
-| 7 | Dehaze | [-100, 100] | HIGH ERROR | 4.507 | 0.39 | 0.99 | 0.41 | 41% |
+| 0 | Exposure2012 | [-5, 5] | HIGH ERROR | 0.240 | 0.26 | 0.96 | 0.59 | 20% |
+| 1 | Contrast2012 | [-100, 100] | HIGH ERROR | 0.637 | 0.32 | 1.00 | 0.53 | 0% |
+| 2 | Highlights2012 | [-100, 100] | HIGH ERROR | 6.679 | 0.13 | 1.00 | -0.73 | 0% |
+| 3 | Shadows2012 | [-100, 100] | HIGH ERROR | 6.989 | 0.17 | 1.00 | -0.77 | 0% |
+| 4 | Whites2012 | [-100, 100] | HIGH ERROR | 2.859 | 0.33 | 1.00 | -0.38 | 0% |
+| 5 | Blacks2012 | [-100, 100] | HEALTHY | 0.901 | 1.32 | 1.00 | 0.42 | 0% |
+| 6 | Clarity2012 | [-100, 100] | HIGH ERROR | 0.307 | — | 1.00 | — | 0% |
+| 7 | Dehaze | [-100, 100] | COLLAPSED | 3.105 | 0.08 | 1.00 | 0.18 | 7% |
 
 ### Presence (idx 8-10)
 
 | idx | field | range | category | mae | std_ratio | dir | corr | sparse |
 |---:|---|---|---|---:|---:|---:|---:|---:|
-| 8 | Texture | [-100, 100] | WRONG DIRECTION | 3.443 | 0.36 | 0.20 | 0.17 | 41% |
-| 9 | Vibrance | [-100, 100] | HIGH ERROR | 6.907 | 0.48 | 0.99 | 0.17 | 8% |
-| 10 | Saturation | [-100, 100] | WRONG DIRECTION | 5.883 | 0.43 | 0.30 | 0.27 | 12% |
+| 8 | Texture | [-100, 100] | HIGH ERROR | 0.158 | — | — | — | 0% |
+| 9 | Vibrance | [-100, 100] | HIGH ERROR | 0.643 | 0.12 | 1.00 | 0.34 | 0% |
+| 10 | Saturation | [-100, 100] | HIGH ERROR | 0.651 | 0.17 | 1.00 | -0.37 | 3% |
 
 ### WB (idx 11-12)
 
 | idx | field | range | category | mae | std_ratio | dir | corr | sparse |
 |---:|---|---|---|---:|---:|---:|---:|---:|
-| 11 | Temperature | [2000, 50000] | HEALTHY | 731.276 | 0.93 | — | 0.71 | 22% |
-| 12 | Tint | [-150, 150] | COLLAPSED | 6.146 | 0.04 | 0.97 | -0.00 | 13% |
+| 11 | Temperature | [2000, 50000] | HEALTHY | 222.518 | 1.00 | — | 0.99 | 53% |
+| 12 | Tint | [-150, 150] | HEALTHY | 2.166 | 1.03 | 0.90 | 0.93 | 30% |
 
 ### HSL Hue (idx 13-20)
 
 | idx | field | range | category | mae | std_ratio | dir | corr | sparse |
 |---:|---|---|---|---:|---:|---:|---:|---:|
-| 13 | HueAdjustmentRed | [-100, 100] | HIGH ERROR | 4.287 | 0.41 | 1.00 | 0.28 | 33% |
-| 14 | HueAdjustmentOrange | [-100, 100] | HIGH ERROR | 6.396 | 0.46 | 1.00 | 0.12 | 8% |
-| 15 | HueAdjustmentYellow | [-100, 100] | HIGH ERROR | 7.184 | 0.75 | 0.78 | 0.52 | 21% |
-| 16 | HueAdjustmentGreen | [-100, 100] | WRONG DIRECTION | 8.144 | 0.69 | 0.49 | 0.54 | 44% |
-| 17 | HueAdjustmentAqua | [-100, 100] | HIGH ERROR | 6.379 | 0.45 | 1.00 | 0.10 | 29% |
-| 18 | HueAdjustmentBlue | [-100, 100] | HIGH ERROR | 7.154 | 0.35 | 0.66 | 0.42 | 33% |
-| 19 | HueAdjustmentPurple | [-100, 100] | HEALTHY | 7.660 | 0.72 | 0.99 | -0.16 | 29% |
-| 20 | HueAdjustmentMagenta | [-100, 100] | HEALTHY | 0.689 | 0.94 | 1.00 | -0.22 | 29% |
+| 13 | HueAdjustmentRed | [-100, 100] | HIGH ERROR | 0.496 | — | 1.00 | — | 0% |
+| 14 | HueAdjustmentOrange | [-100, 100] | HIGH ERROR | 1.942 | 0.22 | 1.00 | -0.05 | 0% |
+| 15 | HueAdjustmentYellow | [-100, 100] | COLLAPSED | 9.218 | 0.02 | 0.92 | 0.03 | 7% |
+| 16 | HueAdjustmentGreen | [-100, 100] | COLLAPSED | 5.113 | 0.02 | 0.88 | 0.24 | 7% |
+| 17 | HueAdjustmentAqua | [-100, 100] | COLLAPSED | 3.051 | 0.06 | 1.00 | 0.36 | 7% |
+| 18 | HueAdjustmentBlue | [-100, 100] | COLLAPSED | 1.609 | 0.02 | 1.00 | -0.08 | 43% |
+| 19 | HueAdjustmentPurple | [-100, 100] | HIGH ERROR | 1.927 | 0.48 | 1.00 | -0.56 | 0% |
+| 20 | HueAdjustmentMagenta | [-100, 100] | HIGH ERROR | 0.272 | — | 1.00 | — | 0% |
 
 ### HSL Saturation (idx 21-28)
 
 | idx | field | range | category | mae | std_ratio | dir | corr | sparse |
 |---:|---|---|---|---:|---:|---:|---:|---:|
-| 21 | SaturationAdjustmentRed | [-100, 100] | WRONG DIRECTION | 7.502 | 0.73 | 0.55 | 0.04 | 3% |
-| 22 | SaturationAdjustmentOrange | [-100, 100] | HIGH ERROR | 17.178 | 0.31 | 0.58 | -0.02 | 10% |
-| 23 | SaturationAdjustmentYellow | [-100, 100] | HIGH ERROR | 9.815 | 0.47 | 0.76 | 0.17 | 8% |
-| 24 | SaturationAdjustmentGreen | [-100, 100] | WRONG DIRECTION | 9.050 | 0.60 | 0.54 | 0.08 | 3% |
-| 25 | SaturationAdjustmentAqua | [-100, 100] | HEALTHY | 2.296 | 0.58 | 1.00 | 0.30 | 3% |
-| 26 | SaturationAdjustmentBlue | [-100, 100] | HEALTHY | 8.481 | 0.53 | 0.99 | 0.37 | 29% |
-| 27 | SaturationAdjustmentPurple | [-100, 100] | HIGH ERROR | 11.049 | 0.50 | 0.59 | 0.18 | 11% |
-| 28 | SaturationAdjustmentMagenta | [-100, 100] | WRONG DIRECTION | 11.124 | 0.44 | 0.48 | 0.26 | 3% |
+| 21 | SaturationAdjustmentRed | [-100, 100] | HIGH ERROR | 0.808 | 0.12 | 1.00 | -0.34 | 3% |
+| 22 | SaturationAdjustmentOrange | [-100, 100] | COLLAPSED | 1.279 | 0.04 | 1.00 | 0.13 | 23% |
+| 23 | SaturationAdjustmentYellow | [-100, 100] | COLLAPSED | 1.740 | 0.02 | 0.92 | -0.22 | 27% |
+| 24 | SaturationAdjustmentGreen | [-100, 100] | HIGH ERROR | 1.641 | 0.11 | 1.00 | -0.52 | 3% |
+| 25 | SaturationAdjustmentAqua | [-100, 100] | HIGH ERROR | 0.257 | — | 1.00 | — | 0% |
+| 26 | SaturationAdjustmentBlue | [-100, 100] | COLLAPSED | 1.790 | 0.05 | 1.00 | 0.41 | 17% |
+| 27 | SaturationAdjustmentPurple | [-100, 100] | SPARSE TARGET | 1.123 | 0.03 | 1.00 | 0.48 | 90% |
+| 28 | SaturationAdjustmentMagenta | [-100, 100] | COLLAPSED | 1.522 | 0.03 | 0.95 | -0.41 | 10% |
 
 ### HSL Luminance (idx 29-36)
 
 | idx | field | range | category | mae | std_ratio | dir | corr | sparse |
 |---:|---|---|---|---:|---:|---:|---:|---:|
-| 29 | LuminanceAdjustmentRed | [-100, 100] | HIGH ERROR | 3.325 | 0.47 | 1.00 | 0.59 | 3% |
-| 30 | LuminanceAdjustmentOrange | [-100, 100] | HIGH ERROR | 10.295 | 0.41 | 0.89 | 0.43 | 25% |
-| 31 | LuminanceAdjustmentYellow | [-100, 100] | HIGH ERROR | 10.353 | 0.48 | 0.91 | 0.34 | 4% |
-| 32 | LuminanceAdjustmentGreen | [-100, 100] | HEALTHY | 6.231 | 0.89 | 0.98 | 0.27 | 11% |
-| 33 | LuminanceAdjustmentAqua | [-100, 100] | SPARSE TARGET | 1.933 | 0.67 | 0.00 | -0.31 | 100% |
-| 34 | LuminanceAdjustmentBlue | [-100, 100] | WRONG DIRECTION | 7.371 | 0.56 | 0.47 | 0.08 | 3% |
-| 35 | LuminanceAdjustmentPurple | [-100, 100] | WRONG DIRECTION | 6.513 | 0.28 | 0.48 | -0.05 | 35% |
-| 36 | LuminanceAdjustmentMagenta | [-100, 100] | HIGH ERROR | 9.748 | 0.30 | 0.55 | 0.04 | 4% |
+| 29 | LuminanceAdjustmentRed | [-100, 100] | HIGH ERROR | 0.744 | — | 1.00 | — | 0% |
+| 30 | LuminanceAdjustmentOrange | [-100, 100] | COLLAPSED | 1.279 | 0.04 | 1.00 | 0.01 | 17% |
+| 31 | LuminanceAdjustmentYellow | [-100, 100] | COLLAPSED | 6.598 | 0.05 | 0.93 | 0.30 | 3% |
+| 32 | LuminanceAdjustmentGreen | [-100, 100] | COLLAPSED | 13.584 | 0.03 | 1.00 | -0.02 | 7% |
+| 33 | LuminanceAdjustmentAqua | [-100, 100] | SPARSE TARGET | 0.117 | — | — | — | 100% |
+| 34 | LuminanceAdjustmentBlue | [-100, 100] | HIGH ERROR | 1.335 | 0.20 | 1.00 | -0.21 | 0% |
+| 35 | LuminanceAdjustmentPurple | [-100, 100] | SPARSE TARGET | 0.657 | 0.10 | 1.00 | 0.49 | 87% |
+| 36 | LuminanceAdjustmentMagenta | [-100, 100] | COLLAPSED | 2.024 | 0.02 | 0.95 | -0.42 | 10% |
 
 ### Parametric Tone Curve (idx 37-43)
 
 | idx | field | range | category | mae | std_ratio | dir | corr | sparse |
 |---:|---|---|---|---:|---:|---:|---:|---:|
-| 37 | ParametricHighlights | [-100, 100] | SPARSE TARGET | 0.204 | — | — | — | 100% |
-| 38 | ParametricLights | [-100, 100] | SPARSE TARGET | 0.148 | — | — | — | 100% |
-| 39 | ParametricDarks | [-100, 100] | SPARSE TARGET | 0.158 | — | — | — | 100% |
-| 40 | ParametricShadows | [-100, 100] | SPARSE TARGET | 0.021 | — | — | — | 100% |
-| 41 | ParametricHighlightSplit | [0, 100] | SPARSE TARGET | 1.404 | — | — | — | 100% |
-| 42 | ParametricMidtoneSplit | [0, 100] | HIGH ERROR | 1.759 | — | — | — | 41% |
-| 43 | ParametricShadowSplit | [0, 100] | HIGH ERROR | 0.657 | — | — | — | 41% |
+| 37 | ParametricHighlights | [-100, 100] | SPARSE TARGET | 0.448 | — | — | — | 100% |
+| 38 | ParametricLights | [-100, 100] | SPARSE TARGET | 0.306 | — | — | — | 100% |
+| 39 | ParametricDarks | [-100, 100] | SPARSE TARGET | 0.350 | — | — | — | 100% |
+| 40 | ParametricShadows | [-100, 100] | SPARSE TARGET | 0.090 | — | — | — | 100% |
+| 41 | ParametricHighlightSplit | [0, 100] | SPARSE TARGET | 3.592 | — | — | — | 100% |
+| 42 | ParametricMidtoneSplit | [0, 100] | HIGH ERROR | 2.767 | — | — | — | 0% |
+| 43 | ParametricShadowSplit | [0, 100] | HIGH ERROR | 0.588 | — | — | — | 0% |
 
 ### Color Grading (idx 44-57)
 
 | idx | field | range | category | mae | std_ratio | dir | corr | sparse |
 |---:|---|---|---|---:|---:|---:|---:|---:|
-| 44 | SplitToningShadowHue | [0, 360] | COLLAPSED | 48.087 | 0.03 | — | -0.03 | 3% |
-| 45 | SplitToningShadowSaturation | [0, 100] | HIGH ERROR | 4.179 | 0.24 | — | -0.14 | 54% |
-| 46 | ColorGradeShadowLum | [-100, 100] | HIGH ERROR | 15.444 | 0.48 | 0.70 | 0.19 | 30% |
-| 47 | ColorGradeMidtoneHue | [0, 360] | COLLAPSED | 10.763 | 0.05 | — | -0.13 | 3% |
-| 48 | ColorGradeMidtoneSat | [0, 100] | HIGH ERROR | 5.270 | 0.33 | — | 0.30 | 28% |
-| 49 | ColorGradeMidtoneLum | [-100, 100] | HIGH ERROR | 7.352 | 0.23 | 1.00 | 0.16 | 30% |
-| 50 | SplitToningHighlightHue | [0, 360] | HIGH ERROR | 5.781 | 0.33 | — | 0.15 | 3% |
-| 51 | SplitToningHighlightSaturation | [0, 100] | HEALTHY | 2.857 | 0.89 | — | 0.30 | 67% |
-| 52 | ColorGradeHighlightLum | [-100, 100] | WRONG DIRECTION | 0.856 | 0.39 | 0.00 | 0.05 | 30% |
-| 53 | ColorGradeBlending | [0, 100] | SPARSE TARGET | 0.621 | 0.32 | — | 0.02 | 100% |
-| 54 | ColorGradeGlobalHue | [0, 360] | SPARSE TARGET | 0.017 | — | — | — | 100% |
-| 55 | ColorGradeGlobalSat | [0, 100] | SPARSE TARGET | 0.040 | — | — | — | 100% |
-| 56 | ColorGradeGlobalLum | [-100, 100] | SPARSE TARGET | 0.022 | — | — | — | 100% |
-| 57 | SplitToningBalance | [-100, 100] | HIGH ERROR | 0.403 | — | 1.00 | — | 34% |
+| 44 | SplitToningShadowHue | [0, 360] | HIGH ERROR | 5.571 | — | — | — | 0% |
+| 45 | SplitToningShadowSaturation | [0, 100] | HIGH ERROR | 0.640 | — | — | — | 0% |
+| 46 | ColorGradeShadowLum | [-100, 100] | HIGH ERROR | 1.061 | — | 1.00 | — | 0% |
+| 47 | ColorGradeMidtoneHue | [0, 360] | HIGH ERROR | 2.804 | — | — | — | 0% |
+| 48 | ColorGradeMidtoneSat | [0, 100] | HIGH ERROR | 0.618 | — | — | — | 0% |
+| 49 | ColorGradeMidtoneLum | [-100, 100] | HIGH ERROR | 1.490 | — | 1.00 | — | 0% |
+| 50 | SplitToningHighlightHue | [0, 360] | HIGH ERROR | 8.726 | — | — | — | 0% |
+| 51 | SplitToningHighlightSaturation | [0, 100] | SPARSE TARGET | 0.158 | — | — | — | 100% |
+| 52 | ColorGradeHighlightLum | [-100, 100] | HIGH ERROR | 0.253 | — | — | — | 0% |
+| 53 | ColorGradeBlending | [0, 100] | SPARSE TARGET | 2.161 | — | — | — | 100% |
+| 54 | ColorGradeGlobalHue | [0, 360] | SPARSE TARGET | 0.169 | — | — | — | 100% |
+| 55 | ColorGradeGlobalSat | [0, 100] | SPARSE TARGET | 0.043 | — | — | — | 100% |
+| 56 | ColorGradeGlobalLum | [-100, 100] | SPARSE TARGET | 0.287 | — | — | — | 100% |
+| 57 | SplitToningBalance | [-100, 100] | HIGH ERROR | 3.337 | — | 1.00 | — | 0% |
 
 ### Calibration (idx 58-63)
 
 | idx | field | range | category | mae | std_ratio | dir | corr | sparse |
 |---:|---|---|---|---:|---:|---:|---:|---:|
-| 58 | RedHue | [-100, 100] | HIGH ERROR | 7.923 | 0.16 | 1.00 | 0.35 | 19% |
-| 59 | RedSaturation | [-100, 100] | HIGH ERROR | 7.592 | 0.24 | 0.98 | 0.11 | 62% |
-| 60 | GreenHue | [-100, 100] | HIGH ERROR | 20.710 | 0.54 | 1.00 | 0.45 | 20% |
-| 61 | GreenSaturation | [-100, 100] | HIGH ERROR | 8.092 | 0.30 | 0.71 | 0.38 | 21% |
-| 62 | BlueHue | [-100, 100] | HIGH ERROR | 4.593 | 0.28 | 1.00 | 0.42 | 46% |
-| 63 | BlueSaturation | [-100, 100] | HIGH ERROR | 5.092 | 0.22 | 0.67 | 0.49 | 20% |
+| 58 | RedHue | [-100, 100] | HIGH ERROR | 0.526 | — | 1.00 | — | 0% |
+| 59 | RedSaturation | [-100, 100] | SPARSE TARGET | 0.352 | — | — | — | 100% |
+| 60 | GreenHue | [-100, 100] | HIGH ERROR | 2.249 | — | 1.00 | — | 0% |
+| 61 | GreenSaturation | [-100, 100] | HIGH ERROR | 0.346 | — | 1.00 | — | 0% |
+| 62 | BlueHue | [-100, 100] | HIGH ERROR | 0.650 | — | 1.00 | — | 0% |
+| 63 | BlueSaturation | [-100, 100] | HIGH ERROR | 0.261 | — | 1.00 | — | 0% |
 
 ### Detail Sharpening (idx 64-67)
 
 | idx | field | range | category | mae | std_ratio | dir | corr | sparse |
 |---:|---|---|---|---:|---:|---:|---:|---:|
-| 64 | Sharpness | [0, 150] | HIGH ERROR | 14.843 | 0.14 | — | 0.31 | 1% |
-| 65 | SharpenRadius | [0, 3] | SPARSE TARGET | 0.025 | — | — | — | 100% |
-| 66 | SharpenDetail | [0, 100] | SPARSE TARGET | 0.678 | — | — | — | 100% |
-| 67 | SharpenEdgeMasking | [0, 100] | HIGH ERROR | 10.570 | 0.42 | — | 0.51 | 8% |
+| 64 | Sharpness | [0, 150] | HIGH ERROR | 27.815 | 0.35 | — | 0.48 | 0% |
+| 65 | SharpenRadius | [0, 3] | SPARSE TARGET | 0.049 | — | — | — | 100% |
+| 66 | SharpenDetail | [0, 100] | SPARSE TARGET | 11.124 | — | — | — | 100% |
+| 67 | SharpenEdgeMasking | [0, 100] | HIGH ERROR | 52.416 | — | — | — | 0% |
 
 ### Detail Noise Reduction (idx 68-71)
 
 | idx | field | range | category | mae | std_ratio | dir | corr | sparse |
 |---:|---|---|---|---:|---:|---:|---:|---:|
-| 68 | LuminanceSmoothing | [0, 100] | HIGH ERROR | 5.295 | 0.38 | — | 0.08 | 39% |
-| 69 | LuminanceNoiseReductionDetail | [0, 100] | SPARSE TARGET | 1.974 | — | — | — | 100% |
-| 70 | LuminanceNoiseReductionContrast | [0, 100] | SPARSE TARGET | 0.017 | — | — | — | 100% |
-| 71 | ColorNoiseReduction | [0, 100] | SPARSE TARGET | 0.260 | 0.32 | — | 0.01 | 100% |
+| 68 | LuminanceSmoothing | [0, 100] | HIGH ERROR | 0.615 | — | — | — | 0% |
+| 69 | LuminanceNoiseReductionDetail | [0, 100] | SPARSE TARGET | 2.187 | — | — | — | 100% |
+| 70 | LuminanceNoiseReductionContrast | [0, 100] | SPARSE TARGET | 0.131 | — | — | — | 100% |
+| 71 | ColorNoiseReduction | [0, 100] | SPARSE TARGET | 1.227 | — | — | — | 100% |
 
 ### Effects (idx 72-79)
 
 | idx | field | range | category | mae | std_ratio | dir | corr | sparse |
 |---:|---|---|---|---:|---:|---:|---:|---:|
-| 72 | PostCropVignetteAmount | [-100, 100] | SPARSE TARGET | 0.173 | 0.20 | 0.00 | -0.00 | 100% |
+| 72 | PostCropVignetteAmount | [-100, 100] | SPARSE TARGET | 0.193 | — | — | — | 100% |
 | 73 | PostCropVignetteMidpoint | [0, 100] | SPARSE TARGET | — | — | — | — | 100% |
 | 74 | PostCropVignetteRoundness | [-100, 100] | SPARSE TARGET | — | — | — | — | 100% |
 | 75 | PostCropVignetteFeather | [0, 100] | SPARSE TARGET | — | — | — | — | 100% |
 | 76 | PostCropVignetteHighlightContrast | [0, 100] | SPARSE TARGET | — | — | — | — | 100% |
-| 77 | GrainAmount | [0, 100] | SPARSE TARGET | 5.216 | 0.45 | — | 0.76 | 93% |
-| 78 | GrainSize | [0, 100] | SPARSE TARGET | 1.710 | 0.67 | — | 0.54 | 93% |
-| 79 | GrainFrequency | [0, 100] | SPARSE TARGET | 9.929 | 0.48 | — | 0.60 | 85% |
+| 77 | GrainAmount | [0, 100] | SPARSE TARGET | 0.569 | — | — | — | 100% |
+| 78 | GrainSize | [0, 100] | SPARSE TARGET | — | — | — | — | 100% |
+| 79 | GrainFrequency | [0, 100] | HIGH ERROR | 0.702 | — | — | — | 0% |
 
 ### Lens Corrections (idx 80-81)
 
 | idx | field | range | category | mae | std_ratio | dir | corr | sparse |
 |---:|---|---|---|---:|---:|---:|---:|---:|
-| 80 | LensManualDistortionAmount | [-100, 100] | SPARSE TARGET | 0.010 | — | — | — | 100% |
-| 81 | VignetteAmount | [-100, 100] | SPARSE TARGET | 0.013 | — | — | — | 100% |
+| 80 | LensManualDistortionAmount | [-100, 100] | SPARSE TARGET | 0.041 | — | — | — | 100% |
+| 81 | VignetteAmount | [-100, 100] | SPARSE TARGET | 0.061 | — | — | — | 100% |
 
 ### Transform (idx 82-86)
 
 | idx | field | range | category | mae | std_ratio | dir | corr | sparse |
 |---:|---|---|---|---:|---:|---:|---:|---:|
-| 82 | PerspectiveVertical | [-100, 100] | SPARSE TARGET | 0.007 | — | — | — | 100% |
-| 83 | PerspectiveHorizontal | [-100, 100] | SPARSE TARGET | 0.014 | — | — | — | 100% |
-| 84 | PerspectiveRotate | [-10, 10] | SPARSE TARGET | 0.033 | — | — | — | 100% |
-| 85 | PerspectiveScale | [50, 150] | SPARSE TARGET | 0.934 | — | — | — | 100% |
-| 86 | PerspectiveAspect | [-100, 100] | SPARSE TARGET | 0.046 | — | — | — | 100% |
+| 82 | PerspectiveVertical | [-100, 100] | SPARSE TARGET | 0.038 | — | — | — | 100% |
+| 83 | PerspectiveHorizontal | [-100, 100] | SPARSE TARGET | 0.245 | — | — | — | 100% |
+| 84 | PerspectiveRotate | [-10, 10] | SPARSE TARGET | 0.318 | — | — | — | 100% |
+| 85 | PerspectiveScale | [50, 150] | SPARSE TARGET | 11.986 | — | — | — | 100% |
+| 86 | PerspectiveAspect | [-100, 100] | SPARSE TARGET | 0.044 | — | — | — | 100% |
 
 ### Tone Curves (Composite) (idx 87-98)
 
 | idx | field | range | category | mae | std_ratio | dir | corr | sparse |
 |---:|---|---|---|---:|---:|---:|---:|---:|
-| 87 | ToneCurve_Pt1_X | [0, 255] | SPARSE TARGET | 0.027 | — | — | — | 100% |
-| 88 | ToneCurve_Pt1_Y | [0, 255] | COLLAPSED | 3.298 | 0.05 | — | -0.01 | 9% |
-| 89 | ToneCurve_Pt2_X | [0, 255] | COLLAPSED | 5.014 | 0.07 | — | 0.23 | 4% |
-| 90 | ToneCurve_Pt2_Y | [0, 255] | COLLAPSED | 6.387 | 0.06 | — | 0.14 | 3% |
-| 91 | ToneCurve_Pt3_X | [0, 255] | COLLAPSED | 8.248 | 0.08 | — | 0.12 | 4% |
-| 92 | ToneCurve_Pt3_Y | [0, 255] | COLLAPSED | 12.174 | 0.06 | — | 0.07 | 3% |
-| 93 | ToneCurve_Pt4_X | [0, 255] | HIGH ERROR | 16.189 | 0.14 | — | -0.03 | 39% |
-| 94 | ToneCurve_Pt4_Y | [0, 255] | HIGH ERROR | 9.430 | 0.22 | — | 0.03 | 38% |
-| 95 | ToneCurve_Pt5_X | [0, 255] | HEALTHY | 4.677 | 0.73 | — | 0.24 | 16% |
-| 96 | ToneCurve_Pt5_Y | [0, 255] | HIGH ERROR | 5.869 | 0.38 | — | 0.24 | 6% |
-| 97 | ToneCurve_Pt6_X | [0, 255] | SPARSE TARGET | 3.402 | — | — | — | 100% |
-| 98 | ToneCurve_Pt6_Y | [0, 255] | HEALTHY | 5.483 | 0.68 | — | 0.05 | 6% |
+| 87 | ToneCurve_Pt1_X | [0, 255] | SPARSE TARGET | 0.504 | — | — | — | 100% |
+| 88 | ToneCurve_Pt1_Y | [0, 255] | HIGH ERROR | 0.320 | — | — | — | 0% |
+| 89 | ToneCurve_Pt2_X | [0, 255] | HIGH ERROR | 0.753 | — | — | — | 0% |
+| 90 | ToneCurve_Pt2_Y | [0, 255] | HIGH ERROR | 0.841 | — | — | — | 0% |
+| 91 | ToneCurve_Pt3_X | [0, 255] | HIGH ERROR | 2.517 | — | — | — | 0% |
+| 92 | ToneCurve_Pt3_Y | [0, 255] | HIGH ERROR | 2.638 | — | — | — | 0% |
+| 93 | ToneCurve_Pt4_X | [0, 255] | HIGH ERROR | 5.957 | — | — | — | 0% |
+| 94 | ToneCurve_Pt4_Y | [0, 255] | HIGH ERROR | 6.080 | — | — | — | 0% |
+| 95 | ToneCurve_Pt5_X | [0, 255] | SPARSE TARGET | 7.592 | — | — | — | 100% |
+| 96 | ToneCurve_Pt5_Y | [0, 255] | HIGH ERROR | 6.646 | — | — | — | 0% |
+| 97 | ToneCurve_Pt6_X | [0, 255] | SPARSE TARGET | 8.609 | — | — | — | 100% |
+| 98 | ToneCurve_Pt6_Y | [0, 255] | HIGH ERROR | 12.714 | — | — | — | 0% |
 
 ### Tone Curves (Red) (idx 99-110)
 
 | idx | field | range | category | mae | std_ratio | dir | corr | sparse |
 |---:|---|---|---|---:|---:|---:|---:|---:|
-| 99 | ToneCurveRed_Pt1_X | [0, 255] | SPARSE TARGET | 0.011 | — | — | — | 100% |
-| 100 | ToneCurveRed_Pt1_Y | [0, 255] | SPARSE TARGET | 0.044 | — | — | — | 100% |
-| 101 | ToneCurveRed_Pt2_X | [0, 255] | HEALTHY | 2.226 | 0.52 | — | -0.09 | 65% |
-| 102 | ToneCurveRed_Pt2_Y | [0, 255] | COLLAPSED | 5.466 | 0.09 | — | 0.14 | 3% |
-| 103 | ToneCurveRed_Pt3_X | [0, 255] | HIGH ERROR | 9.423 | 0.16 | — | 0.14 | 53% |
-| 104 | ToneCurveRed_Pt3_Y | [0, 255] | HIGH ERROR | 15.212 | 0.11 | — | 0.19 | 10% |
-| 105 | ToneCurveRed_Pt4_X | [0, 255] | HIGH ERROR | 14.992 | 0.15 | — | 0.15 | 53% |
-| 106 | ToneCurveRed_Pt4_Y | [0, 255] | HIGH ERROR | 15.233 | 0.17 | — | 0.16 | 3% |
-| 107 | ToneCurveRed_Pt5_X | [0, 255] | HIGH ERROR | 16.669 | 0.19 | — | 0.15 | 53% |
-| 108 | ToneCurveRed_Pt5_Y | [0, 255] | HIGH ERROR | 11.285 | 0.29 | — | 0.14 | 3% |
-| 109 | ToneCurveRed_Pt6_X | [0, 255] | SPARSE TARGET | 3.275 | — | — | — | 100% |
-| 110 | ToneCurveRed_Pt6_Y | [0, 255] | SPARSE TARGET | 3.476 | — | — | — | 100% |
+| 99 | ToneCurveRed_Pt1_X | [0, 255] | SPARSE TARGET | 0.624 | — | — | — | 100% |
+| 100 | ToneCurveRed_Pt1_Y | [0, 255] | SPARSE TARGET | 0.489 | — | — | — | 100% |
+| 101 | ToneCurveRed_Pt2_X | [0, 255] | SPARSE TARGET | 1.700 | — | — | — | 100% |
+| 102 | ToneCurveRed_Pt2_Y | [0, 255] | HIGH ERROR | 0.951 | — | — | — | 0% |
+| 103 | ToneCurveRed_Pt3_X | [0, 255] | HIGH ERROR | 2.976 | — | — | — | 0% |
+| 104 | ToneCurveRed_Pt3_Y | [0, 255] | HIGH ERROR | 2.420 | — | — | — | 0% |
+| 105 | ToneCurveRed_Pt4_X | [0, 255] | HIGH ERROR | 4.081 | — | — | — | 0% |
+| 106 | ToneCurveRed_Pt4_Y | [0, 255] | HIGH ERROR | 4.874 | — | — | — | 0% |
+| 107 | ToneCurveRed_Pt5_X | [0, 255] | HIGH ERROR | 5.732 | — | — | — | 0% |
+| 108 | ToneCurveRed_Pt5_Y | [0, 255] | HIGH ERROR | 6.581 | — | — | — | 0% |
+| 109 | ToneCurveRed_Pt6_X | [0, 255] | SPARSE TARGET | 41.810 | — | — | — | 100% |
+| 110 | ToneCurveRed_Pt6_Y | [0, 255] | SPARSE TARGET | 8.657 | — | — | — | 100% |
 
 ### Tone Curves (Green) (idx 111-122)
 
 | idx | field | range | category | mae | std_ratio | dir | corr | sparse |
 |---:|---|---|---|---:|---:|---:|---:|---:|
-| 111 | ToneCurveGreen_Pt1_X | [0, 255] | SPARSE TARGET | 0.041 | — | — | — | 100% |
-| 112 | ToneCurveGreen_Pt1_Y | [0, 255] | SPARSE TARGET | 0.016 | — | — | — | 100% |
-| 113 | ToneCurveGreen_Pt2_X | [0, 255] | SPARSE TARGET | 1.228 | 0.50 | — | -0.02 | 88% |
-| 114 | ToneCurveGreen_Pt2_Y | [0, 255] | HIGH ERROR | 5.149 | 0.10 | — | 0.07 | 3% |
-| 115 | ToneCurveGreen_Pt3_X | [0, 255] | SPARSE TARGET | 8.886 | 0.31 | — | 0.06 | 88% |
-| 116 | ToneCurveGreen_Pt3_Y | [0, 255] | HIGH ERROR | 13.112 | 0.21 | — | 0.08 | 45% |
-| 117 | ToneCurveGreen_Pt4_X | [0, 255] | SPARSE TARGET | 17.064 | 0.23 | — | 0.06 | 88% |
-| 118 | ToneCurveGreen_Pt4_Y | [0, 255] | HIGH ERROR | 18.409 | 0.23 | — | 0.02 | 3% |
-| 119 | ToneCurveGreen_Pt5_X | [0, 255] | SPARSE TARGET | 13.420 | 0.41 | — | 0.04 | 88% |
-| 120 | ToneCurveGreen_Pt5_Y | [0, 255] | HEALTHY | 9.024 | 0.56 | — | -0.01 | 3% |
-| 121 | ToneCurveGreen_Pt6_X | [0, 255] | SPARSE TARGET | 3.301 | — | — | — | 100% |
-| 122 | ToneCurveGreen_Pt6_Y | [0, 255] | SPARSE TARGET | 3.413 | — | — | — | 100% |
+| 111 | ToneCurveGreen_Pt1_X | [0, 255] | SPARSE TARGET | 1.122 | — | — | — | 100% |
+| 112 | ToneCurveGreen_Pt1_Y | [0, 255] | SPARSE TARGET | 0.540 | — | — | — | 100% |
+| 113 | ToneCurveGreen_Pt2_X | [0, 255] | HIGH ERROR | 2.435 | — | — | — | 0% |
+| 114 | ToneCurveGreen_Pt2_Y | [0, 255] | HIGH ERROR | 1.715 | — | — | — | 0% |
+| 115 | ToneCurveGreen_Pt3_X | [0, 255] | HIGH ERROR | 2.993 | — | — | — | 0% |
+| 116 | ToneCurveGreen_Pt3_Y | [0, 255] | HIGH ERROR | 3.298 | — | — | — | 0% |
+| 117 | ToneCurveGreen_Pt4_X | [0, 255] | HIGH ERROR | 5.045 | — | — | — | 0% |
+| 118 | ToneCurveGreen_Pt4_Y | [0, 255] | HIGH ERROR | 4.798 | — | — | — | 0% |
+| 119 | ToneCurveGreen_Pt5_X | [0, 255] | HIGH ERROR | 6.063 | — | — | — | 0% |
+| 120 | ToneCurveGreen_Pt5_Y | [0, 255] | HIGH ERROR | 7.051 | — | — | — | 0% |
+| 121 | ToneCurveGreen_Pt6_X | [0, 255] | SPARSE TARGET | 20.683 | — | — | — | 100% |
+| 122 | ToneCurveGreen_Pt6_Y | [0, 255] | SPARSE TARGET | 38.621 | — | — | — | 100% |
 
 ### Tone Curves (Blue) (idx 123-134)
 
 | idx | field | range | category | mae | std_ratio | dir | corr | sparse |
 |---:|---|---|---|---:|---:|---:|---:|---:|
-| 123 | ToneCurveBlue_Pt1_X | [0, 255] | SPARSE TARGET | 0.088 | — | — | — | 100% |
-| 124 | ToneCurveBlue_Pt1_Y | [0, 255] | SPARSE TARGET | 0.014 | 0.03 | — | -0.02 | 100% |
-| 125 | ToneCurveBlue_Pt2_X | [0, 255] | SPARSE TARGET | 7.007 | 0.16 | — | 0.14 | 80% |
-| 126 | ToneCurveBlue_Pt2_Y | [0, 255] | COLLAPSED | 10.896 | 0.07 | — | 0.16 | 3% |
-| 127 | ToneCurveBlue_Pt3_X | [0, 255] | SPARSE TARGET | 17.909 | 0.10 | — | 0.12 | 80% |
-| 128 | ToneCurveBlue_Pt3_Y | [0, 255] | COLLAPSED | 24.552 | 0.08 | — | 0.15 | 49% |
-| 129 | ToneCurveBlue_Pt4_X | [0, 255] | SPARSE TARGET | 17.133 | 0.20 | — | 0.13 | 80% |
-| 130 | ToneCurveBlue_Pt4_Y | [0, 255] | HIGH ERROR | 20.147 | 0.16 | — | 0.10 | 3% |
-| 131 | ToneCurveBlue_Pt5_X | [0, 255] | SPARSE TARGET | 14.833 | 0.29 | — | 0.12 | 80% |
-| 132 | ToneCurveBlue_Pt5_Y | [0, 255] | HIGH ERROR | 10.479 | 0.40 | — | 0.09 | 3% |
-| 133 | ToneCurveBlue_Pt6_X | [0, 255] | SPARSE TARGET | 3.317 | — | — | — | 100% |
-| 134 | ToneCurveBlue_Pt6_Y | [0, 255] | SPARSE TARGET | 3.422 | — | — | — | 100% |
+| 123 | ToneCurveBlue_Pt1_X | [0, 255] | SPARSE TARGET | 0.740 | — | — | — | 100% |
+| 124 | ToneCurveBlue_Pt1_Y | [0, 255] | SPARSE TARGET | 0.659 | — | — | — | 100% |
+| 125 | ToneCurveBlue_Pt2_X | [0, 255] | HIGH ERROR | 1.535 | — | — | — | 0% |
+| 126 | ToneCurveBlue_Pt2_Y | [0, 255] | HIGH ERROR | 0.723 | — | — | — | 0% |
+| 127 | ToneCurveBlue_Pt3_X | [0, 255] | HIGH ERROR | 2.911 | — | — | — | 0% |
+| 128 | ToneCurveBlue_Pt3_Y | [0, 255] | HIGH ERROR | 2.496 | — | — | — | 0% |
+| 129 | ToneCurveBlue_Pt4_X | [0, 255] | HIGH ERROR | 4.509 | — | — | — | 0% |
+| 130 | ToneCurveBlue_Pt4_Y | [0, 255] | HIGH ERROR | 4.823 | — | — | — | 0% |
+| 131 | ToneCurveBlue_Pt5_X | [0, 255] | HIGH ERROR | 5.772 | — | — | — | 0% |
+| 132 | ToneCurveBlue_Pt5_Y | [0, 255] | HIGH ERROR | 6.964 | — | — | — | 0% |
+| 133 | ToneCurveBlue_Pt6_X | [0, 255] | SPARSE TARGET | 46.390 | — | — | — | 100% |
+| 134 | ToneCurveBlue_Pt6_Y | [0, 255] | SPARSE TARGET | 26.595 | — | — | — | 100% |
 
 ## 3. Detailed view — non-HEALTHY non-SPARSE sliders
 
-### `SplitToningShadowHue` — COLLAPSED  (idx 44)
+### `LuminanceAdjustmentGreen` — COLLAPSED  (idx 32)
 
-- range: `[0.00, 360.00]`, default: `0.00`
-- MAE: `48.087` (median `9.240`, p95 `160.696`)
-- norm_mae: `0.1336` (mae / range_span)
-- std(pred)=2.585, std(target)=89.414, ratio=0.029
-- mean(pred)=38.252, mean(target)=93.865, gap=-55.613
-- Pearson corr(pred, target): `-0.030`
+- range: `[-100.00, 100.00]`, default: `0.00`
+- MAE: `13.584` (median `10.544`, p95 `38.881`)
+- norm_mae: `0.0679` (mae / range_span)
+- std(pred)=0.543, std(target)=17.413, ratio=0.031
+- mean(pred)=-21.293, mean(target)=-20.800, gap=-0.493
+- direction correct on signed-range subset: `100.0%`
+- Pearson corr(pred, target): `-0.022`
 - **Diagnosis:** predictions cluster tightly (std ratio < 0.1). Model is not learning the target spread.
 
-### `ToneCurveBlue_Pt3_Y` — COLLAPSED  (idx 128)
+### `HueAdjustmentYellow` — COLLAPSED  (idx 15)
 
-- range: `[0.00, 255.00]`, default: `102.00`
-- MAE: `24.552` (median `25.359`, p95 `31.181`)
-- norm_mae: `0.0963` (mae / range_span)
-- std(pred)=1.690, std(target)=20.367, ratio=0.083
-- mean(pred)=76.292, mean(target)=90.943, gap=-14.651
-- Pearson corr(pred, target): `0.150`
+- range: `[-100.00, 100.00]`, default: `0.00`
+- MAE: `9.218` (median `6.250`, p95 `24.907`)
+- norm_mae: `0.0461` (mae / range_span)
+- std(pred)=0.280, std(target)=11.818, ratio=0.024
+- mean(pred)=11.137, mean(target)=10.733, gap=0.404
+- direction correct on signed-range subset: `92.3%`
+- Pearson corr(pred, target): `0.028`
 - **Diagnosis:** predictions cluster tightly (std ratio < 0.1). Model is not learning the target spread.
 
-### `ToneCurve_Pt3_Y` — COLLAPSED  (idx 92)
+### `LuminanceAdjustmentYellow` — COLLAPSED  (idx 31)
 
-- range: `[0.00, 255.00]`, default: `102.00`
-- MAE: `12.174` (median `7.238`, p95 `47.544`)
-- norm_mae: `0.0477` (mae / range_span)
-- std(pred)=1.150, std(target)=18.375, ratio=0.063
-- mean(pred)=73.554, mean(target)=73.182, gap=0.372
-- Pearson corr(pred, target): `0.072`
+- range: `[-100.00, 100.00]`, default: `0.00`
+- MAE: `6.598` (median `4.942`, p95 `15.686`)
+- norm_mae: `0.0330` (mae / range_span)
+- std(pred)=0.374, std(target)=8.154, ratio=0.046
+- mean(pred)=13.273, mean(target)=14.100, gap=-0.827
+- direction correct on signed-range subset: `92.9%`
+- Pearson corr(pred, target): `0.298`
 - **Diagnosis:** predictions cluster tightly (std ratio < 0.1). Model is not learning the target spread.
 
-### `ToneCurveBlue_Pt2_Y` — COLLAPSED  (idx 126)
+### `HueAdjustmentGreen` — COLLAPSED  (idx 16)
 
-- range: `[0.00, 255.00]`, default: `51.00`
-- MAE: `10.896` (median `10.198`, p95 `17.943`)
-- norm_mae: `0.0427` (mae / range_span)
-- std(pred)=0.601, std(target)=9.206, ratio=0.065
-- mean(pred)=28.778, mean(target)=36.684, gap=-7.906
-- Pearson corr(pred, target): `0.156`
+- range: `[-100.00, 100.00]`, default: `0.00`
+- MAE: `5.113` (median `4.553`, p95 `12.061`)
+- norm_mae: `0.0256` (mae / range_span)
+- std(pred)=0.138, std(target)=5.963, ratio=0.023
+- mean(pred)=-3.785, mean(target)=-5.200, gap=1.415
+- direction correct on signed-range subset: `87.5%`
+- Pearson corr(pred, target): `0.244`
 - **Diagnosis:** predictions cluster tightly (std ratio < 0.1). Model is not learning the target spread.
 
-### `ToneCurve_Pt3_X` — COLLAPSED  (idx 91)
+### `Dehaze` — COLLAPSED  (idx 7)
 
-- range: `[0.00, 255.00]`, default: `102.00`
-- MAE: `8.248` (median `4.021`, p95 `33.750`)
-- norm_mae: `0.0323` (mae / range_span)
-- std(pred)=1.147, std(target)=13.907, ratio=0.082
-- mean(pred)=66.031, mean(target)=64.570, gap=1.461
-- Pearson corr(pred, target): `0.119`
+- range: `[-100.00, 100.00]`, default: `0.00`
+- MAE: `3.105` (median `2.855`, p95 `6.543`)
+- norm_mae: `0.0155` (mae / range_span)
+- std(pred)=0.299, std(target)=3.587, ratio=0.083
+- mean(pred)=8.824, mean(target)=10.000, gap=-1.176
+- direction correct on signed-range subset: `100.0%`
+- Pearson corr(pred, target): `0.183`
 - **Diagnosis:** predictions cluster tightly (std ratio < 0.1). Model is not learning the target spread.
 
-### `ColorGradeMidtoneHue` — COLLAPSED  (idx 47)
+### `HueAdjustmentAqua` — COLLAPSED  (idx 17)
 
-- range: `[0.00, 360.00]`, default: `0.00`
-- MAE: `10.763` (median `6.842`, p95 `36.652`)
-- norm_mae: `0.0299` (mae / range_span)
-- std(pred)=0.749, std(target)=14.510, ratio=0.052
-- mean(pred)=34.791, mean(target)=41.898, gap=-7.107
-- Pearson corr(pred, target): `-0.131`
+- range: `[-100.00, 100.00]`, default: `0.00`
+- MAE: `3.051` (median `2.339`, p95 `7.734`)
+- norm_mae: `0.0153` (mae / range_span)
+- std(pred)=0.237, std(target)=4.031, ratio=0.059
+- mean(pred)=8.326, mean(target)=8.533, gap=-0.207
+- direction correct on signed-range subset: `100.0%`
+- Pearson corr(pred, target): `0.360`
 - **Diagnosis:** predictions cluster tightly (std ratio < 0.1). Model is not learning the target spread.
 
-### `ToneCurve_Pt2_Y` — COLLAPSED  (idx 90)
+### `LuminanceAdjustmentMagenta` — COLLAPSED  (idx 36)
 
-- range: `[0.00, 255.00]`, default: `51.00`
-- MAE: `6.387` (median `3.800`, p95 `19.752`)
-- norm_mae: `0.0250` (mae / range_span)
-- std(pred)=0.556, std(target)=8.769, ratio=0.063
-- mean(pred)=25.280, mean(target)=25.594, gap=-0.315
-- Pearson corr(pred, target): `0.139`
+- range: `[-100.00, 100.00]`, default: `0.00`
+- MAE: `2.024` (median `2.146`, p95 `2.579`)
+- norm_mae: `0.0101` (mae / range_span)
+- std(pred)=0.040, std(target)=1.941, ratio=0.020
+- mean(pred)=0.844, mean(target)=2.033, gap=-1.189
+- direction correct on signed-range subset: `95.0%`
+- Pearson corr(pred, target): `-0.423`
 - **Diagnosis:** predictions cluster tightly (std ratio < 0.1). Model is not learning the target spread.
 
-### `ToneCurveRed_Pt2_Y` — COLLAPSED  (idx 102)
+### `SaturationAdjustmentBlue` — COLLAPSED  (idx 26)
 
-- range: `[0.00, 255.00]`, default: `51.00`
-- MAE: `5.466` (median `3.240`, p95 `14.630`)
-- norm_mae: `0.0214` (mae / range_span)
-- std(pred)=0.621, std(target)=7.004, ratio=0.089
-- mean(pred)=32.119, mean(target)=36.280, gap=-4.161
-- Pearson corr(pred, target): `0.136`
+- range: `[-100.00, 100.00]`, default: `0.00`
+- MAE: `1.790` (median `1.266`, p95 `3.870`)
+- norm_mae: `0.0089` (mae / range_span)
+- std(pred)=0.120, std(target)=2.291, ratio=0.053
+- mean(pred)=-4.286, mean(target)=-3.533, gap=-0.753
+- direction correct on signed-range subset: `100.0%`
+- Pearson corr(pred, target): `0.414`
 - **Diagnosis:** predictions cluster tightly (std ratio < 0.1). Model is not learning the target spread.
 
-### `Tint` — COLLAPSED  (idx 12)
+### `SaturationAdjustmentYellow` — COLLAPSED  (idx 23)
 
-- range: `[-150.00, 150.00]`, default: `0.00`
-- MAE: `6.146` (median `5.681`, p95 `13.519`)
-- norm_mae: `0.0205` (mae / range_span)
-- std(pred)=0.277, std(target)=7.183, ratio=0.039
-- mean(pred)=8.407, mean(target)=8.015, gap=0.392
-- direction correct on signed-range subset: `97.1%`
-- Pearson corr(pred, target): `-0.001`
+- range: `[-100.00, 100.00]`, default: `0.00`
+- MAE: `1.740` (median `1.177`, p95 `4.800`)
+- norm_mae: `0.0087` (mae / range_span)
+- std(pred)=0.053, std(target)=2.596, ratio=0.021
+- mean(pred)=1.745, mean(target)=2.167, gap=-0.422
+- direction correct on signed-range subset: `92.3%`
+- Pearson corr(pred, target): `-0.220`
 - **Diagnosis:** predictions cluster tightly (std ratio < 0.1). Model is not learning the target spread.
 
-### `ToneCurve_Pt2_X` — COLLAPSED  (idx 89)
+### `HueAdjustmentBlue` — COLLAPSED  (idx 18)
 
-- range: `[0.00, 255.00]`, default: `51.00`
-- MAE: `5.014` (median `3.100`, p95 `11.047`)
-- norm_mae: `0.0197` (mae / range_span)
-- std(pred)=0.504, std(target)=7.489, ratio=0.067
-- mean(pred)=24.415, mean(target)=24.215, gap=0.200
-- Pearson corr(pred, target): `0.225`
+- range: `[-100.00, 100.00]`, default: `0.00`
+- MAE: `1.609` (median `1.167`, p95 `4.416`)
+- norm_mae: `0.0080` (mae / range_span)
+- std(pred)=0.042, std(target)=2.040, ratio=0.021
+- mean(pred)=-1.172, mean(target)=-1.800, gap=0.628
+- direction correct on signed-range subset: `100.0%`
+- Pearson corr(pred, target): `-0.085`
 - **Diagnosis:** predictions cluster tightly (std ratio < 0.1). Model is not learning the target spread.
 
-### `ToneCurve_Pt1_Y` — COLLAPSED  (idx 88)
+### `SaturationAdjustmentMagenta` — COLLAPSED  (idx 28)
 
-- range: `[0.00, 255.00]`, default: `0.00`
-- MAE: `3.298` (median `2.824`, p95 `10.190`)
-- norm_mae: `0.0129` (mae / range_span)
-- std(pred)=0.221, std(target)=4.390, ratio=0.050
-- mean(pred)=10.141, mean(target)=10.208, gap=-0.067
-- Pearson corr(pred, target): `-0.006`
+- range: `[-100.00, 100.00]`, default: `0.00`
+- MAE: `1.522` (median `1.636`, p95 `2.108`)
+- norm_mae: `0.0076` (mae / range_span)
+- std(pred)=0.041, std(target)=1.499, ratio=0.027
+- mean(pred)=-1.351, mean(target)=-2.233, gap=0.882
+- direction correct on signed-range subset: `95.0%`
+- Pearson corr(pred, target): `-0.410`
+- **Diagnosis:** predictions cluster tightly (std ratio < 0.1). Model is not learning the target spread.
+
+### `SaturationAdjustmentOrange` — COLLAPSED  (idx 22)
+
+- range: `[-100.00, 100.00]`, default: `0.00`
+- MAE: `1.279` (median `1.038`, p95 `2.946`)
+- norm_mae: `0.0064` (mae / range_span)
+- std(pred)=0.063, std(target)=1.611, ratio=0.039
+- mean(pred)=-2.014, mean(target)=-2.267, gap=0.253
+- direction correct on signed-range subset: `100.0%`
+- Pearson corr(pred, target): `0.127`
+- **Diagnosis:** predictions cluster tightly (std ratio < 0.1). Model is not learning the target spread.
+
+### `LuminanceAdjustmentOrange` — COLLAPSED  (idx 30)
+
+- range: `[-100.00, 100.00]`, default: `0.00`
+- MAE: `1.279` (median `0.765`, p95 `3.752`)
+- norm_mae: `0.0064` (mae / range_span)
+- std(pred)=0.071, std(target)=1.778, ratio=0.040
+- mean(pred)=2.730, mean(target)=2.800, gap=-0.070
+- direction correct on signed-range subset: `100.0%`
+- Pearson corr(pred, target): `0.013`
 - **Diagnosis:** predictions cluster tightly (std ratio < 0.1). Model is not learning the target spread.
 
 ### `SharpenEdgeMasking` — HIGH ERROR  (idx 67)
 
 - range: `[0.00, 100.00]`, default: `0.00`
-- MAE: `10.570` (median `4.093`, p95 `63.478`)
-- norm_mae: `0.1057` (mae / range_span)
-- std(pred)=10.292, std(target)=24.321, ratio=0.423
-- mean(pred)=83.364, mean(target)=80.146, gap=3.218
-- Pearson corr(pred, target): `0.509`
-- **Diagnosis:** model is varying but missing — error is > 1.5× panel-median normalised MAE.
-
-### `GreenHue` — HIGH ERROR  (idx 60)
-
-- range: `[-100.00, 100.00]`, default: `0.00`
-- MAE: `20.710` (median `20.885`, p95 `36.137`)
-- norm_mae: `0.1036` (mae / range_span)
-- std(pred)=10.609, std(target)=19.583, ratio=0.542
-- mean(pred)=29.797, mean(target)=15.327, gap=14.470
-- direction correct on signed-range subset: `99.8%`
-- Pearson corr(pred, target): `0.451`
+- MAE: `52.416` (median `52.417`, p95 `54.189`)
+- norm_mae: `0.5242` (mae / range_span)
+- std(pred)=1.430, std(target)=0.000, ratio=—
+- mean(pred)=37.584, mean(target)=90.000, gap=-52.416
+- Pearson corr(pred, target): `—`
 - **Diagnosis:** model is varying but missing — error is > 1.5× panel-median normalised MAE.
 
 ### `Sharpness` — HIGH ERROR  (idx 64)
 
 - range: `[0.00, 150.00]`, default: `25.00`
-- MAE: `14.843` (median `5.477`, p95 `43.891`)
-- norm_mae: `0.0990` (mae / range_span)
-- std(pred)=2.718, std(target)=20.092, ratio=0.135
-- mean(pred)=52.003, mean(target)=40.870, gap=11.133
-- Pearson corr(pred, target): `0.307`
+- MAE: `27.815` (median `28.344`, p95 `29.952`)
+- norm_mae: `0.1854` (mae / range_span)
+- std(pred)=1.023, std(target)=2.904, ratio=0.352
+- mean(pred)=27.152, mean(target)=54.967, gap=-27.815
+- Pearson corr(pred, target): `0.475`
 - **Diagnosis:** model is varying but missing — error is > 1.5× panel-median normalised MAE.
 
-### `SaturationAdjustmentOrange` — HIGH ERROR  (idx 22)
+### `ToneCurve_Pt6_Y` — HIGH ERROR  (idx 98)
 
-- range: `[-100.00, 100.00]`, default: `0.00`
-- MAE: `17.178` (median `20.174`, p95 `33.396`)
-- norm_mae: `0.0859` (mae / range_span)
-- std(pred)=6.004, std(target)=19.584, ratio=0.307
-- mean(pred)=-0.210, mean(target)=-0.074, gap=-0.136
-- direction correct on signed-range subset: `58.4%`
-- Pearson corr(pred, target): `-0.021`
-- **Diagnosis:** model is varying but missing — error is > 1.5× panel-median normalised MAE.
-
-### `ToneCurveBlue_Pt4_Y` — HIGH ERROR  (idx 130)
-
-- range: `[0.00, 255.00]`, default: `153.00`
-- MAE: `20.147` (median `19.786`, p95 `28.203`)
-- norm_mae: `0.0790` (mae / range_span)
-- std(pred)=2.531, std(target)=15.488, ratio=0.163
-- mean(pred)=139.879, mean(target)=153.982, gap=-14.103
-- Pearson corr(pred, target): `0.103`
-- **Diagnosis:** model is varying but missing — error is > 1.5× panel-median normalised MAE.
-
-### `ColorGradeShadowLum` — HIGH ERROR  (idx 46)
-
-- range: `[-100.00, 100.00]`, default: `0.00`
-- MAE: `15.444` (median `10.429`, p95 `50.459`)
-- norm_mae: `0.0772` (mae / range_span)
-- std(pred)=9.495, std(target)=19.592, ratio=0.485
-- mean(pred)=-9.480, mean(target)=-1.051, gap=-8.429
-- direction correct on signed-range subset: `70.0%`
-- Pearson corr(pred, target): `0.194`
+- range: `[0.00, 255.00]`, default: `255.00`
+- MAE: `12.714` (median `12.539`, p95 `23.202`)
+- norm_mae: `0.0499` (mae / range_span)
+- std(pred)=8.771, std(target)=0.000, ratio=—
+- mean(pred)=239.529, mean(target)=252.000, gap=-12.471
+- Pearson corr(pred, target): `—`
 - **Diagnosis:** model is varying but missing — error is > 1.5× panel-median normalised MAE.
 
 ### `Shadows2012` — HIGH ERROR  (idx 3)
 
 - range: `[-100.00, 100.00]`, default: `0.00`
-- MAE: `15.162` (median `11.610`, p95 `34.090`)
-- norm_mae: `0.0758` (mae / range_span)
-- std(pred)=5.951, std(target)=17.021, ratio=0.350
-- mean(pred)=28.592, mean(target)=18.153, gap=10.439
-- direction correct on signed-range subset: `99.9%`
-- Pearson corr(pred, target): `0.356`
-- **Diagnosis:** model is varying but missing — error is > 1.5× panel-median normalised MAE.
-
-### `ToneCurveGreen_Pt4_Y` — HIGH ERROR  (idx 118)
-
-- range: `[0.00, 255.00]`, default: `153.00`
-- MAE: `18.409` (median `19.175`, p95 `26.437`)
-- norm_mae: `0.0722` (mae / range_span)
-- std(pred)=2.643, std(target)=11.538, ratio=0.229
-- mean(pred)=142.453, mean(target)=157.704, gap=-15.250
-- Pearson corr(pred, target): `0.023`
-- **Diagnosis:** model is varying but missing — error is > 1.5× panel-median normalised MAE.
-
-### `ToneCurveRed_Pt5_X` — HIGH ERROR  (idx 107)
-
-- range: `[0.00, 255.00]`, default: `204.00`
-- MAE: `16.669` (median `17.082`, p95 `25.823`)
-- norm_mae: `0.0654` (mae / range_span)
-- std(pred)=3.266, std(target)=16.839, ratio=0.194
-- mean(pred)=181.739, mean(target)=188.192, gap=-6.454
-- Pearson corr(pred, target): `0.153`
-- **Diagnosis:** model is varying but missing — error is > 1.5× panel-median normalised MAE.
-
-### `ToneCurve_Pt4_X` — HIGH ERROR  (idx 93)
-
-- range: `[0.00, 255.00]`, default: `153.00`
-- MAE: `16.189` (median `17.700`, p95 `41.539`)
-- norm_mae: `0.0635` (mae / range_span)
-- std(pred)=2.413, std(target)=17.664, ratio=0.137
-- mean(pred)=155.835, mean(target)=145.370, gap=10.465
-- Pearson corr(pred, target): `-0.032`
-- **Diagnosis:** model is varying but missing — error is > 1.5× panel-median normalised MAE.
-
-### `ToneCurveRed_Pt4_Y` — HIGH ERROR  (idx 106)
-
-- range: `[0.00, 255.00]`, default: `153.00`
-- MAE: `15.233` (median `14.028`, p95 `24.961`)
-- norm_mae: `0.0597` (mae / range_span)
-- std(pred)=2.626, std(target)=15.653, ratio=0.168
-- mean(pred)=139.537, mean(target)=144.377, gap=-4.839
-- Pearson corr(pred, target): `0.162`
-- **Diagnosis:** model is varying but missing — error is > 1.5× panel-median normalised MAE.
-
-### `ToneCurveRed_Pt3_Y` — HIGH ERROR  (idx 104)
-
-- range: `[0.00, 255.00]`, default: `102.00`
-- MAE: `15.212` (median `15.065`, p95 `21.490`)
-- norm_mae: `0.0597` (mae / range_span)
-- std(pred)=1.644, std(target)=15.301, ratio=0.107
-- mean(pred)=79.336, mean(target)=84.223, gap=-4.887
-- Pearson corr(pred, target): `0.194`
-- **Diagnosis:** model is varying but missing — error is > 1.5× panel-median normalised MAE.
-
-### `ToneCurveRed_Pt4_X` — HIGH ERROR  (idx 105)
-
-- range: `[0.00, 255.00]`, default: `153.00`
-- MAE: `14.992` (median `16.439`, p95 `22.833`)
-- norm_mae: `0.0588` (mae / range_span)
-- std(pred)=2.285, std(target)=14.976, ratio=0.153
-- mean(pred)=132.716, mean(target)=138.917, gap=-6.201
-- Pearson corr(pred, target): `0.147`
-- **Diagnosis:** model is varying but missing — error is > 1.5× panel-median normalised MAE.
-
-### `SaturationAdjustmentPurple` — HIGH ERROR  (idx 27)
-
-- range: `[-100.00, 100.00]`, default: `0.00`
-- MAE: `11.049` (median `10.071`, p95 `21.992`)
-- norm_mae: `0.0552` (mae / range_span)
-- std(pred)=5.879, std(target)=11.662, ratio=0.504
-- mean(pred)=1.254, mean(target)=6.810, gap=-5.556
-- direction correct on signed-range subset: `58.9%`
-- Pearson corr(pred, target): `0.183`
-- **Diagnosis:** model is varying but missing — error is > 1.5× panel-median normalised MAE.
-
-### `LuminanceSmoothing` — HIGH ERROR  (idx 68)
-
-- range: `[0.00, 100.00]`, default: `0.00`
-- MAE: `5.295` (median `4.264`, p95 `10.696`)
-- norm_mae: `0.0529` (mae / range_span)
-- std(pred)=1.638, std(target)=4.354, ratio=0.376
-- mean(pred)=13.510, mean(target)=17.957, gap=-4.447
-- Pearson corr(pred, target): `0.076`
-- **Diagnosis:** model is varying but missing — error is > 1.5× panel-median normalised MAE.
-
-### `ColorGradeMidtoneSat` — HIGH ERROR  (idx 48)
-
-- range: `[0.00, 100.00]`, default: `0.00`
-- MAE: `5.270` (median `4.934`, p95 `11.775`)
-- norm_mae: `0.0527` (mae / range_span)
-- std(pred)=2.090, std(target)=6.240, ratio=0.335
-- mean(pred)=8.156, mean(target)=6.113, gap=2.044
-- Pearson corr(pred, target): `0.299`
-- **Diagnosis:** model is varying but missing — error is > 1.5× panel-median normalised MAE.
-
-### `LuminanceAdjustmentYellow` — HIGH ERROR  (idx 31)
-
-- range: `[-100.00, 100.00]`, default: `0.00`
-- MAE: `10.353` (median `10.080`, p95 `22.067`)
-- norm_mae: `0.0518` (mae / range_span)
-- std(pred)=6.134, std(target)=12.732, ratio=0.482
-- mean(pred)=17.659, mean(target)=15.371, gap=2.288
-- direction correct on signed-range subset: `91.3%`
-- Pearson corr(pred, target): `0.336`
-- **Diagnosis:** model is varying but missing — error is > 1.5× panel-median normalised MAE.
-
-### `LuminanceAdjustmentOrange` — HIGH ERROR  (idx 30)
-
-- range: `[-100.00, 100.00]`, default: `0.00`
-- MAE: `10.295` (median `8.724`, p95 `23.154`)
-- norm_mae: `0.0515` (mae / range_span)
-- std(pred)=4.853, std(target)=11.767, ratio=0.412
-- mean(pred)=6.902, mean(target)=13.666, gap=-6.764
-- direction correct on signed-range subset: `89.4%`
-- Pearson corr(pred, target): `0.428`
-- **Diagnosis:** model is varying but missing — error is > 1.5× panel-median normalised MAE.
-
-### `ToneCurveGreen_Pt3_Y` — HIGH ERROR  (idx 116)
-
-- range: `[0.00, 255.00]`, default: `102.00`
-- MAE: `13.112` (median `13.452`, p95 `16.819`)
-- norm_mae: `0.0514` (mae / range_span)
-- std(pred)=1.636, std(target)=7.905, ratio=0.207
-- mean(pred)=86.054, mean(target)=96.798, gap=-10.743
-- Pearson corr(pred, target): `0.079`
-- **Diagnosis:** model is varying but missing — error is > 1.5× panel-median normalised MAE.
-
-### `Blacks2012` — HIGH ERROR  (idx 5)
-
-- range: `[-100.00, 100.00]`, default: `0.00`
-- MAE: `10.265` (median `9.766`, p95 `23.476`)
-- norm_mae: `0.0513` (mae / range_span)
-- std(pred)=6.169, std(target)=12.367, ratio=0.499
-- mean(pred)=8.369, mean(target)=13.287, gap=-4.918
-- direction correct on signed-range subset: `78.2%`
-- Pearson corr(pred, target): `0.348`
-- **Diagnosis:** model is varying but missing — error is > 1.5× panel-median normalised MAE.
-
-### `SaturationAdjustmentYellow` — HIGH ERROR  (idx 23)
-
-- range: `[-100.00, 100.00]`, default: `0.00`
-- MAE: `9.815` (median `8.599`, p95 `24.526`)
-- norm_mae: `0.0491` (mae / range_span)
-- std(pred)=4.103, std(target)=8.679, ratio=0.473
-- mean(pred)=-3.167, mean(target)=-10.804, gap=7.637
-- direction correct on signed-range subset: `76.2%`
-- Pearson corr(pred, target): `0.166`
-- **Diagnosis:** model is varying but missing — error is > 1.5× panel-median normalised MAE.
-
-### `LuminanceAdjustmentMagenta` — HIGH ERROR  (idx 36)
-
-- range: `[-100.00, 100.00]`, default: `0.00`
-- MAE: `9.748` (median `8.723`, p95 `20.817`)
-- norm_mae: `0.0487` (mae / range_span)
-- std(pred)=3.458, std(target)=11.434, ratio=0.302
-- mean(pred)=0.665, mean(target)=-2.494, gap=3.158
-- direction correct on signed-range subset: `55.4%`
-- Pearson corr(pred, target): `0.041`
-- **Diagnosis:** model is varying but missing — error is > 1.5× panel-median normalised MAE.
-
-### `ToneCurveRed_Pt5_Y` — HIGH ERROR  (idx 108)
-
-- range: `[0.00, 255.00]`, default: `204.00`
-- MAE: `11.285` (median `10.459`, p95 `21.369`)
-- norm_mae: `0.0443` (mae / range_span)
-- std(pred)=3.472, std(target)=11.781, ratio=0.295
-- mean(pred)=195.728, mean(target)=200.398, gap=-4.670
-- Pearson corr(pred, target): `0.139`
-- **Diagnosis:** model is varying but missing — error is > 1.5× panel-median normalised MAE.
-
-### `SplitToningShadowSaturation` — HIGH ERROR  (idx 45)
-
-- range: `[0.00, 100.00]`, default: `0.00`
-- MAE: `4.179` (median `5.133`, p95 `6.245`)
-- norm_mae: `0.0418` (mae / range_span)
-- std(pred)=0.813, std(target)=3.394, ratio=0.239
-- mean(pred)=9.237, mean(target)=6.226, gap=3.010
-- Pearson corr(pred, target): `-0.137`
-- **Diagnosis:** model is varying but missing — error is > 1.5× panel-median normalised MAE.
-
-### `ToneCurveBlue_Pt5_Y` — HIGH ERROR  (idx 132)
-
-- range: `[0.00, 255.00]`, default: `204.00`
-- MAE: `10.479` (median `10.776`, p95 `17.813`)
-- norm_mae: `0.0411` (mae / range_span)
-- std(pred)=3.286, std(target)=8.186, ratio=0.401
-- mean(pred)=201.290, mean(target)=208.975, gap=-7.685
-- Pearson corr(pred, target): `0.085`
-- **Diagnosis:** model is varying but missing — error is > 1.5× panel-median normalised MAE.
-
-### `GreenSaturation` — HIGH ERROR  (idx 61)
-
-- range: `[-100.00, 100.00]`, default: `0.00`
-- MAE: `8.092` (median `5.943`, p95 `19.243`)
-- norm_mae: `0.0405` (mae / range_span)
-- std(pred)=3.164, std(target)=10.656, ratio=0.297
-- mean(pred)=-3.518, mean(target)=-1.054, gap=-2.464
-- direction correct on signed-range subset: `71.4%`
-- Pearson corr(pred, target): `0.379`
-- **Diagnosis:** model is varying but missing — error is > 1.5× panel-median normalised MAE.
-
-### `RedHue` — HIGH ERROR  (idx 58)
-
-- range: `[-100.00, 100.00]`, default: `0.00`
-- MAE: `7.923` (median `8.078`, p95 `12.844`)
-- norm_mae: `0.0396` (mae / range_span)
-- std(pred)=1.388, std(target)=8.645, ratio=0.161
-- mean(pred)=14.135, mean(target)=17.351, gap=-3.216
-- direction correct on signed-range subset: `99.9%`
-- Pearson corr(pred, target): `0.349`
-- **Diagnosis:** model is varying but missing — error is > 1.5× panel-median normalised MAE.
-
-### `RedSaturation` — HIGH ERROR  (idx 59)
-
-- range: `[-100.00, 100.00]`, default: `0.00`
-- MAE: `7.592` (median `6.239`, p95 `17.136`)
-- norm_mae: `0.0380` (mae / range_span)
-- std(pred)=1.934, std(target)=8.225, ratio=0.235
-- mean(pred)=-3.215, mean(target)=-6.490, gap=3.276
-- direction correct on signed-range subset: `97.7%`
-- Pearson corr(pred, target): `0.105`
-- **Diagnosis:** model is varying but missing — error is > 1.5× panel-median normalised MAE.
-
-### `ToneCurve_Pt4_Y` — HIGH ERROR  (idx 94)
-
-- range: `[0.00, 255.00]`, default: `153.00`
-- MAE: `9.430` (median `10.585`, p95 `18.606`)
-- norm_mae: `0.0370` (mae / range_span)
-- std(pred)=2.307, std(target)=10.582, ratio=0.218
-- mean(pred)=152.863, mean(target)=149.341, gap=3.522
-- Pearson corr(pred, target): `0.031`
-- **Diagnosis:** model is varying but missing — error is > 1.5× panel-median normalised MAE.
-
-### `ToneCurveRed_Pt3_X` — HIGH ERROR  (idx 103)
-
-- range: `[0.00, 255.00]`, default: `102.00`
-- MAE: `9.423` (median `9.497`, p95 `13.428`)
-- norm_mae: `0.0370` (mae / range_span)
-- std(pred)=1.522, std(target)=9.483, ratio=0.161
-- mean(pred)=90.323, mean(target)=93.083, gap=-2.760
-- Pearson corr(pred, target): `0.139`
-- **Diagnosis:** model is varying but missing — error is > 1.5× panel-median normalised MAE.
-
-### `ColorGradeMidtoneLum` — HIGH ERROR  (idx 49)
-
-- range: `[-100.00, 100.00]`, default: `0.00`
-- MAE: `7.352` (median `3.115`, p95 `20.356`)
-- norm_mae: `0.0368` (mae / range_span)
-- std(pred)=2.325, std(target)=9.989, ratio=0.233
-- mean(pred)=19.126, mean(target)=15.132, gap=3.994
+- MAE: `6.989` (median `5.191`, p95 `17.871`)
+- norm_mae: `0.0349` (mae / range_span)
+- std(pred)=1.113, std(target)=6.513, ratio=0.171
+- mean(pred)=32.936, mean(target)=38.667, gap=-5.730
 - direction correct on signed-range subset: `100.0%`
-- Pearson corr(pred, target): `0.161`
+- Pearson corr(pred, target): `-0.768`
 - **Diagnosis:** model is varying but missing — error is > 1.5× panel-median normalised MAE.
 
 ### `Highlights2012` — HIGH ERROR  (idx 2)
 
 - range: `[-100.00, 100.00]`, default: `0.00`
-- MAE: `7.323` (median `5.604`, p95 `24.569`)
-- norm_mae: `0.0366` (mae / range_span)
-- std(pred)=3.656, std(target)=10.041, ratio=0.364
-- mean(pred)=-28.014, mean(target)=-29.423, gap=1.409
-- direction correct on signed-range subset: `99.7%`
-- Pearson corr(pred, target): `0.165`
-- **Diagnosis:** model is varying but missing — error is > 1.5× panel-median normalised MAE.
-
-### `HueAdjustmentYellow` — HIGH ERROR  (idx 15)
-
-- range: `[-100.00, 100.00]`, default: `0.00`
-- MAE: `7.184` (median `6.543`, p95 `15.651`)
-- norm_mae: `0.0359` (mae / range_span)
-- std(pred)=5.930, std(target)=7.875, ratio=0.753
-- mean(pred)=2.678, mean(target)=7.811, gap=-5.133
-- direction correct on signed-range subset: `78.4%`
-- Pearson corr(pred, target): `0.517`
-- **Diagnosis:** model is varying but missing — error is > 1.5× panel-median normalised MAE.
-
-### `HueAdjustmentBlue` — HIGH ERROR  (idx 18)
-
-- range: `[-100.00, 100.00]`, default: `0.00`
-- MAE: `7.154` (median `7.289`, p95 `12.844`)
-- norm_mae: `0.0358` (mae / range_span)
-- std(pred)=2.775, std(target)=7.977, ratio=0.348
-- mean(pred)=0.065, mean(target)=3.690, gap=-3.625
-- direction correct on signed-range subset: `66.3%`
-- Pearson corr(pred, target): `0.417`
-- **Diagnosis:** model is varying but missing — error is > 1.5× panel-median normalised MAE.
-
-### `Vibrance` — HIGH ERROR  (idx 9)
-
-- range: `[-100.00, 100.00]`, default: `0.00`
-- MAE: `6.907` (median `6.268`, p95 `15.216`)
-- norm_mae: `0.0345` (mae / range_span)
-- std(pred)=3.783, std(target)=7.880, ratio=0.480
-- mean(pred)=9.115, mean(target)=6.942, gap=2.173
-- direction correct on signed-range subset: `98.9%`
-- Pearson corr(pred, target): `0.173`
-- **Diagnosis:** model is varying but missing — error is > 1.5× panel-median normalised MAE.
-
-### `Exposure2012` — HIGH ERROR  (idx 0)
-
-- range: `[-5.00, 5.00]`, default: `0.00`
-- MAE: `0.342` (median `0.293`, p95 `0.841`)
-- norm_mae: `0.0342` (mae / range_span)
-- std(pred)=0.256, std(target)=0.475, ratio=0.538
-- mean(pred)=0.352, mean(target)=0.272, gap=0.080
-- direction correct on signed-range subset: `78.2%`
-- Pearson corr(pred, target): `0.445`
-- **Diagnosis:** model is varying but missing — error is > 1.5× panel-median normalised MAE.
-
-### `HueAdjustmentOrange` — HIGH ERROR  (idx 14)
-
-- range: `[-100.00, 100.00]`, default: `0.00`
-- MAE: `6.396` (median `6.412`, p95 `13.724`)
-- norm_mae: `0.0320` (mae / range_span)
-- std(pred)=2.904, std(target)=6.259, ratio=0.464
-- mean(pred)=13.651, mean(target)=9.659, gap=3.991
-- direction correct on signed-range subset: `99.9%`
-- Pearson corr(pred, target): `0.124`
-- **Diagnosis:** model is varying but missing — error is > 1.5× panel-median normalised MAE.
-
-### `HueAdjustmentAqua` — HIGH ERROR  (idx 17)
-
-- range: `[-100.00, 100.00]`, default: `0.00`
-- MAE: `6.379` (median `5.625`, p95 `13.001`)
-- norm_mae: `0.0319` (mae / range_span)
-- std(pred)=3.228, std(target)=7.153, ratio=0.451
-- mean(pred)=9.602, mean(target)=10.455, gap=-0.852
+- MAE: `6.679` (median `4.097`, p95 `17.129`)
+- norm_mae: `0.0334` (mae / range_span)
+- std(pred)=0.946, std(target)=7.165, ratio=0.132
+- mean(pred)=-27.934, mean(target)=-32.000, gap=4.066
 - direction correct on signed-range subset: `100.0%`
-- Pearson corr(pred, target): `0.100`
-- **Diagnosis:** model is varying but missing — error is > 1.5× panel-median normalised MAE.
-
-### `BlueSaturation` — HIGH ERROR  (idx 63)
-
-- range: `[-100.00, 100.00]`, default: `0.00`
-- MAE: `5.092` (median `2.394`, p95 `12.568`)
-- norm_mae: `0.0255` (mae / range_span)
-- std(pred)=1.514, std(target)=7.011, ratio=0.216
-- mean(pred)=-5.865, mean(target)=-3.329, gap=-2.537
-- direction correct on signed-range subset: `66.9%`
-- Pearson corr(pred, target): `0.486`
-- **Diagnosis:** model is varying but missing — error is > 1.5× panel-median normalised MAE.
-
-### `ToneCurve_Pt5_Y` — HIGH ERROR  (idx 96)
-
-- range: `[0.00, 255.00]`, default: `204.00`
-- MAE: `5.869` (median `4.384`, p95 `16.544`)
-- norm_mae: `0.0230` (mae / range_span)
-- std(pred)=2.943, std(target)=7.775, ratio=0.378
-- mean(pred)=188.182, mean(target)=187.645, gap=0.538
-- Pearson corr(pred, target): `0.239`
-- **Diagnosis:** model is varying but missing — error is > 1.5× panel-median normalised MAE.
-
-### `BlueHue` — HIGH ERROR  (idx 62)
-
-- range: `[-100.00, 100.00]`, default: `0.00`
-- MAE: `4.593` (median `3.257`, p95 `10.758`)
-- norm_mae: `0.0230` (mae / range_span)
-- std(pred)=1.727, std(target)=6.067, ratio=0.285
-- mean(pred)=-9.179, mean(target)=-7.734, gap=-1.445
-- direction correct on signed-range subset: `100.0%`
-- Pearson corr(pred, target): `0.422`
-- **Diagnosis:** model is varying but missing — error is > 1.5× panel-median normalised MAE.
-
-### `Dehaze` — HIGH ERROR  (idx 7)
-
-- range: `[-100.00, 100.00]`, default: `0.00`
-- MAE: `4.507` (median `4.073`, p95 `9.613`)
-- norm_mae: `0.0225` (mae / range_span)
-- std(pred)=2.392, std(target)=6.058, ratio=0.395
-- mean(pred)=7.781, mean(target)=8.551, gap=-0.770
-- direction correct on signed-range subset: `98.8%`
-- Pearson corr(pred, target): `0.407`
-- **Diagnosis:** model is varying but missing — error is > 1.5× panel-median normalised MAE.
-
-### `HueAdjustmentRed` — HIGH ERROR  (idx 13)
-
-- range: `[-100.00, 100.00]`, default: `0.00`
-- MAE: `4.287` (median `1.784`, p95 `13.862`)
-- norm_mae: `0.0214` (mae / range_span)
-- std(pred)=2.571, std(target)=6.295, ratio=0.408
-- mean(pred)=8.152, mean(target)=10.491, gap=-2.338
-- direction correct on signed-range subset: `100.0%`
-- Pearson corr(pred, target): `0.279`
-- **Diagnosis:** model is varying but missing — error is > 1.5× panel-median normalised MAE.
-
-### `ToneCurveGreen_Pt2_Y` — HIGH ERROR  (idx 114)
-
-- range: `[0.00, 255.00]`, default: `51.00`
-- MAE: `5.149` (median `2.610`, p95 `12.199`)
-- norm_mae: `0.0202` (mae / range_span)
-- std(pred)=0.666, std(target)=6.637, ratio=0.100
-- mean(pred)=36.093, mean(target)=37.347, gap=-1.254
-- Pearson corr(pred, target): `0.071`
-- **Diagnosis:** model is varying but missing — error is > 1.5× panel-median normalised MAE.
-
-### `Clarity2012` — HIGH ERROR  (idx 6)
-
-- range: `[-100.00, 100.00]`, default: `0.00`
-- MAE: `3.933` (median `2.324`, p95 `9.877`)
-- norm_mae: `0.0197` (mae / range_span)
-- std(pred)=1.006, std(target)=4.437, ratio=0.227
-- mean(pred)=-5.789, mean(target)=-8.887, gap=3.097
-- direction correct on signed-range subset: `99.5%`
-- Pearson corr(pred, target): `0.057`
+- Pearson corr(pred, target): `-0.729`
 - **Diagnosis:** model is varying but missing — error is > 1.5× panel-median normalised MAE.
 
 ### `ParametricMidtoneSplit` — HIGH ERROR  (idx 42)
 
 - range: `[0.00, 100.00]`, default: `50.00`
-- MAE: `1.759` (median `1.832`, p95 `2.552`)
-- norm_mae: `0.0176` (mae / range_span)
-- std(pred)=0.601, std(target)=0.000, ratio=—
-- mean(pred)=61.747, mean(target)=60.000, gap=1.747
+- MAE: `2.767` (median `2.642`, p95 `5.213`)
+- norm_mae: `0.0277` (mae / range_span)
+- std(pred)=2.103, std(target)=0.000, ratio=—
+- mean(pred)=57.374, mean(target)=60.000, gap=-2.626
 - Pearson corr(pred, target): `—`
 - **Diagnosis:** model is varying but missing — error is > 1.5× panel-median normalised MAE.
 
-### `LuminanceAdjustmentRed` — HIGH ERROR  (idx 29)
+### `ToneCurveGreen_Pt5_Y` — HIGH ERROR  (idx 120)
 
-- range: `[-100.00, 100.00]`, default: `0.00`
-- MAE: `3.325` (median `2.023`, p95 `15.642`)
-- norm_mae: `0.0166` (mae / range_span)
-- std(pred)=3.205, std(target)=6.837, ratio=0.469
-- mean(pred)=12.282, mean(target)=12.747, gap=-0.464
-- direction correct on signed-range subset: `99.7%`
-- Pearson corr(pred, target): `0.593`
+- range: `[0.00, 255.00]`, default: `204.00`
+- MAE: `7.051` (median `7.138`, p95 `12.656`)
+- norm_mae: `0.0277` (mae / range_span)
+- std(pred)=7.102, std(target)=0.000, ratio=—
+- mean(pred)=194.997, mean(target)=199.000, gap=-4.003
+- Pearson corr(pred, target): `—`
+- **Diagnosis:** model is varying but missing — error is > 1.5× panel-median normalised MAE.
+
+### `ToneCurveBlue_Pt5_Y` — HIGH ERROR  (idx 132)
+
+- range: `[0.00, 255.00]`, default: `204.00`
+- MAE: `6.964` (median `7.066`, p95 `12.537`)
+- norm_mae: `0.0273` (mae / range_span)
+- std(pred)=6.998, std(target)=0.000, ratio=—
+- mean(pred)=191.009, mean(target)=195.000, gap=-3.991
+- Pearson corr(pred, target): `—`
+- **Diagnosis:** model is varying but missing — error is > 1.5× panel-median normalised MAE.
+
+### `ToneCurve_Pt5_Y` — HIGH ERROR  (idx 96)
+
+- range: `[0.00, 255.00]`, default: `204.00`
+- MAE: `6.646` (median `6.795`, p95 `11.874`)
+- norm_mae: `0.0261` (mae / range_span)
+- std(pred)=6.742, std(target)=0.000, ratio=—
+- mean(pred)=184.349, mean(target)=188.000, gap=-3.651
+- Pearson corr(pred, target): `—`
+- **Diagnosis:** model is varying but missing — error is > 1.5× panel-median normalised MAE.
+
+### `ToneCurveRed_Pt5_Y` — HIGH ERROR  (idx 108)
+
+- range: `[0.00, 255.00]`, default: `204.00`
+- MAE: `6.581` (median `7.028`, p95 `11.647`)
+- norm_mae: `0.0258` (mae / range_span)
+- std(pred)=6.776, std(target)=0.000, ratio=—
+- mean(pred)=184.622, mean(target)=188.000, gap=-3.378
+- Pearson corr(pred, target): `—`
 - **Diagnosis:** model is varying but missing — error is > 1.5× panel-median normalised MAE.
 
 ### `SplitToningHighlightHue` — HIGH ERROR  (idx 50)
 
 - range: `[0.00, 360.00]`, default: `0.00`
-- MAE: `5.781` (median `3.175`, p95 `14.475`)
-- norm_mae: `0.0161` (mae / range_span)
-- std(pred)=3.190, std(target)=9.754, ratio=0.327
-- mean(pred)=45.803, mean(target)=43.104, gap=2.699
-- Pearson corr(pred, target): `0.147`
+- MAE: `8.726` (median `8.762`, p95 `10.388`)
+- norm_mae: `0.0242` (mae / range_span)
+- std(pred)=1.351, std(target)=0.000, ratio=—
+- mean(pred)=37.274, mean(target)=46.000, gap=-8.726
+- Pearson corr(pred, target): `—`
 - **Diagnosis:** model is varying but missing — error is > 1.5× panel-median normalised MAE.
 
-### `ParametricShadowSplit` — HIGH ERROR  (idx 43)
+### `Exposure2012` — HIGH ERROR  (idx 0)
 
-- range: `[0.00, 100.00]`, default: `25.00`
-- MAE: `0.657` (median `0.675`, p95 `0.849`)
-- norm_mae: `0.0066` (mae / range_span)
-- std(pred)=0.140, std(target)=0.000, ratio=—
-- mean(pred)=14.657, mean(target)=14.000, gap=0.657
+- range: `[-5.00, 5.00]`, default: `0.00`
+- MAE: `0.240` (median `0.178`, p95 `0.648`)
+- norm_mae: `0.0240` (mae / range_span)
+- std(pred)=0.071, std(target)=0.272, ratio=0.262
+- mean(pred)=0.118, mean(target)=0.318, gap=-0.200
+- direction correct on signed-range subset: `95.8%`
+- Pearson corr(pred, target): `0.593`
+- **Diagnosis:** model is varying but missing — error is > 1.5× panel-median normalised MAE.
+
+### `ToneCurve_Pt4_Y` — HIGH ERROR  (idx 94)
+
+- range: `[0.00, 255.00]`, default: `153.00`
+- MAE: `6.080` (median `5.239`, p95 `11.245`)
+- norm_mae: `0.0238` (mae / range_span)
+- std(pred)=5.864, std(target)=0.000, ratio=—
+- mean(pred)=159.917, mean(target)=164.000, gap=-4.083
+- Pearson corr(pred, target): `—`
+- **Diagnosis:** model is varying but missing — error is > 1.5× panel-median normalised MAE.
+
+### `ToneCurveGreen_Pt5_X` — HIGH ERROR  (idx 119)
+
+- range: `[0.00, 255.00]`, default: `204.00`
+- MAE: `6.063` (median `6.457`, p95 `9.933`)
+- norm_mae: `0.0238` (mae / range_span)
+- std(pred)=6.549, std(target)=0.000, ratio=—
+- mean(pred)=179.072, mean(target)=181.000, gap=-1.928
+- Pearson corr(pred, target): `—`
+- **Diagnosis:** model is varying but missing — error is > 1.5× panel-median normalised MAE.
+
+### `ToneCurve_Pt4_X` — HIGH ERROR  (idx 93)
+
+- range: `[0.00, 255.00]`, default: `153.00`
+- MAE: `5.957` (median `6.299`, p95 `10.031`)
+- norm_mae: `0.0234` (mae / range_span)
+- std(pred)=6.344, std(target)=0.000, ratio=—
+- mean(pred)=172.718, mean(target)=175.000, gap=-2.282
+- Pearson corr(pred, target): `—`
+- **Diagnosis:** model is varying but missing — error is > 1.5× panel-median normalised MAE.
+
+### `ToneCurveBlue_Pt5_X` — HIGH ERROR  (idx 131)
+
+- range: `[0.00, 255.00]`, default: `204.00`
+- MAE: `5.772` (median `6.094`, p95 `9.430`)
+- norm_mae: `0.0226` (mae / range_span)
+- std(pred)=6.413, std(target)=0.000, ratio=—
+- mean(pred)=175.208, mean(target)=176.000, gap=-0.792
+- Pearson corr(pred, target): `—`
+- **Diagnosis:** model is varying but missing — error is > 1.5× panel-median normalised MAE.
+
+### `ToneCurveRed_Pt5_X` — HIGH ERROR  (idx 107)
+
+- range: `[0.00, 255.00]`, default: `204.00`
+- MAE: `5.732` (median `6.136`, p95 `9.471`)
+- norm_mae: `0.0225` (mae / range_span)
+- std(pred)=6.169, std(target)=0.000, ratio=—
+- mean(pred)=168.073, mean(target)=170.000, gap=-1.927
+- Pearson corr(pred, target): `—`
+- **Diagnosis:** model is varying but missing — error is > 1.5× panel-median normalised MAE.
+
+### `ToneCurveGreen_Pt4_X` — HIGH ERROR  (idx 117)
+
+- range: `[0.00, 255.00]`, default: `153.00`
+- MAE: `5.045` (median `4.391`, p95 `9.627`)
+- norm_mae: `0.0198` (mae / range_span)
+- std(pred)=4.314, std(target)=0.000, ratio=—
+- mean(pred)=117.653, mean(target)=122.000, gap=-4.347
+- Pearson corr(pred, target): `—`
+- **Diagnosis:** model is varying but missing — error is > 1.5× panel-median normalised MAE.
+
+### `ToneCurveRed_Pt4_Y` — HIGH ERROR  (idx 106)
+
+- range: `[0.00, 255.00]`, default: `153.00`
+- MAE: `4.874` (median `3.806`, p95 `9.169`)
+- norm_mae: `0.0191` (mae / range_span)
+- std(pred)=4.572, std(target)=0.000, ratio=—
+- mean(pred)=124.421, mean(target)=128.000, gap=-3.579
+- Pearson corr(pred, target): `—`
+- **Diagnosis:** model is varying but missing — error is > 1.5× panel-median normalised MAE.
+
+### `ToneCurveBlue_Pt4_Y` — HIGH ERROR  (idx 130)
+
+- range: `[0.00, 255.00]`, default: `153.00`
+- MAE: `4.823` (median `3.855`, p95 `9.152`)
+- norm_mae: `0.0189` (mae / range_span)
+- std(pred)=4.378, std(target)=0.000, ratio=—
+- mean(pred)=120.182, mean(target)=124.000, gap=-3.818
+- Pearson corr(pred, target): `—`
+- **Diagnosis:** model is varying but missing — error is > 1.5× panel-median normalised MAE.
+
+### `ToneCurveGreen_Pt4_Y` — HIGH ERROR  (idx 118)
+
+- range: `[0.00, 255.00]`, default: `153.00`
+- MAE: `4.798` (median `4.036`, p95 `8.880`)
+- norm_mae: `0.0188` (mae / range_span)
+- std(pred)=4.595, std(target)=0.000, ratio=—
+- mean(pred)=125.714, mean(target)=129.000, gap=-3.286
+- Pearson corr(pred, target): `—`
+- **Diagnosis:** model is varying but missing — error is > 1.5× panel-median normalised MAE.
+
+### `ToneCurveBlue_Pt4_X` — HIGH ERROR  (idx 129)
+
+- range: `[0.00, 255.00]`, default: `153.00`
+- MAE: `4.509` (median `3.559`, p95 `8.459`)
+- norm_mae: `0.0177` (mae / range_span)
+- std(pred)=4.229, std(target)=0.000, ratio=—
+- mean(pred)=115.682, mean(target)=119.000, gap=-3.318
 - Pearson corr(pred, target): `—`
 - **Diagnosis:** model is varying but missing — error is > 1.5× panel-median normalised MAE.
 
 ### `SplitToningBalance` — HIGH ERROR  (idx 57)
 
 - range: `[-100.00, 100.00]`, default: `0.00`
-- MAE: `0.403` (median `0.346`, p95 `0.938`)
-- norm_mae: `0.0020` (mae / range_span)
-- std(pred)=0.422, std(target)=0.000, ratio=—
-- mean(pred)=29.743, mean(target)=30.000, gap=-0.257
+- MAE: `3.337` (median `3.364`, p95 `4.554`)
+- norm_mae: `0.0167` (mae / range_span)
+- std(pred)=0.982, std(target)=0.000, ratio=—
+- mean(pred)=26.663, mean(target)=30.000, gap=-3.337
 - direction correct on signed-range subset: `100.0%`
 - Pearson corr(pred, target): `—`
 - **Diagnosis:** model is varying but missing — error is > 1.5× panel-median normalised MAE.
 
-### `Whites2012` — WRONG DIRECTION  (idx 4)
+### `ToneCurveRed_Pt4_X` — HIGH ERROR  (idx 105)
+
+- range: `[0.00, 255.00]`, default: `153.00`
+- MAE: `4.081` (median `4.317`, p95 `6.568`)
+- norm_mae: `0.0160` (mae / range_span)
+- std(pred)=4.446, std(target)=0.000, ratio=—
+- mean(pred)=121.867, mean(target)=123.000, gap=-1.133
+- Pearson corr(pred, target): `—`
+- **Diagnosis:** model is varying but missing — error is > 1.5× panel-median normalised MAE.
+
+### `SplitToningShadowHue` — HIGH ERROR  (idx 44)
+
+- range: `[0.00, 360.00]`, default: `0.00`
+- MAE: `5.571` (median `5.585`, p95 `6.872`)
+- norm_mae: `0.0155` (mae / range_span)
+- std(pred)=1.072, std(target)=0.000, ratio=—
+- mean(pred)=30.429, mean(target)=36.000, gap=-5.571
+- Pearson corr(pred, target): `—`
+- **Diagnosis:** model is varying but missing — error is > 1.5× panel-median normalised MAE.
+
+### `Whites2012` — HIGH ERROR  (idx 4)
 
 - range: `[-100.00, 100.00]`, default: `0.00`
-- MAE: `15.383` (median `14.610`, p95 `28.846`)
-- norm_mae: `0.0769` (mae / range_span)
-- std(pred)=8.284, std(target)=15.789, ratio=0.525
-- mean(pred)=-9.849, mean(target)=-1.185, gap=-8.664
-- direction correct on signed-range subset: `38.2%`
-- Pearson corr(pred, target): `0.254`
-- **Diagnosis:** sign agreement on signed-range examples is below 55%. Model is systematically getting the direction wrong.
+- MAE: `2.859` (median `2.879`, p95 `3.764`)
+- norm_mae: `0.0143` (mae / range_span)
+- std(pred)=0.609, std(target)=1.856, ratio=0.328
+- mean(pred)=-18.181, mean(target)=-20.433, gap=2.253
+- direction correct on signed-range subset: `100.0%`
+- Pearson corr(pred, target): `-0.380`
+- **Diagnosis:** model is varying but missing — error is > 1.5× panel-median normalised MAE.
 
-### `SaturationAdjustmentMagenta` — WRONG DIRECTION  (idx 28)
+### `ToneCurveGreen_Pt3_Y` — HIGH ERROR  (idx 116)
 
-- range: `[-100.00, 100.00]`, default: `0.00`
-- MAE: `11.124` (median `11.367`, p95 `21.482`)
-- norm_mae: `0.0556` (mae / range_span)
-- std(pred)=5.439, std(target)=12.250, ratio=0.444
-- mean(pred)=-1.959, mean(target)=4.011, gap=-5.970
-- direction correct on signed-range subset: `47.7%`
-- Pearson corr(pred, target): `0.259`
-- **Diagnosis:** sign agreement on signed-range examples is below 55%. Model is systematically getting the direction wrong.
+- range: `[0.00, 255.00]`, default: `102.00`
+- MAE: `3.298` (median `2.999`, p95 `6.241`)
+- norm_mae: `0.0129` (mae / range_span)
+- std(pred)=2.670, std(target)=0.000, ratio=—
+- mean(pred)=73.000, mean(target)=76.000, gap=-3.000
+- Pearson corr(pred, target): `—`
+- **Diagnosis:** model is varying but missing — error is > 1.5× panel-median normalised MAE.
 
-### `SaturationAdjustmentGreen` — WRONG DIRECTION  (idx 24)
+### `ToneCurveGreen_Pt3_X` — HIGH ERROR  (idx 115)
 
-- range: `[-100.00, 100.00]`, default: `0.00`
-- MAE: `9.050` (median `7.190`, p95 `20.449`)
-- norm_mae: `0.0452` (mae / range_span)
-- std(pred)=6.233, std(target)=10.390, ratio=0.600
-- mean(pred)=-1.382, mean(target)=2.287, gap=-3.668
-- direction correct on signed-range subset: `54.0%`
-- Pearson corr(pred, target): `0.076`
-- **Diagnosis:** sign agreement on signed-range examples is below 55%. Model is systematically getting the direction wrong.
+- range: `[0.00, 255.00]`, default: `102.00`
+- MAE: `2.993` (median `3.181`, p95 `5.306`)
+- norm_mae: `0.0117` (mae / range_span)
+- std(pred)=3.082, std(target)=0.000, ratio=—
+- mean(pred)=84.465, mean(target)=86.000, gap=-1.535
+- Pearson corr(pred, target): `—`
+- **Diagnosis:** model is varying but missing — error is > 1.5× panel-median normalised MAE.
 
-### `HueAdjustmentGreen` — WRONG DIRECTION  (idx 16)
+### `ToneCurveRed_Pt3_X` — HIGH ERROR  (idx 103)
 
-- range: `[-100.00, 100.00]`, default: `0.00`
-- MAE: `8.144` (median `7.613`, p95 `16.691`)
-- norm_mae: `0.0407` (mae / range_span)
-- std(pred)=5.891, std(target)=8.592, ratio=0.686
-- mean(pred)=-3.478, mean(target)=2.571, gap=-6.049
-- direction correct on signed-range subset: `49.4%`
-- Pearson corr(pred, target): `0.539`
-- **Diagnosis:** sign agreement on signed-range examples is below 55%. Model is systematically getting the direction wrong.
+- range: `[0.00, 255.00]`, default: `102.00`
+- MAE: `2.976` (median `3.009`, p95 `5.400`)
+- norm_mae: `0.0117` (mae / range_span)
+- std(pred)=2.982, std(target)=0.000, ratio=—
+- mean(pred)=81.264, mean(target)=83.000, gap=-1.736
+- Pearson corr(pred, target): `—`
+- **Diagnosis:** model is varying but missing — error is > 1.5× panel-median normalised MAE.
 
-### `SaturationAdjustmentRed` — WRONG DIRECTION  (idx 21)
+### `ToneCurveBlue_Pt3_X` — HIGH ERROR  (idx 127)
 
-- range: `[-100.00, 100.00]`, default: `0.00`
-- MAE: `7.502` (median `7.094`, p95 `15.318`)
-- norm_mae: `0.0375` (mae / range_span)
-- std(pred)=3.932, std(target)=5.360, ratio=0.734
-- mean(pred)=1.177, mean(target)=6.916, gap=-5.739
-- direction correct on signed-range subset: `54.9%`
-- Pearson corr(pred, target): `0.039`
-- **Diagnosis:** sign agreement on signed-range examples is below 55%. Model is systematically getting the direction wrong.
+- range: `[0.00, 255.00]`, default: `102.00`
+- MAE: `2.911` (median `2.512`, p95 `5.567`)
+- norm_mae: `0.0114` (mae / range_span)
+- std(pred)=2.508, std(target)=0.000, ratio=—
+- mean(pred)=68.506, mean(target)=71.000, gap=-2.494
+- Pearson corr(pred, target): `—`
+- **Diagnosis:** model is varying but missing — error is > 1.5× panel-median normalised MAE.
 
-### `Contrast2012` — WRONG DIRECTION  (idx 1)
+### `GreenHue` — HIGH ERROR  (idx 60)
 
 - range: `[-100.00, 100.00]`, default: `0.00`
-- MAE: `7.396` (median `7.343`, p95 `13.167`)
-- norm_mae: `0.0370` (mae / range_span)
-- std(pred)=3.150, std(target)=8.011, ratio=0.393
-- mean(pred)=-3.452, mean(target)=-1.861, gap=-1.591
-- direction correct on signed-range subset: `53.3%`
-- Pearson corr(pred, target): `0.173`
-- **Diagnosis:** sign agreement on signed-range examples is below 55%. Model is systematically getting the direction wrong.
+- MAE: `2.249` (median `2.190`, p95 `4.080`)
+- norm_mae: `0.0112` (mae / range_span)
+- std(pred)=1.607, std(target)=0.000, ratio=—
+- mean(pred)=47.809, mean(target)=50.000, gap=-2.191
+- direction correct on signed-range subset: `100.0%`
+- Pearson corr(pred, target): `—`
+- **Diagnosis:** model is varying but missing — error is > 1.5× panel-median normalised MAE.
 
-### `LuminanceAdjustmentBlue` — WRONG DIRECTION  (idx 34)
+### `ToneCurve_Pt3_Y` — HIGH ERROR  (idx 92)
 
-- range: `[-100.00, 100.00]`, default: `0.00`
-- MAE: `7.371` (median `7.443`, p95 `14.730`)
-- norm_mae: `0.0369` (mae / range_span)
-- std(pred)=3.852, std(target)=6.905, ratio=0.558
-- mean(pred)=6.402, mean(target)=1.631, gap=4.771
-- direction correct on signed-range subset: `46.6%`
-- Pearson corr(pred, target): `0.078`
-- **Diagnosis:** sign agreement on signed-range examples is below 55%. Model is systematically getting the direction wrong.
+- range: `[0.00, 255.00]`, default: `102.00`
+- MAE: `2.638` (median `2.649`, p95 `4.733`)
+- norm_mae: `0.0103` (mae / range_span)
+- std(pred)=2.640, std(target)=0.000, ratio=—
+- mean(pred)=72.465, mean(target)=74.000, gap=-1.535
+- Pearson corr(pred, target): `—`
+- **Diagnosis:** model is varying but missing — error is > 1.5× panel-median normalised MAE.
 
-### `LuminanceAdjustmentPurple` — WRONG DIRECTION  (idx 35)
+### `ToneCurve_Pt3_X` — HIGH ERROR  (idx 91)
 
-- range: `[-100.00, 100.00]`, default: `0.00`
-- MAE: `6.513` (median `7.115`, p95 `12.963`)
-- norm_mae: `0.0326` (mae / range_span)
-- std(pred)=2.279, std(target)=8.240, ratio=0.277
-- mean(pred)=-1.207, mean(target)=-2.254, gap=1.047
-- direction correct on signed-range subset: `47.7%`
-- Pearson corr(pred, target): `-0.049`
-- **Diagnosis:** sign agreement on signed-range examples is below 55%. Model is systematically getting the direction wrong.
+- range: `[0.00, 255.00]`, default: `102.00`
+- MAE: `2.517` (median `1.962`, p95 `4.716`)
+- norm_mae: `0.0099` (mae / range_span)
+- std(pred)=2.360, std(target)=0.000, ratio=—
+- mean(pred)=64.149, mean(target)=66.000, gap=-1.851
+- Pearson corr(pred, target): `—`
+- **Diagnosis:** model is varying but missing — error is > 1.5× panel-median normalised MAE.
 
-### `Saturation` — WRONG DIRECTION  (idx 10)
+### `ToneCurveBlue_Pt3_Y` — HIGH ERROR  (idx 128)
 
-- range: `[-100.00, 100.00]`, default: `0.00`
-- MAE: `5.883` (median `5.219`, p95 `15.739`)
-- norm_mae: `0.0294` (mae / range_span)
-- std(pred)=2.193, std(target)=5.068, ratio=0.433
-- mean(pred)=2.823, mean(target)=-2.415, gap=5.238
-- direction correct on signed-range subset: `30.0%`
-- Pearson corr(pred, target): `0.268`
-- **Diagnosis:** sign agreement on signed-range examples is below 55%. Model is systematically getting the direction wrong.
+- range: `[0.00, 255.00]`, default: `102.00`
+- MAE: `2.496` (median `2.248`, p95 `4.728`)
+- norm_mae: `0.0098` (mae / range_span)
+- std(pred)=2.073, std(target)=0.000, ratio=—
+- mean(pred)=56.773, mean(target)=59.000, gap=-2.227
+- Pearson corr(pred, target): `—`
+- **Diagnosis:** model is varying but missing — error is > 1.5× panel-median normalised MAE.
 
-### `Texture` — WRONG DIRECTION  (idx 8)
+### `HueAdjustmentOrange` — HIGH ERROR  (idx 14)
 
 - range: `[-100.00, 100.00]`, default: `0.00`
-- MAE: `3.443` (median `1.711`, p95 `8.446`)
-- norm_mae: `0.0172` (mae / range_span)
-- std(pred)=1.295, std(target)=3.610, ratio=0.359
-- mean(pred)=1.514, mean(target)=-1.483, gap=2.997
-- direction correct on signed-range subset: `19.7%`
-- Pearson corr(pred, target): `0.172`
-- **Diagnosis:** sign agreement on signed-range examples is below 55%. Model is systematically getting the direction wrong.
+- MAE: `1.942` (median `1.838`, p95 `4.589`)
+- norm_mae: `0.0097` (mae / range_span)
+- std(pred)=0.511, std(target)=2.276, ratio=0.224
+- mean(pred)=18.552, mean(target)=19.233, gap=-0.681
+- direction correct on signed-range subset: `100.0%`
+- Pearson corr(pred, target): `-0.051`
+- **Diagnosis:** model is varying but missing — error is > 1.5× panel-median normalised MAE.
 
-### `ColorGradeHighlightLum` — WRONG DIRECTION  (idx 52)
+### `HueAdjustmentPurple` — HIGH ERROR  (idx 19)
 
 - range: `[-100.00, 100.00]`, default: `0.00`
-- MAE: `0.856` (median `0.535`, p95 `2.190`)
-- norm_mae: `0.0043` (mae / range_span)
-- std(pred)=0.452, std(target)=1.144, ratio=0.395
-- mean(pred)=-1.822, mean(target)=-1.378, gap=-0.443
-- direction correct on signed-range subset: `0.0%`
-- Pearson corr(pred, target): `0.050`
-- **Diagnosis:** sign agreement on signed-range examples is below 55%. Model is systematically getting the direction wrong.
+- MAE: `1.927` (median `2.018`, p95 `2.802`)
+- norm_mae: `0.0096` (mae / range_span)
+- std(pred)=0.491, std(target)=1.024, ratio=0.479
+- mean(pred)=-17.936, mean(target)=-19.533, gap=1.597
+- direction correct on signed-range subset: `100.0%`
+- Pearson corr(pred, target): `-0.564`
+- **Diagnosis:** model is varying but missing — error is > 1.5× panel-median normalised MAE.
+
+### `ToneCurveGreen_Pt2_X` — HIGH ERROR  (idx 113)
+
+- range: `[0.00, 255.00]`, default: `51.00`
+- MAE: `2.435` (median `2.280`, p95 `4.601`)
+- norm_mae: `0.0095` (mae / range_span)
+- std(pred)=1.899, std(target)=0.000, ratio=—
+- mean(pred)=51.724, mean(target)=54.000, gap=-2.276
+- Pearson corr(pred, target): `—`
+- **Diagnosis:** model is varying but missing — error is > 1.5× panel-median normalised MAE.
+
+### `ToneCurveRed_Pt3_Y` — HIGH ERROR  (idx 104)
+
+- range: `[0.00, 255.00]`, default: `102.00`
+- MAE: `2.420` (median `1.817`, p95 `5.552`)
+- norm_mae: `0.0095` (mae / range_span)
+- std(pred)=2.548, std(target)=0.000, ratio=—
+- mean(pred)=69.631, mean(target)=68.000, gap=1.631
+- Pearson corr(pred, target): `—`
+- **Diagnosis:** model is varying but missing — error is > 1.5× panel-median normalised MAE.
+
+### `SaturationAdjustmentGreen` — HIGH ERROR  (idx 24)
+
+- range: `[-100.00, 100.00]`, default: `0.00`
+- MAE: `1.641` (median `1.426`, p95 `2.486`)
+- norm_mae: `0.0082` (mae / range_span)
+- std(pred)=0.173, std(target)=1.602, ratio=0.108
+- mean(pred)=-6.721, mean(target)=-7.633, gap=0.912
+- direction correct on signed-range subset: `100.0%`
+- Pearson corr(pred, target): `-0.524`
+- **Diagnosis:** model is varying but missing — error is > 1.5× panel-median normalised MAE.
+
+### `ColorGradeMidtoneHue` — HIGH ERROR  (idx 47)
+
+- range: `[0.00, 360.00]`, default: `0.00`
+- MAE: `2.804` (median `2.838`, p95 `4.095`)
+- norm_mae: `0.0078` (mae / range_span)
+- std(pred)=1.052, std(target)=0.000, ratio=—
+- mean(pred)=29.196, mean(target)=32.000, gap=-2.804
+- Pearson corr(pred, target): `—`
+- **Diagnosis:** model is varying but missing — error is > 1.5× panel-median normalised MAE.
+
+### `ColorGradeMidtoneLum` — HIGH ERROR  (idx 49)
+
+- range: `[-100.00, 100.00]`, default: `0.00`
+- MAE: `1.490` (median `1.534`, p95 `2.392`)
+- norm_mae: `0.0075` (mae / range_span)
+- std(pred)=0.732, std(target)=0.000, ratio=—
+- mean(pred)=20.510, mean(target)=22.000, gap=-1.490
+- direction correct on signed-range subset: `100.0%`
+- Pearson corr(pred, target): `—`
+- **Diagnosis:** model is varying but missing — error is > 1.5× panel-median normalised MAE.
+
+### `GrainFrequency` — HIGH ERROR  (idx 79)
+
+- range: `[0.00, 100.00]`, default: `50.00`
+- MAE: `0.702` (median `0.683`, p95 `1.541`)
+- norm_mae: `0.0070` (mae / range_span)
+- std(pred)=0.697, std(target)=0.000, ratio=—
+- mean(pred)=0.479, mean(target)=0.000, gap=0.479
+- Pearson corr(pred, target): `—`
+- **Diagnosis:** model is varying but missing — error is > 1.5× panel-median normalised MAE.
+
+### `ToneCurveGreen_Pt2_Y` — HIGH ERROR  (idx 114)
+
+- range: `[0.00, 255.00]`, default: `51.00`
+- MAE: `1.715` (median `1.614`, p95 `3.234`)
+- norm_mae: `0.0067` (mae / range_span)
+- std(pred)=1.311, std(target)=0.000, ratio=—
+- mean(pred)=35.377, mean(target)=37.000, gap=-1.623
+- Pearson corr(pred, target): `—`
+- **Diagnosis:** model is varying but missing — error is > 1.5× panel-median normalised MAE.
+
+### `LuminanceAdjustmentBlue` — HIGH ERROR  (idx 34)
+
+- range: `[-100.00, 100.00]`, default: `0.00`
+- MAE: `1.335` (median `1.268`, p95 `1.752`)
+- norm_mae: `0.0067` (mae / range_span)
+- std(pred)=0.301, std(target)=1.499, ratio=0.201
+- mean(pred)=10.672, mean(target)=11.433, gap=-0.762
+- direction correct on signed-range subset: `100.0%`
+- Pearson corr(pred, target): `-0.215`
+- **Diagnosis:** model is varying but missing — error is > 1.5× panel-median normalised MAE.
+
+### `SplitToningShadowSaturation` — HIGH ERROR  (idx 45)
+
+- range: `[0.00, 100.00]`, default: `0.00`
+- MAE: `0.640` (median `0.635`, p95 `1.092`)
+- norm_mae: `0.0064` (mae / range_span)
+- std(pred)=0.373, std(target)=0.000, ratio=—
+- mean(pred)=10.360, mean(target)=11.000, gap=-0.640
+- Pearson corr(pred, target): `—`
+- **Diagnosis:** model is varying but missing — error is > 1.5× panel-median normalised MAE.
+
+### `ColorGradeMidtoneSat` — HIGH ERROR  (idx 48)
+
+- range: `[0.00, 100.00]`, default: `0.00`
+- MAE: `0.618` (median `0.621`, p95 `1.065`)
+- norm_mae: `0.0062` (mae / range_span)
+- std(pred)=0.366, std(target)=0.000, ratio=—
+- mean(pred)=10.382, mean(target)=11.000, gap=-0.618
+- Pearson corr(pred, target): `—`
+- **Diagnosis:** model is varying but missing — error is > 1.5× panel-median normalised MAE.
+
+### `LuminanceSmoothing` — HIGH ERROR  (idx 68)
+
+- range: `[0.00, 100.00]`, default: `0.00`
+- MAE: `0.615` (median `0.656`, p95 `1.106`)
+- norm_mae: `0.0061` (mae / range_span)
+- std(pred)=0.376, std(target)=0.000, ratio=—
+- mean(pred)=11.389, mean(target)=12.000, gap=-0.611
+- Pearson corr(pred, target): `—`
+- **Diagnosis:** model is varying but missing — error is > 1.5× panel-median normalised MAE.
+
+### `ToneCurveBlue_Pt2_X` — HIGH ERROR  (idx 125)
+
+- range: `[0.00, 255.00]`, default: `51.00`
+- MAE: `1.535` (median `1.414`, p95 `2.906`)
+- norm_mae: `0.0060` (mae / range_span)
+- std(pred)=1.250, std(target)=0.000, ratio=—
+- mean(pred)=34.613, mean(target)=36.000, gap=-1.387
+- Pearson corr(pred, target): `—`
+- **Diagnosis:** model is varying but missing — error is > 1.5× panel-median normalised MAE.
+
+### `ParametricShadowSplit` — HIGH ERROR  (idx 43)
+
+- range: `[0.00, 100.00]`, default: `25.00`
+- MAE: `0.588` (median `0.516`, p95 `1.131`)
+- norm_mae: `0.0059` (mae / range_span)
+- std(pred)=0.494, std(target)=0.000, ratio=—
+- mean(pred)=13.487, mean(target)=14.000, gap=-0.513
+- Pearson corr(pred, target): `—`
+- **Diagnosis:** model is varying but missing — error is > 1.5× panel-median normalised MAE.
+
+### `ColorGradeShadowLum` — HIGH ERROR  (idx 46)
+
+- range: `[-100.00, 100.00]`, default: `0.00`
+- MAE: `1.061` (median `1.090`, p95 `1.795`)
+- norm_mae: `0.0053` (mae / range_span)
+- std(pred)=0.592, std(target)=0.000, ratio=—
+- mean(pred)=-16.939, mean(target)=-18.000, gap=1.061
+- direction correct on signed-range subset: `100.0%`
+- Pearson corr(pred, target): `—`
+- **Diagnosis:** model is varying but missing — error is > 1.5× panel-median normalised MAE.
+
+### `SaturationAdjustmentRed` — HIGH ERROR  (idx 21)
+
+- range: `[-100.00, 100.00]`, default: `0.00`
+- MAE: `0.808` (median `0.670`, p95 `1.218`)
+- norm_mae: `0.0040` (mae / range_span)
+- std(pred)=0.113, std(target)=0.971, ratio=0.117
+- mean(pred)=-4.344, mean(target)=-4.700, gap=0.356
+- direction correct on signed-range subset: `100.0%`
+- Pearson corr(pred, target): `-0.342`
+- **Diagnosis:** model is varying but missing — error is > 1.5× panel-median normalised MAE.
+
+### `ToneCurveRed_Pt2_Y` — HIGH ERROR  (idx 102)
+
+- range: `[0.00, 255.00]`, default: `51.00`
+- MAE: `0.951` (median `1.010`, p95 `1.480`)
+- norm_mae: `0.0037` (mae / range_span)
+- std(pred)=1.046, std(target)=0.000, ratio=—
+- mean(pred)=28.801, mean(target)=29.000, gap=-0.199
+- Pearson corr(pred, target): `—`
+- **Diagnosis:** model is varying but missing — error is > 1.5× panel-median normalised MAE.
+
+### `LuminanceAdjustmentRed` — HIGH ERROR  (idx 29)
+
+- range: `[-100.00, 100.00]`, default: `0.00`
+- MAE: `0.744` (median `0.747`, p95 `1.123`)
+- norm_mae: `0.0037` (mae / range_span)
+- std(pred)=0.294, std(target)=0.000, ratio=—
+- mean(pred)=11.256, mean(target)=12.000, gap=-0.744
+- direction correct on signed-range subset: `100.0%`
+- Pearson corr(pred, target): `—`
+- **Diagnosis:** model is varying but missing — error is > 1.5× panel-median normalised MAE.
+
+### `ToneCurve_Pt2_Y` — HIGH ERROR  (idx 90)
+
+- range: `[0.00, 255.00]`, default: `51.00`
+- MAE: `0.841` (median `0.663`, p95 `1.566`)
+- norm_mae: `0.0033` (mae / range_span)
+- std(pred)=0.791, std(target)=0.000, ratio=—
+- mean(pred)=21.386, mean(target)=22.000, gap=-0.614
+- Pearson corr(pred, target): `—`
+- **Diagnosis:** model is varying but missing — error is > 1.5× panel-median normalised MAE.
+
+### `Saturation` — HIGH ERROR  (idx 10)
+
+- range: `[-100.00, 100.00]`, default: `0.00`
+- MAE: `0.651` (median `0.594`, p95 `0.705`)
+- norm_mae: `0.0033` (mae / range_span)
+- std(pred)=0.125, std(target)=0.748, ratio=0.167
+- mean(pred)=4.482, mean(target)=4.800, gap=-0.318
+- direction correct on signed-range subset: `100.0%`
+- Pearson corr(pred, target): `-0.371`
+- **Diagnosis:** model is varying but missing — error is > 1.5× panel-median normalised MAE.
+
+### `BlueHue` — HIGH ERROR  (idx 62)
+
+- range: `[-100.00, 100.00]`, default: `0.00`
+- MAE: `0.650` (median `0.632`, p95 `1.100`)
+- norm_mae: `0.0032` (mae / range_span)
+- std(pred)=0.389, std(target)=0.000, ratio=—
+- mean(pred)=-11.350, mean(target)=-12.000, gap=0.650
+- direction correct on signed-range subset: `100.0%`
+- Pearson corr(pred, target): `—`
+- **Diagnosis:** model is varying but missing — error is > 1.5× panel-median normalised MAE.
+
+### `Vibrance` — HIGH ERROR  (idx 9)
+
+- range: `[-100.00, 100.00]`, default: `0.00`
+- MAE: `0.643` (median `0.431`, p95 `1.047`)
+- norm_mae: `0.0032` (mae / range_span)
+- std(pred)=0.156, std(target)=1.303, ratio=0.120
+- mean(pred)=5.427, mean(target)=5.367, gap=0.061
+- direction correct on signed-range subset: `100.0%`
+- Pearson corr(pred, target): `0.342`
+- **Diagnosis:** model is varying but missing — error is > 1.5× panel-median normalised MAE.
+
+### `Contrast2012` — HIGH ERROR  (idx 1)
+
+- range: `[-100.00, 100.00]`, default: `0.00`
+- MAE: `0.637` (median `0.522`, p95 `1.423`)
+- norm_mae: `0.0032` (mae / range_span)
+- std(pred)=0.256, std(target)=0.795, ratio=0.322
+- mean(pred)=-7.306, mean(target)=-7.633, gap=0.327
+- direction correct on signed-range subset: `100.0%`
+- Pearson corr(pred, target): `0.529`
+- **Diagnosis:** model is varying but missing — error is > 1.5× panel-median normalised MAE.
+
+### `ToneCurve_Pt2_X` — HIGH ERROR  (idx 89)
+
+- range: `[0.00, 255.00]`, default: `51.00`
+- MAE: `0.753` (median `0.806`, p95 `1.287`)
+- norm_mae: `0.0030` (mae / range_span)
+- std(pred)=0.799, std(target)=0.000, ratio=—
+- mean(pred)=21.694, mean(target)=22.000, gap=-0.306
+- Pearson corr(pred, target): `—`
+- **Diagnosis:** model is varying but missing — error is > 1.5× panel-median normalised MAE.
+
+### `ToneCurveBlue_Pt2_Y` — HIGH ERROR  (idx 126)
+
+- range: `[0.00, 255.00]`, default: `51.00`
+- MAE: `0.723` (median `0.737`, p95 `1.328`)
+- norm_mae: `0.0028` (mae / range_span)
+- std(pred)=0.731, std(target)=0.000, ratio=—
+- mean(pred)=19.584, mean(target)=20.000, gap=-0.416
+- Pearson corr(pred, target): `—`
+- **Diagnosis:** model is varying but missing — error is > 1.5× panel-median normalised MAE.
+
+### `RedHue` — HIGH ERROR  (idx 58)
+
+- range: `[-100.00, 100.00]`, default: `0.00`
+- MAE: `0.526` (median `0.456`, p95 `1.029`)
+- norm_mae: `0.0026` (mae / range_span)
+- std(pred)=0.453, std(target)=0.000, ratio=—
+- mean(pred)=13.543, mean(target)=14.000, gap=-0.457
+- direction correct on signed-range subset: `100.0%`
+- Pearson corr(pred, target): `—`
+- **Diagnosis:** model is varying but missing — error is > 1.5× panel-median normalised MAE.
+
+### `HueAdjustmentRed` — HIGH ERROR  (idx 13)
+
+- range: `[-100.00, 100.00]`, default: `0.00`
+- MAE: `0.496` (median `0.505`, p95 `0.735`)
+- norm_mae: `0.0025` (mae / range_span)
+- std(pred)=0.186, std(target)=0.000, ratio=—
+- mean(pred)=6.504, mean(target)=7.000, gap=-0.496
+- direction correct on signed-range subset: `100.0%`
+- Pearson corr(pred, target): `—`
+- **Diagnosis:** model is varying but missing — error is > 1.5× panel-median normalised MAE.
+
+### `GreenSaturation` — HIGH ERROR  (idx 61)
+
+- range: `[-100.00, 100.00]`, default: `0.00`
+- MAE: `0.346` (median `0.356`, p95 `0.640`)
+- norm_mae: `0.0017` (mae / range_span)
+- std(pred)=0.228, std(target)=0.000, ratio=—
+- mean(pred)=-7.655, mean(target)=-8.000, gap=0.345
+- direction correct on signed-range subset: `100.0%`
+- Pearson corr(pred, target): `—`
+- **Diagnosis:** model is varying but missing — error is > 1.5× panel-median normalised MAE.
+
+### `Clarity2012` — HIGH ERROR  (idx 6)
+
+- range: `[-100.00, 100.00]`, default: `0.00`
+- MAE: `0.307` (median `0.320`, p95 `0.522`)
+- norm_mae: `0.0015` (mae / range_span)
+- std(pred)=0.157, std(target)=0.000, ratio=—
+- mean(pred)=-4.693, mean(target)=-5.000, gap=0.307
+- direction correct on signed-range subset: `100.0%`
+- Pearson corr(pred, target): `—`
+- **Diagnosis:** model is varying but missing — error is > 1.5× panel-median normalised MAE.
+
+### `HueAdjustmentMagenta` — HIGH ERROR  (idx 20)
+
+- range: `[-100.00, 100.00]`, default: `0.00`
+- MAE: `0.272` (median `0.271`, p95 `0.446`)
+- norm_mae: `0.0014` (mae / range_span)
+- std(pred)=0.135, std(target)=0.000, ratio=—
+- mean(pred)=-4.728, mean(target)=-5.000, gap=0.272
+- direction correct on signed-range subset: `100.0%`
+- Pearson corr(pred, target): `—`
+- **Diagnosis:** model is varying but missing — error is > 1.5× panel-median normalised MAE.
+
+### `BlueSaturation` — HIGH ERROR  (idx 63)
+
+- range: `[-100.00, 100.00]`, default: `0.00`
+- MAE: `0.261` (median `0.227`, p95 `0.507`)
+- norm_mae: `0.0013` (mae / range_span)
+- std(pred)=0.228, std(target)=0.000, ratio=—
+- mean(pred)=-6.790, mean(target)=-7.000, gap=0.210
+- direction correct on signed-range subset: `100.0%`
+- Pearson corr(pred, target): `—`
+- **Diagnosis:** model is varying but missing — error is > 1.5× panel-median normalised MAE.
+
+### `SaturationAdjustmentAqua` — HIGH ERROR  (idx 25)
+
+- range: `[-100.00, 100.00]`, default: `0.00`
+- MAE: `0.257` (median `0.258`, p95 `0.365`)
+- norm_mae: `0.0013` (mae / range_span)
+- std(pred)=0.076, std(target)=0.000, ratio=—
+- mean(pred)=-2.743, mean(target)=-3.000, gap=0.257
+- direction correct on signed-range subset: `100.0%`
+- Pearson corr(pred, target): `—`
+- **Diagnosis:** model is varying but missing — error is > 1.5× panel-median normalised MAE.
+
+### `ColorGradeHighlightLum` — HIGH ERROR  (idx 52)
+
+- range: `[-100.00, 100.00]`, default: `0.00`
+- MAE: `0.253` (median `0.265`, p95 `0.387`)
+- norm_mae: `0.0013` (mae / range_span)
+- std(pred)=0.087, std(target)=0.000, ratio=—
+- mean(pred)=-2.253, mean(target)=-2.000, gap=-0.253
+- Pearson corr(pred, target): `—`
+- **Diagnosis:** model is varying but missing — error is > 1.5× panel-median normalised MAE.
+
+### `ToneCurve_Pt1_Y` — HIGH ERROR  (idx 88)
+
+- range: `[0.00, 255.00]`, default: `0.00`
+- MAE: `0.320` (median `0.286`, p95 `0.676`)
+- norm_mae: `0.0013` (mae / range_span)
+- std(pred)=0.350, std(target)=0.000, ratio=—
+- mean(pred)=9.141, mean(target)=9.000, gap=0.141
+- Pearson corr(pred, target): `—`
+- **Diagnosis:** model is varying but missing — error is > 1.5× panel-median normalised MAE.
+
+### `Texture` — HIGH ERROR  (idx 8)
+
+- range: `[-100.00, 100.00]`, default: `0.00`
+- MAE: `0.158` (median `0.155`, p95 `0.237`)
+- norm_mae: `0.0008` (mae / range_span)
+- std(pred)=0.058, std(target)=0.000, ratio=—
+- mean(pred)=1.842, mean(target)=2.000, gap=-0.158
+- Pearson corr(pred, target): `—`
+- **Diagnosis:** model is varying but missing — error is > 1.5× panel-median normalised MAE.
 
 ## 4. Tone curve identity-collapse check
 
@@ -1019,108 +1127,108 @@ Documented issue (HANDOVER Part 6 item 9): the model converged to near-identity 
 
 | Channel | mean L2 (pred ↔ identity) | mean L2 (target ↔ identity) | identity bias |
 |---|---:|---:|---|
-| Composite | 15.82 | 19.05 | OK |
-| Red | 26.00 | 22.81 | OK |
-| Green | 23.27 | 19.84 | OK |
-| Blue | 22.14 | 18.80 | OK |
+| Composite | 21.08 | 21.00 | OK |
+| Red | 28.94 | 31.86 | OK |
+| Green | 26.78 | 27.60 | OK |
+| Blue | 25.17 | 28.04 | OK |
 
 _Distance = mean over photos of L2-norm between (Pt2_Y..Pt5_Y) vs identity (Pt_n_Y == Pt_n_X)._ A near-zero pred-vs-identity distance with non-zero target-vs-identity distance confirms collapse.
 
 ## 5. Temperature dual-view (log-K + Kelvin)
 
-- log-K MAE (prediction space): `0.1752` (typical training-loss scale)
-- Kelvin MAE (user-facing): `731 K` (target was <250 K per HANDOVER)
-- Kelvin p95 abs error: `1889 K`
+- log-K MAE (prediction space): `0.0485` (typical training-loss scale)
+- Kelvin MAE (user-facing): `223 K` (target was <250 K per HANDOVER)
+- Kelvin p95 abs error: `426 K`
 
 ## 6. Worst-offender photos (top 20 by weighted error)
 
 Weighting: sum over fields of `|pred - target| / range_span` (Temperature uses Kelvin/range_K).
 
-**1. `9afc601330b519e7...`** — shoot `13679_Canon_EOS_5D_Mark_IV`, total weighted error `6.233`
-   - ISO 160, Canon EOS 5D Mark IV, focal 42.0 mm
-   - top contributing sliders: SharpenEdgeMasking (Δ=+56.537), ColorGradeMidtoneHue (Δ=-168.330), SplitToningShadowHue (Δ=-166.994), LuminanceAdjustmentAqua (Δ=+68.956), LuminanceAdjustmentBlue (Δ=+66.461)
+**1. `0ca63f0d51dcb41a...`** — shoot `19181_Canon_EOS_R6`, total weighted error `4.358`
+   - ISO 100, Canon EOS R6, focal 28.0 mm
+   - top contributing sliders: SharpenEdgeMasking (Δ=-54.831), ToneCurveBlue_Pt6_X (Δ=-59.545), ToneCurveRed_Pt6_X (Δ=-55.280), ToneCurveGreen_Pt6_Y (Δ=-52.313), PerspectiveScale (Δ=-17.743)
 
-**2. `968d8398e2962acf...`** — shoot `18685_Canon_EOS_R6`, total weighted error `6.088`
-   - ISO 500, Canon EOS R6, focal 48.0 mm
-   - top contributing sliders: SharpenEdgeMasking (Δ=+94.849), ColorGradeShadowLum (Δ=-51.574), SaturationAdjustmentMagenta (Δ=+35.573), Whites2012 (Δ=+33.942), SaturationAdjustmentPurple (Δ=+31.996)
+**2. `43611e04110bd6c7...`** — shoot `19181_Canon_EOS_R6`, total weighted error `4.296`
+   - ISO 250, Canon EOS R6, focal 44.0 mm
+   - top contributing sliders: SharpenEdgeMasking (Δ=-53.948), ToneCurveBlue_Pt6_X (Δ=-54.636), LuminanceAdjustmentGreen (Δ=+40.170), Sharpness (Δ=-29.924), ToneCurveRed_Pt6_X (Δ=-50.306)
 
-**3. `90d38592400bd938...`** — shoot `18689_Canon_EOS_R6`, total weighted error `6.010`
-   - ISO 125, Canon EOS R6, focal 41.0 mm
-   - top contributing sliders: LuminanceAdjustmentPurple (Δ=+97.693), SaturationAdjustmentPurple (Δ=+91.028), SaturationAdjustmentMagenta (Δ=+86.504), SharpenEdgeMasking (Δ=-31.517), LuminanceAdjustmentMagenta (Δ=+61.807)
+**3. `ad0b917b28b1c39c...`** — shoot `19181_Canon_EOS_R6`, total weighted error `4.176`
+   - ISO 125, Canon EOS R6, focal 70.0 mm
+   - top contributing sliders: SharpenEdgeMasking (Δ=-54.096), ToneCurveBlue_Pt6_X (Δ=-55.623), ToneCurveRed_Pt6_X (Δ=-51.282), Sharpness (Δ=-29.059), ToneCurveGreen_Pt6_Y (Δ=-48.295)
 
-**4. `28fa219c694897f4...`** — shoot `13679_Canon_EOS_5D_Mark_IV`, total weighted error `5.966`
-   - ISO 160, Canon EOS 5D Mark IV, focal 35.0 mm
-   - top contributing sliders: SplitToningShadowHue (Δ=-177.413), ColorGradeMidtoneHue (Δ=-167.552), LuminanceAdjustmentAqua (Δ=+76.984), LuminanceAdjustmentOrange (Δ=-60.744), LuminanceAdjustmentBlue (Δ=+57.977)
+**4. `b8ae1c9c4b6ac222...`** — shoot `19181_Canon_EOS_R6`, total weighted error `4.139`
+   - ISO 200, Canon EOS R6, focal 24.0 mm
+   - top contributing sliders: SharpenEdgeMasking (Δ=-53.639), LuminanceAdjustmentGreen (Δ=+44.202), ToneCurveBlue_Pt6_X (Δ=-52.624), Sharpness (Δ=-29.767), ToneCurveRed_Pt6_X (Δ=-48.237)
 
-**5. `f25b2231626bc3a9...`** — shoot `18439_Canon_EOS_R5_C`, total weighted error `5.912`
-   - ISO 10000, Canon EOS R5 C, focal 38.0 mm
-   - top contributing sliders: ColorGradeBlending (Δ=-50.018), Blacks2012 (Δ=+46.597), ColorGradeShadowLum (Δ=-44.491), GrainFrequency (Δ=-18.362), LuminanceAdjustmentOrange (Δ=-34.886)
+**5. `18d81a2635f718da...`** — shoot `19181_Canon_EOS_R6`, total weighted error `4.025`
+   - ISO 200, Canon EOS R6, focal 24.0 mm
+   - top contributing sliders: SharpenEdgeMasking (Δ=-53.852), ToneCurveBlue_Pt6_X (Δ=-53.146), ToneCurveRed_Pt6_X (Δ=-48.760), LuminanceAdjustmentGreen (Δ=+37.307), Sharpness (Δ=-27.881)
 
-**6. `552decdd8e624b58...`** — shoot `19124_Canon_EOS_R6`, total weighted error `5.747`
-   - ISO 320, Canon EOS R6, focal 69.0 mm
-   - top contributing sliders: SharpenEdgeMasking (Δ=+90.207), Whites2012 (Δ=+53.296), SaturationAdjustmentMagenta (Δ=+44.589), ColorGradeShadowLum (Δ=-41.005), SaturationAdjustmentPurple (Δ=+34.958)
+**6. `b8fbe210598fe03c...`** — shoot `19181_Canon_EOS-1D_X_Mark_II`, total weighted error `3.986`
+   - ISO 160, Canon EOS-1D X Mark II, focal 134.0 mm
+   - top contributing sliders: SharpenEdgeMasking (Δ=-54.242), ToneCurveBlue_Pt6_X (Δ=-55.786), ToneCurveRed_Pt6_X (Δ=-51.430), ToneCurveGreen_Pt6_Y (Δ=-48.484), PerspectiveScale (Δ=-16.116)
 
-**7. `b3e1b22479f997bc...`** — shoot `19120_Canon_EOS_R5`, total weighted error `5.619`
-   - ISO 800, Canon EOS R5, focal 79.0 mm
-   - top contributing sliders: SharpenEdgeMasking (Δ=+89.590), Whites2012 (Δ=+60.334), ColorGradeShadowLum (Δ=-42.481), SaturationAdjustmentOrange (Δ=+31.536), SaturationAdjustmentMagenta (Δ=+27.752)
+**7. `b5adbe174c245a18...`** — shoot `18523_Canon_EOS_R6`, total weighted error `3.750`
+   - ISO 320, Canon EOS R6, focal 24.0 mm
+   - top contributing sliders: SharpenEdgeMasking (Δ=-54.123), ToneCurveBlue_Pt6_X (Δ=-54.966), Sharpness (Δ=-30.091), ToneCurveRed_Pt6_X (Δ=-50.638), ToneCurveGreen_Pt6_Y (Δ=-47.580)
 
-**8. `030f865d392bd85e...`** — shoot `18689_Canon_EOS_R6`, total weighted error `5.601`
-   - ISO 125, Canon EOS R6, focal 41.0 mm
-   - top contributing sliders: LuminanceAdjustmentPurple (Δ=+97.466), SaturationAdjustmentPurple (Δ=+91.003), SaturationAdjustmentMagenta (Δ=+86.458), SharpenEdgeMasking (Δ=-32.466), LuminanceAdjustmentMagenta (Δ=+61.672)
+**8. `c721e915fb4e9050...`** — shoot `19181_Canon_EOS_R6`, total weighted error `3.721`
+   - ISO 200, Canon EOS R6, focal 28.0 mm
+   - top contributing sliders: SharpenEdgeMasking (Δ=-53.980), ToneCurveBlue_Pt6_X (Δ=-54.711), ToneCurveRed_Pt6_X (Δ=-50.337), ToneCurveGreen_Pt6_Y (Δ=-47.307), Sharpness (Δ=-23.972)
 
-**9. `043dcad0d4d46364...`** — shoot `19120_Canon_EOS_R5`, total weighted error `5.500`
-   - ISO 800, Canon EOS R5, focal 92.0 mm
-   - top contributing sliders: SharpenEdgeMasking (Δ=+87.413), Whites2012 (Δ=+67.374), ColorGradeShadowLum (Δ=-44.163), SaturationAdjustmentOrange (Δ=+32.028), SaturationAdjustmentMagenta (Δ=+25.679)
+**9. `65823e939ffd2273...`** — shoot `18523_Canon_EOS_R6`, total weighted error `3.588`
+   - ISO 320, Canon EOS R6, focal 24.0 mm
+   - top contributing sliders: SharpenEdgeMasking (Δ=-54.000), ToneCurveBlue_Pt6_X (Δ=-54.328), Sharpness (Δ=-29.975), ToneCurveRed_Pt6_X (Δ=-49.983), ToneCurveGreen_Pt6_Y (Δ=-46.915)
 
-**10. `0385fad0f58cd8b8...`** — shoot `18689_Canon_EOS_R6`, total weighted error `5.488`
-   - ISO 125, Canon EOS R6, focal 41.0 mm
-   - top contributing sliders: SaturationAdjustmentPurple (Δ=+100.179), LuminanceAdjustmentPurple (Δ=+99.650), SaturationAdjustmentMagenta (Δ=+98.414), LuminanceAdjustmentMagenta (Δ=+62.400), Sharpness (Δ=+29.155)
+**10. `927a6cce66fdc7a2...`** — shoot `19241_Canon_EOS_R6`, total weighted error `3.380`
+   - ISO 800, Canon EOS R6, focal 40.0 mm
+   - top contributing sliders: SharpenEdgeMasking (Δ=-53.431), ToneCurveBlue_Pt6_X (Δ=-52.041), Sharpness (Δ=-29.514), ToneCurveRed_Pt6_X (Δ=-47.595), ToneCurveGreen_Pt6_Y (Δ=-44.436)
 
-**11. `3c714cbc9d212969...`** — shoot `19120_Canon_EOS_R5`, total weighted error `5.484`
-   - ISO 1250, Canon EOS R5, focal 89.0 mm
-   - top contributing sliders: SharpenEdgeMasking (Δ=+84.491), Whites2012 (Δ=+59.147), ColorGradeShadowLum (Δ=-43.329), SaturationAdjustmentMagenta (Δ=+25.964), SaturationAdjustmentOrange (Δ=+25.543)
+**11. `bca8f6f01d65ac5f...`** — shoot `19181_Canon_EOS_R6`, total weighted error `3.322`
+   - ISO 250, Canon EOS R6, focal 55.0 mm
+   - top contributing sliders: SharpenEdgeMasking (Δ=-53.044), ToneCurveBlue_Pt6_X (Δ=-49.853), Sharpness (Δ=-29.291), ToneCurveRed_Pt6_X (Δ=-45.404), ToneCurveGreen_Pt6_Y (Δ=-42.272)
 
-**12. `3b3e0eb997297afb...`** — shoot `19120_Canon_EOS_R5`, total weighted error `5.477`
-   - ISO 800, Canon EOS R5, focal 92.0 mm
-   - top contributing sliders: SharpenEdgeMasking (Δ=+87.095), Whites2012 (Δ=+65.494), ColorGradeShadowLum (Δ=-42.090), SaturationAdjustmentOrange (Δ=+31.279), LuminanceSmoothing (Δ=+12.857)
+**12. `33e6fa8e91bfebbe...`** — shoot `19241_Canon_EOS_R6`, total weighted error `3.312`
+   - ISO 800, Canon EOS R6, focal 36.0 mm
+   - top contributing sliders: SharpenEdgeMasking (Δ=-53.385), ToneCurveBlue_Pt6_X (Δ=-51.762), Sharpness (Δ=-29.519), ToneCurveRed_Pt6_X (Δ=-47.316), ToneCurveGreen_Pt6_Y (Δ=-44.164)
 
-**13. `45bbbcc1bad24eb4...`** — shoot `19120_Canon_EOS_R5`, total weighted error `5.397`
-   - ISO 2500, Canon EOS R5, focal 70.0 mm
-   - top contributing sliders: SharpenEdgeMasking (Δ=+85.454), Whites2012 (Δ=+71.939), ColorGradeShadowLum (Δ=-43.558), SaturationAdjustmentOrange (Δ=+32.521), LuminanceSmoothing (Δ=+13.765)
+**13. `5383db8a2128882d...`** — shoot `18589_Canon_EOS_R6`, total weighted error `3.256`
+   - ISO 320, Canon EOS R6, focal 60.0 mm
+   - top contributing sliders: SharpenEdgeMasking (Δ=-53.210), ToneCurveBlue_Pt6_X (Δ=-51.587), Sharpness (Δ=-29.460), ToneCurveRed_Pt6_X (Δ=-47.117), ToneCurveGreen_Pt6_Y (Δ=-44.010)
 
-**14. `48376c232167bf1d...`** — shoot `19120_Canon_EOS_R5`, total weighted error `5.339`
-   - ISO 2000, Canon EOS R5, focal 28.0 mm
-   - top contributing sliders: SharpenEdgeMasking (Δ=+89.027), Whites2012 (Δ=+64.068), ColorGradeShadowLum (Δ=-34.934), LuminanceSmoothing (Δ=+12.657), SaturationAdjustmentOrange (Δ=+25.138)
+**14. `84a08c4cb1cf5efc...`** — shoot `19241_Canon_EOS_R6`, total weighted error `3.232`
+   - ISO 800, Canon EOS R6, focal 35.0 mm
+   - top contributing sliders: SharpenEdgeMasking (Δ=-53.173), ToneCurveBlue_Pt6_X (Δ=-50.697), Sharpness (Δ=-29.360), ToneCurveRed_Pt6_X (Δ=-46.225), ToneCurveGreen_Pt6_Y (Δ=-43.062)
 
-**15. `6a42862535a0b43f...`** — shoot `18594_Canon_EOS_R6`, total weighted error `5.272`
-   - ISO 4000, Canon EOS R6, focal 24.0 mm
-   - top contributing sliders: GrainFrequency (Δ=-24.140), GreenHue (Δ=-44.485), ToneCurve_Pt4_X (Δ=+43.999), Blacks2012 (Δ=-33.860), ColorGradeShadowLum (Δ=-32.649)
+**15. `e85d8d0e9b29f7bf...`** — shoot `18755_Canon_EOS_R6`, total weighted error `2.615`
+   - ISO 1600, Canon EOS R6, focal 24.0 mm
+   - top contributing sliders: SharpenEdgeMasking (Δ=-52.448), Sharpness (Δ=-28.871), ToneCurveBlue_Pt6_X (Δ=-46.745), ToneCurveRed_Pt6_X (Δ=-42.165), ToneCurveGreen_Pt6_Y (Δ=-38.978)
 
-**16. `3b37a8ad9a8049f1...`** — shoot `18522_Canon_EOS_R6`, total weighted error `5.267`
-   - ISO 6400, Canon EOS R6, focal 24.0 mm
-   - top contributing sliders: GrainFrequency (Δ=-25.080), ColorGradeShadowLum (Δ=-40.209), ToneCurve_Pt4_X (Δ=+39.364), ColorGradeMidtoneSat (Δ=-14.998), Sharpness (Δ=+22.069)
+**16. `814a4a5e80f2dc6b...`** — shoot `18589_Canon_EOS_R6`, total weighted error `2.574`
+   - ISO 320, Canon EOS R6, focal 70.0 mm
+   - top contributing sliders: SharpenEdgeMasking (Δ=-52.386), Sharpness (Δ=-28.870), ToneCurveBlue_Pt6_X (Δ=-46.154), ToneCurveRed_Pt6_X (Δ=-41.553), ToneCurveGreen_Pt6_Y (Δ=-38.390)
 
-**17. `b04e6fa6923f658f...`** — shoot `18767_Canon_EOS_R6`, total weighted error `5.261`
-   - ISO 2000, Canon EOS R6, focal 50.0 mm
-   - top contributing sliders: SplitToningShadowHue (Δ=-197.445), Sharpness (Δ=+44.065), GreenHue (Δ=+43.870), SaturationAdjustmentOrange (Δ=+35.911), Shadows2012 (Δ=+34.249)
+**17. `cb57e0f27be9d428...`** — shoot `18755_Canon_EOS_R6`, total weighted error `2.554`
+   - ISO 4000, Canon EOS R6, focal 35.0 mm
+   - top contributing sliders: SharpenEdgeMasking (Δ=-50.614), Sharpness (Δ=-27.521), ToneCurveBlue_Pt6_X (Δ=-36.365), ToneCurveRed_Pt6_X (Δ=-31.580), ToneCurveGreen_Pt6_Y (Δ=-28.181)
 
-**18. `a474bc6149c22fd5...`** — shoot `18522_Canon_EOS_R6`, total weighted error `5.258`
-   - ISO 6400, Canon EOS R6, focal 35.0 mm
-   - top contributing sliders: GrainFrequency (Δ=-26.164), ColorGradeShadowLum (Δ=-37.918), ToneCurve_Pt4_X (Δ=+40.269), ColorGradeMidtoneSat (Δ=-14.960), Blacks2012 (Δ=-29.622)
+**18. `4d6c072722428dc9...`** — shoot `18755_Canon_EOS_R6`, total weighted error `2.497`
+   - ISO 6400, Canon EOS R6, focal 46.0 mm
+   - top contributing sliders: SharpenEdgeMasking (Δ=-50.602), Sharpness (Δ=-27.546), ToneCurveBlue_Pt6_X (Δ=-36.821), ToneCurveRed_Pt6_X (Δ=-31.969), LuminanceAdjustmentGreen (Δ=-22.653)
 
-**19. `3183a5159702ab02...`** — shoot `19120_Canon_EOS_R5`, total weighted error `5.249`
-   - ISO 500, Canon EOS R5, focal 70.0 mm
-   - top contributing sliders: SharpenEdgeMasking (Δ=+81.088), Whites2012 (Δ=+55.380), ColorGradeShadowLum (Δ=-36.231), SaturationAdjustmentOrange (Δ=+23.759), SaturationAdjustmentMagenta (Δ=+23.025)
+**19. `6d65843916dbd1b8...`** — shoot `18755_Canon_EOS_R6`, total weighted error `2.478`
+   - ISO 2500, Canon EOS R6, focal 32.0 mm
+   - top contributing sliders: SharpenEdgeMasking (Δ=-51.991), Sharpness (Δ=-28.560), ToneCurveBlue_Pt6_X (Δ=-44.459), ToneCurveRed_Pt6_X (Δ=-39.797), ToneCurveGreen_Pt6_Y (Δ=-36.569)
 
-**20. `6df1264f3fdc5d2f...`** — shoot `18685_Canon_EOS_R6`, total weighted error `5.246`
-   - ISO 1250, Canon EOS R6, focal 37.0 mm
-   - top contributing sliders: SaturationAdjustmentPurple (Δ=+49.973), ColorGradeShadowLum (Δ=-46.977), SaturationAdjustmentMagenta (Δ=+39.140), SaturationAdjustmentYellow (Δ=-29.853), Highlights2012 (Δ=+26.504)
+**20. `326be5a183526e91...`** — shoot `18755_Canon_EOS_R6`, total weighted error `2.469`
+   - ISO 3200, Canon EOS R6, focal 64.0 mm
+   - top contributing sliders: SharpenEdgeMasking (Δ=-51.092), Sharpness (Δ=-27.865), ToneCurveBlue_Pt6_X (Δ=-39.802), ToneCurveRed_Pt6_X (Δ=-35.003), ToneCurveGreen_Pt6_Y (Δ=-31.688)
 
 ## 7. Surprises / contradictions
 
-- Temperature is classified HEALTHY despite the documented 730K-MAE failure mode in HANDOVER. Current Kelvin MAE: 731 K.
-- Tone curve Composite is NOT showing the documented identity-collapse (pred-vs-identity 15.82 vs target-vs-identity 19.05). HANDOVER says all 4 channels collapse — verify.
-- Tone curve Red is NOT showing the documented identity-collapse (pred-vs-identity 26.00 vs target-vs-identity 22.81). HANDOVER says all 4 channels collapse — verify.
-- Tone curve Green is NOT showing the documented identity-collapse (pred-vs-identity 23.27 vs target-vs-identity 19.84). HANDOVER says all 4 channels collapse — verify.
-- Tone curve Blue is NOT showing the documented identity-collapse (pred-vs-identity 22.14 vs target-vs-identity 18.80). HANDOVER says all 4 channels collapse — verify.
-- COLLAPSED sliders found OUTSIDE the tone-curve panels: ['Tint', 'SplitToningShadowHue', 'ColorGradeMidtoneHue']. HANDOVER documents tone-curve collapse only — this is new.
+- Temperature is classified HEALTHY despite the documented 730K-MAE failure mode in HANDOVER. Current Kelvin MAE: 223 K.
+- Tone curve Composite is NOT showing the documented identity-collapse (pred-vs-identity 21.08 vs target-vs-identity 21.00). HANDOVER says all 4 channels collapse — verify.
+- Tone curve Red is NOT showing the documented identity-collapse (pred-vs-identity 28.94 vs target-vs-identity 31.86). HANDOVER says all 4 channels collapse — verify.
+- Tone curve Green is NOT showing the documented identity-collapse (pred-vs-identity 26.78 vs target-vs-identity 27.60). HANDOVER says all 4 channels collapse — verify.
+- Tone curve Blue is NOT showing the documented identity-collapse (pred-vs-identity 25.17 vs target-vs-identity 28.04). HANDOVER says all 4 channels collapse — verify.
+- COLLAPSED sliders found OUTSIDE the tone-curve panels: ['Dehaze', 'HueAdjustmentYellow', 'HueAdjustmentGreen', 'HueAdjustmentAqua', 'HueAdjustmentBlue', 'SaturationAdjustmentOrange', 'SaturationAdjustmentYellow', 'SaturationAdjustmentBlue', 'SaturationAdjustmentMagenta', 'LuminanceAdjustmentOrange', 'LuminanceAdjustmentYellow', 'LuminanceAdjustmentGreen', 'LuminanceAdjustmentMagenta']. HANDOVER documents tone-curve collapse only — this is new.

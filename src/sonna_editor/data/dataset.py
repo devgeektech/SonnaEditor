@@ -4,8 +4,9 @@ import hashlib
 import io
 import logging
 import multiprocessing
-from datetime import datetime, timedelta
+from datetime import datetime
 from pathlib import Path
+from typing import Sequence
 
 import numpy as np
 import pandas as pd
@@ -221,15 +222,15 @@ def split_dataset(
     split.
 
     Original GroupShuffleSplit-based behaviour preserved when stratify_on=None.
-    Default behaviour (stratify_on="Temperature") uses stratified-by-shoot
-    allocation; see stratified_group_split() for details.
+    Default behaviour balances by shoot across Temperature correction,
+    Exposure2012, and Tint correction; see stratified_group_split() for details.
     """
     return stratified_group_split(
         df,
         val_ratio=val_ratio,
         test_ratio=test_ratio,
         group_col=group_col,
-        stratify_on="Temperature",
+        stratify_on=("Temperature", "Exposure2012", "Tint"),
         n_strata=5,
         random_state=42,
     )
@@ -240,7 +241,7 @@ def stratified_group_split(
     val_ratio: float = 0.107,
     test_ratio: float = 0.139,
     group_col: str = "shoot_id",
-    stratify_on: str | None = "Temperature",
+    stratify_on: str | Sequence[str] | None = "Temperature",
     asshot_col: str = "as_shot_temperature",
     n_strata: int = 5,
     random_state: int = 42,
@@ -250,24 +251,21 @@ def stratified_group_split(
     editing characteristics.
 
     Why this exists: the original GroupShuffleSplit allocates groups uniformly at
-    random. With ~120 shoots, 13-shoot val/test sets, and a small number of
-    cooling-heavy shoots that happen to be large, random allocation produced
-    severe direction-distribution drift (val 81% cooling vs train 56%). This
-    function stratifies shoots into n_strata quantile buckets by their mean
-    edit-delta, then allocates within each stratum so all splits draw from
-    similar editing-characteristic distributions.
+    random. With small shoot counts, val/test can drift badly on the exact
+    sliders we care about most. For example, a split that balances Temperature
+    correction can still leave Exposure2012 much brighter in val/test than train.
+    This function keeps shoot-level isolation while balancing split distributions
+    across one or more edit characteristics.
 
     Algorithm:
-      1. Per shoot, compute mean(stratify_on - asshot_col) across photos.
-         Shoots without AsShot data get mean_delta=0 (neutral stratum).
-      2. Quantile-bucket shoots into n_strata.
-      3. Within each stratum: shuffle (seeded), then integer-allocate
-         test/val/train counts. Test gets max(1, round(n*test_ratio));
-         val gets max(1, round(n*val_ratio)); train absorbs the remainder.
-      4. Balancing post-pass: prioritises test_ratio. If test photo-share is
-         under target by more than tolerance, move shoots from train to test
-         (preferring shoots whose size best closes the gap, drawn from strata
-         where train is most over-represented). Same for val.
+      1. Per shoot, compute photo-weighted means for each stratification field.
+         Temperature and Tint are represented as corrections from AsShot when
+         their AsShot columns are available. Exposure is represented directly.
+      2. Try deterministic random group assignments that hit the target
+         photo-count ratios.
+      3. Select the assignment with the lowest objective: size-ratio error plus
+         train/val/test mean drift from global means across all stratification
+         fields.
 
     Returns (train_df, val_df, test_df). Photo order within each split matches
     df's row order (no shuffle of photos themselves).
@@ -297,124 +295,162 @@ def stratified_group_split(
         )
         return df_train, df_val, df_test
 
-    # ── Stratified path ──
-    if stratify_on not in df.columns or asshot_col not in df.columns:
+    # ── Balanced stratified path ──
+    stratify_fields = [stratify_on] if isinstance(stratify_on, str) else list(stratify_on)
+    missing = [field for field in stratify_fields if field not in df.columns]
+    if missing:
+        raise ValueError(f"stratify fields missing from DataFrame columns: {missing}")
+    if "Temperature" in stratify_fields and asshot_col not in df.columns:
         raise ValueError(
-            f"stratify_on='{stratify_on}' and asshot_col='{asshot_col}' must both be in df.columns"
+            f"stratify_on includes 'Temperature' but asshot_col='{asshot_col}' "
+            "is not in DataFrame columns"
         )
 
-    # Step 1: shoot-level stratification key
-    final = pd.to_numeric(df[stratify_on], errors="coerce")
-    asshot = pd.to_numeric(df[asshot_col], errors="coerce")
-    work = pd.DataFrame({group_col: df[group_col].values, "_delta": final - asshot})
-    shoot_means = work.groupby(group_col)["_delta"].mean()
-    # Shoots with no AsShot data → neutral stratum (mean_delta=0 falls in middle bucket).
-    shoot_means = shoot_means.fillna(0.0)
-
-    # Step 2: quantile-bucket
-    try:
-        strata = pd.qcut(shoot_means, n_strata, labels=False, duplicates="drop")
-    except ValueError as e:
-        raise ValueError(
-            f"qcut failed at n_strata={n_strata}; dataset may be too small or too uniform: {e}"
-        )
-
-    # Photo counts per shoot — for the balancing post-pass.
-    shoot_sizes = df.groupby(group_col).size()
-
-    # Step 3: integer allocate within each stratum, deterministic
     import random as _random
-    rng = _random.Random(random_state)
-    train_shoots: list = []
-    val_shoots: list = []
-    test_shoots: list = []
-    shoot_to_stratum: dict = {}
-    for s in sorted(strata.unique()):
-        stratum = strata[strata == s].index.tolist()
-        rng.shuffle(stratum)
-        n = len(stratum)
-        n_test = max(1, round(n * test_ratio))
-        n_val = max(1, round(n * val_ratio))
-        n_train = n - n_test - n_val
-        # Integer arithmetic safety: shrink test/val if they crowd train out.
-        while n_train < 1:
-            if n_test > 1:
-                n_test -= 1
-            elif n_val > 1:
-                n_val -= 1
-            else:
-                break
-            n_train = n - n_test - n_val
-        train_shoots += stratum[:n_train]
-        val_shoots += stratum[n_train:n_train + n_val]
-        test_shoots += stratum[n_train + n_val:]
-        for sid in stratum:
-            shoot_to_stratum[sid] = s
 
-    # Step 4: balancing post-pass — prioritise test photo-ratio, then val.
-    # Move shoots from train to the under-represented split, picking shoots
-    # whose photo-count best closes the gap, drawn preferentially from strata
-    # where train is currently most over-represented vs target.
+    group_sizes = df.groupby(group_col).size()
+    groups = group_sizes.index.tolist()
     n_total = len(df)
-    target_test_photos = int(round(n_total * test_ratio))
-    target_val_photos = int(round(n_total * val_ratio))
-    tol_photos = int(round(n_total * test_priority_tolerance))
+    target_counts = {
+        "test": int(round(n_total * test_ratio)),
+        "val": int(round(n_total * val_ratio)),
+    }
+
+    work = pd.DataFrame({group_col: df[group_col].values})
+    feature_names: list[str] = []
+    for field in stratify_fields:
+        values = pd.to_numeric(df[field], errors="coerce")
+        if field == "Temperature":
+            asshot = pd.to_numeric(df[asshot_col], errors="coerce")
+            work[field] = values - asshot
+            feature_names.append(field)
+        elif field == "Tint" and "as_shot_tint" in df.columns:
+            ashot_tint = pd.to_numeric(df["as_shot_tint"], errors="coerce")
+            work[field] = values - ashot_tint
+            feature_names.append(field)
+        else:
+            work[field] = values
+            feature_names.append(field)
+
+    group_features = work.groupby(group_col)[feature_names].mean().fillna(0.0)
+    global_means = pd.Series(index=feature_names, dtype=float)
+    global_stds = pd.Series(index=feature_names, dtype=float)
+    for field in feature_names:
+        expanded = pd.to_numeric(work[field], errors="coerce").fillna(0.0)
+        global_means[field] = float(expanded.mean())
+        std = float(expanded.std(ddof=0))
+        global_stds[field] = std if std > 1e-6 else 1.0
+
+    group_to_pos = {sid: i for i, sid in enumerate(groups)}
+    size_arr = group_sizes.reindex(groups).to_numpy(dtype=float)
+    feature_arr = (
+        (group_features.reindex(groups).fillna(0.0) - global_means) / global_stds
+    ).to_numpy(dtype=float)
+    tail_columns: list[np.ndarray] = []
+    tail_quantile = 1.0 / max(n_strata, 2)
+    for field in feature_names:
+        group_col_values = group_features[field]
+        low_cut = float(group_col_values.quantile(tail_quantile))
+        high_cut = float(group_col_values.quantile(1.0 - tail_quantile))
+        values = group_col_values.reindex(groups).to_numpy()
+        tail_columns.append((values <= low_cut).astype(float))
+        tail_columns.append((values >= high_cut).astype(float))
+        min_value = float(group_col_values.min())
+        max_value = float(group_col_values.max())
+        tail_columns.append(np.isclose(values, min_value).astype(float))
+        tail_columns.append(np.isclose(values, max_value).astype(float))
+    tail_arr = np.stack(tail_columns, axis=1) if tail_columns else np.zeros((len(groups), 0))
+    global_tail = (
+        (tail_arr * size_arr[:, None]).sum(axis=0) / max(float(size_arr.sum()), 1.0)
+        if tail_arr.size
+        else np.zeros((0,), dtype=float)
+    )
 
     def _photos_in(shoots: list) -> int:
-        return int(shoot_sizes.reindex(shoots).fillna(0).sum())
+        return int(sum(size_arr[group_to_pos[sid]] for sid in shoots))
 
-    def _move_to(target_shoots: list, target_photo_goal: int) -> None:
-        """Move shoots from train_shoots to target_shoots until photo count
-        reaches goal (within tol_photos), or no good candidate remains."""
-        cur = _photos_in(target_shoots)
-        # Per-stratum train-count → identifies strata where train is over-represented.
-        max_iters = len(train_shoots)  # safety bound
-        for _ in range(max_iters):
-            if cur >= target_photo_goal - tol_photos:
-                return
-            gap = target_photo_goal - cur
-            train_set = set(train_shoots)
-            # Candidate shoots from train, sorted by photo size (ascending)
-            cand = sorted(train_set, key=lambda sid: shoot_sizes.get(sid, 0))
-            # Best candidate = closest to gap without overshooting beyond +50%
-            best = None
-            best_diff = float("inf")
-            for sid in cand:
-                sz = int(shoot_sizes.get(sid, 0))
-                if sz == 0:
+    def _make_assignment(rng: _random.Random) -> tuple[list, list, list]:
+        shuffled = groups[:]
+        rng.shuffle(shuffled)
+        test_shoots: list = []
+        val_shoots: list = []
+        train_shoots: list = []
+
+        for sid in shuffled:
+            test_count = _photos_in(test_shoots)
+            val_count = _photos_in(val_shoots)
+            if test_count < target_counts["test"]:
+                test_shoots.append(sid)
+            elif val_count < target_counts["val"]:
+                val_shoots.append(sid)
+            else:
+                train_shoots.append(sid)
+
+        if not train_shoots:
+            train_shoots.append(test_shoots.pop())
+        if not val_shoots:
+            val_shoots.append(train_shoots.pop())
+        if not test_shoots:
+            test_shoots.append(train_shoots.pop())
+        return train_shoots, val_shoots, test_shoots
+
+    def _objective(train_shoots: list, val_shoots: list, test_shoots: list) -> float:
+        split_map = {
+            "train": train_shoots,
+            "val": val_shoots,
+            "test": test_shoots,
+        }
+        score = 0.0
+        score += abs(_photos_in(test_shoots) - target_counts["test"]) / max(n_total, 1)
+        score += abs(_photos_in(val_shoots) - target_counts["val"]) / max(n_total, 1)
+        for shoots in split_map.values():
+            if not shoots:
+                score += 100.0
+                continue
+            idx = np.fromiter((group_to_pos[sid] for sid in shoots), dtype=int)
+            weights = size_arr[idx]
+            split_z = (feature_arr[idx] * weights[:, None]).sum(axis=0) / weights.sum()
+            score += float(np.abs(split_z).sum())
+            if tail_arr.size:
+                split_tail = (tail_arr[idx] * weights[:, None]).sum(axis=0) / weights.sum()
+                score += 2.0 * float(np.abs(split_tail - global_tail).sum())
+        if tail_arr.size:
+            for col_idx in range(tail_arr.shape[1]):
+                total_tail_groups = int(tail_arr[:, col_idx].sum())
+                if total_tail_groups < 2:
                     continue
-                # Prefer candidates whose size doesn't overshoot gap by >50%.
-                if sz <= int(gap * 1.5):
-                    diff = abs(gap - sz)
-                    if diff < best_diff:
-                        best, best_diff = sid, diff
-            if best is None:
-                # No non-overshooting candidate — take the smallest train shoot.
-                best = cand[0] if cand else None
-            if best is None:
-                return  # train is empty; nothing to move
-            train_shoots.remove(best)
-            target_shoots.append(best)
-            cur += int(shoot_sizes.get(best, 0))
+                desired_splits = min(total_tail_groups, 3)
+                occupied_splits = 0
+                for shoots in split_map.values():
+                    idx = np.fromiter((group_to_pos[sid] for sid in shoots), dtype=int)
+                    occupied_splits += int(bool(tail_arr[idx, col_idx].sum()))
+                score += 10.0 * float(desired_splits - occupied_splits)
+        return score
 
-    _move_to(test_shoots, target_test_photos)
-    _move_to(val_shoots, target_val_photos)
+    rng = _random.Random(random_state)
+    best: tuple[float, list, list, list] | None = None
+    n_candidates = max(500, min(5_000, len(groups) * 100))
+    for _ in range(n_candidates):
+        train_shoots, val_shoots, test_shoots = _make_assignment(rng)
+        score = _objective(train_shoots, val_shoots, test_shoots)
+        if best is None or score < best[0]:
+            best = (score, train_shoots, val_shoots, test_shoots)
 
-    # Final assembly
+    assert best is not None
+    _, train_shoots, val_shoots, test_shoots = best
     train_set, val_set, test_set = set(train_shoots), set(val_shoots), set(test_shoots)
     df_train = df[df[group_col].isin(train_set)].reset_index(drop=True)
     df_val = df[df[group_col].isin(val_set)].reset_index(drop=True)
     df_test = df[df[group_col].isin(test_set)].reset_index(drop=True)
     logger.info(
-        "Stratified split (n_strata=%d, stratify_on=%s): "
-        "train=%d photos / %d shoots, val=%d / %d, test=%d / %d",
-        n_strata, stratify_on,
+        "Balanced group split (fields=%s): train=%d photos / %d shoots, "
+        "val=%d / %d, test=%d / %d",
+        feature_names,
         len(df_train), len(train_set),
         len(df_val), len(val_set),
         len(df_test), len(test_set),
     )
     return df_train, df_val, df_test
-
 
 def save_split(
     train: pd.DataFrame,

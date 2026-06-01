@@ -5,11 +5,14 @@ This is the cross-platform local runbook for macOS, Windows, and Linux.
 ## 1. Python Environment
 
 The repo is uv-managed and pinned to Python 3.11 through `.python-version`.
+On Windows/Linux x86_64, `pyproject.toml` pins `torch` and `torchvision` to the
+PyTorch CUDA 12.8 wheel index. This keeps NVIDIA GPU support intact after
+`uv sync --extra dev`.
 
 Windows PowerShell:
 
 ```powershell
-cd F:\Projects\SonnaEditor
+cd C:\Users\vikas.DESKTOP-61LEE8B\Projects\SonnaEditor
 uv sync --extra dev
 uv run python --version
 ```
@@ -40,6 +43,16 @@ uv run python scripts/verify_environment.py
 The verifier checks Python, imports, and the best available PyTorch device:
 CUDA, Apple MPS, or CPU. Adobe DNG Converter is reported as optional unless you
 need RAW-to-DNG normalisation.
+
+Current verified Windows workstation:
+
+```text
+Python 3.11.15
+uv 0.11.17
+PyTorch 2.11.0+cu128
+Preferred torch device: cuda
+GPU: NVIDIA GeForce RTX 3050
+```
 
 ## 3. Backend API
 
@@ -207,7 +220,22 @@ The script writes `model.ckpt`, `model.json`, TensorBoard logs, and
 contains the best validation checkpoint, not just the final epoch.
 It also publishes a versioned UI-visible copy such as
 `v1_learning/model-v2.0.0.ckpt` plus `v1_learning/model-v2.0.0.json`.
-Use `--resume-from-checkpoint <path>` to continue training from an existing checkpoint, or omit it to start fresh. Use `--output-dir` for run-specific artifacts, and allow the script to publish the visible checkpoint into `v1_learning/` for frontend discovery.
+Use `--resume-from-checkpoint <path>` to continue from a saved training checkpoint when resuming a run, or omit it to start fresh. Use `--output-dir` for run-specific artifacts, and allow the script to publish the visible checkpoint into `v1_learning/` for frontend discovery.
+
+The current small local dataset contains:
+
+```text
+v1_learning/dataset/dataset.parquet: 189 rows
+splits_v2_stratified/train.parquet: 132 rows
+splits_v2_stratified/val.parquet: 27 rows
+splits_v2_stratified/test.parquet: 30 rows
+```
+
+The current split is grouped by shoot and balanced across Temperature correction, Exposure2012, and Tint correction. Fresh v2 training also starts output heads from the training-set target medians and uses geometry-only augmentation by default, which directly addresses the earlier brightness/WB drift in small-data runs.
+
+Mode A inference also stabilises RGB tone-curve endpoints before writing XMP: per-channel black endpoints stay `0,0` and white endpoints stay `255,255`. This avoids pink/red casts in white highlights caused by model drift in the RGB curve endpoints.
+
+`v1_learning/model-v2.0.0.ckpt` and `v1_learning/model-v2.0.0.json` are present in this workspace at the time of this update, so one local v2 profile should appear in the UI.
 
 Monitor training:
 

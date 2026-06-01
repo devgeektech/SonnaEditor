@@ -1,86 +1,102 @@
-# Session State — Sonna Editor
+# Session State - Sonna Editor
 
-**Saved:** 2026-05-14, night (NZT) — second session of the day
-**Current phase/task:** Cross-platform environment/docs pass in progress. Saha-app UI rebuild P0 was previously complete; P1 profile-type backend prep remains next after this hygiene pass.
+**Saved:** 2026-06-01 15:35 local time
+**Current phase/task:** Training quality refresh plus inference fix for pink/red output cast.
 
-## Cross-platform update — 2026-05-28
+## Current Workspace
 
-- Project target is now explicit: macOS, Windows, and Linux.
-- Python setup uses uv + Python 3.11 on every OS.
-- Runtime device selection should use CUDA, then Apple MPS, then CPU fallback.
-- Adobe DNG Converter is optional for non-DNG workflows and configurable with `SONNA_DNG_CONVERTER`.
-- Electron backend launching should use `uv` directly from the repo root instead of shell-specific `bash -lc` assumptions.
+- Repo path: `C:\Users\vikas.DESKTOP-61LEE8B\Projects\SonnaEditor`
+- Branch: `main`, tracking `origin/main`
+- Recent committed history in this checkout: `aac360a feat: Enhance dataset building and training scripts` on top of four earlier commits.
+- Current intentional dirty files from this work: `AGENTS.md`, `CLAUDE.md`, `HANDOVER.md`, `README.md`, `RUN.md`, `SESSION_STATE.md`, `SONNA_EDITOR_BUILD_SPEC.md`, `TRAINING_COMMANDS.md`, `project_knowledge.md`, `pyproject.toml`, `scripts/train_profile.py`, `src/sonna_editor/config.py`, `src/sonna_editor/data/dataset.py`, `src/sonna_editor/inference/pipeline.py`, `src/sonna_editor/model/architecture.py`, `tests/test_dataset.py`, `tests/test_inference_v2.py`, `tests/test_training.py`, `uv.lock`.
+- Also present in the working tree and left untouched as unrelated/pre-existing local edits: `scripts/audit_all_sliders_v1.2.3.py`, `scripts/quick_diagnostic.py`, `scripts/output/all_slider_audit_v1.2.3.md`, `scripts/output/all_slider_audit_v1.2.3_stats.parquet`.
+- `TRAINING_COMMANDS.md` already had user edits before this pass; they were preserved and cleaned up around the resume-training note.
 
-## What was completed this session
+## Environment
 
-Two-part session: full audit + plan for the Saha-app UI rebuild, then P0 (first commit of the implementation track).
+- Python: 3.11.15
+- uv: 0.11.17
+- PyTorch: `2.11.0+cu128`
+- Runtime device: `cuda`
+- GPU: NVIDIA GeForce RTX 3050
+- `scripts/verify_environment.py`: 11/11 checks passed
+- Adobe DNG Converter discovered at the default Windows install path
 
-### Audit + plan track
-- Read entire repo state: CLAUDE.md, MEMORY.md, SESSION_STATE.md (previous save), HANDOVER.md (all 1229 lines), SONNA_EDITOR_BUILD_SPEC.md (headings + Phase 5 section in detail).
-- Audited the Saha-app codebase in depth: `saha-app/src/{App.jsx, components/*, hooks/*, api/*, tokens.js}`, `saha-app/electron/{main.js, preload.js}`, and the FastAPI backend under `src/sonna_editor/api/{server.py, models.py, jobs.py, callbacks.py, routes/*}`. Confirmed stack: Electron 33 + React 18 + Vite 6 + JSX inline styles, FastAPI backend, HTTP+WS IPC at 127.0.0.1:8765, no global store (React useState lifted in App.jsx).
-- Produced the full 7-section audit + phased build plan: 12-13 commits across 7 phases, ~14-17 hrs estimate. **P6 (Full Personal AI training UI) deferred**; training stays a CLI operation for now.
-- Surfaced 7 open questions; user approved with refinements (see memory `project_saha_ui_rebuild.md` for the canonical record).
-- Identified the live-progress bug's actual root cause: NOT a missing IPC event but a structural callback gap in `inference/pipeline.py:process_shoot_with_model`. Per-photo `on_photo_complete` only fires during the XMP-write loop (line 368); the two slow phases — parallel preview extraction (272-282) and single-batch GPU `engine.predict` (304) — emit zero callbacks. Documented in memory `project_saha_live_progress_bug.md` for P3.
+The earlier `GPU available: False` training issue was caused by a CPU-only PyTorch install (`torch 2.11.0+cpu`). `pyproject.toml` and `uv.lock` now pin `torch` and `torchvision` to the PyTorch CUDA 12.8 wheel index on Windows/Linux x86_64, and `uv sync --extra dev` installs CUDA wheels.
 
-### P0 implementation
-- **`92703dd ui: trim process-page controls and remove inert history tab`** (local, not pushed). 2 files changed, +17 / -176.
-- `saha-app/src/components/editor.jsx`: removed `ThresholdSlider`, `Check`, `SKIP_TOGGLE_OPTIONS`, `_isOptionActive`; trimmed `CentreAction` (drops threshold/output sections, keeps Profile section only); trimmed `Editor` state (drops `threshold`/`writeXmpInPlace`/`flagLowConfidence`, keeps `skipFields` for profile-driven defaults); simplified `RightComplete` (removed Flagged tile, kept Failed); `handleProcess` now sends `flag_low_confidence: false` explicitly and omits the three other deprecated fields (Pydantic defaults apply); removed unused `useRef` import.
-- `saha-app/src/components/shell.jsx`: removed History entry from `NavRail.items`, removed `kind === 'history'` SVG branch in `RailIcon`, removed obsolete "Phase 7.4+" comment.
-- Backend `ProcessRequest` fields (`confidence_threshold`, `write_xmp_in_place`, `flag_low_confidence`, `preserve_wb`) intentionally left in place as deprecated defaults — keeps `tests/api/test_callback_bridge.py` and `tests/api/test_process_route.py` green. API cleanup queued for P7.
-- 705/705 tests passing before and after the commit.
+## Data And Models
 
-### Memory writes
-- `~/.claude/projects/-Users-darshil-sonnaeditor/memory/project_saha_ui_rebuild.md` — approved phase order, 7 refinements, process rules.
-- `~/.claude/projects/-Users-darshil-sonnaeditor/memory/project_saha_live_progress_bug.md` — P3 root cause + minimal-fix recipe.
-- `MEMORY.md` index updated with both entries.
+- Local dataset exists at `v1_learning/dataset/dataset.parquet` with 189 rows.
+- Stratified by-shoot splits exist at `v1_learning/dataset/splits_v2_stratified/`:
+  - train: 132 rows
+  - val: 27 rows
+  - test: 30 rows
+- The previous split was imbalanced for Exposure2012: train mean ~0.212 while val/test were ~0.480/~0.504. The regenerated split reduces that gap: train mean ~0.264, val ~0.379, test ~0.318.
+- Temperature labels in the current dataset mostly cool relative to AsShot WB, so a warmer model output points to training flow/initialisation/split issues rather than warmer target labels.
+- Tint labels are consistently positive/magenta relative to AsShot, so some magenta tendency is present in the labels.
+- `v1_learning/model-v2.0.0.ckpt` and `v1_learning/model-v2.0.0.json` are present locally.
+- No checkpoint files were found under `data/models/` during this pass.
+- The frontend should discover the local v2 profile. Rerun inference after the RGB tone-curve endpoint fix to regenerate XMPs without the pink/red white-point cast.
 
-## What was completed in previous sessions
+## What Changed This Session
 
-All previous work is already in `HANDOVER.md`. Specifically: Phases 0-7 done, Phase 8 deferred; v1.2.3 production lineage shipping; v2 SLIDER_FIELDS locked at 147; v1/v2 slider_set shape-mismatch refactor done (HANDOVER Part 6 item 18); Mode B Rebuild track COMPLETE 2026-05-14 across Steps 1-3 (HANDOVER Part 6 item 17); predictions-sidecar schema extended with `profile_type` / `profile_id` / `base_checkpoint` / `slider_set_version` (Part 6 item 19 RESOLVED). 705/705 tests passing at session entry.
+- Fixed the Python environment so CUDA PyTorch is installed and preserved by `uv sync`.
+- Updated `scripts/train_profile.py` logging:
+  - default recipe values now log as `Training recipe ...`
+  - explicit CLI flags log as `Override ...`
+- Updated operational docs to reflect the current Windows CUDA state, small local dataset, absent local checkpoints, and updated training/resume guidance.
+- Updated `AGENTS.md` and `CLAUDE.md` with a stronger required-reading rule and a documentation update rule after non-trivial work.
+- Disabled photometric jitter by default in `src/sonna_editor/config.py`; training augmentation is geometry-only unless explicitly changed. This avoids corrupting Exposure/colour supervision because the XMP target sliders are for the original image, not a brightened/darkened synthetic image.
+- Reworked `src/sonna_editor/data/dataset.py` split logic to balance shoot-grouped splits across Temperature correction, Exposure2012, and Tint correction, with tail coverage so rare edit styles do not concentrate in one split.
+- Added fresh-model target-prior initialisation in `SonnaEditor.initialise_output_priors()` and wired it into `scripts/train_profile.py`. Fresh output heads now start at training-set slider medians, while WB residual heads start at zero when AsShot WB skip is enabled.
+- Raised the default v2 Exposure2012 loss weight to 4.0. The current training-set priors are Exposure2012=0.22, Temperature=5191K, Tint=5.
+- Fixed the pink/red Lightroom output issue in `src/sonna_editor/inference/pipeline.py`. Diagnosis on `0H5A3190A-2.xmp`: Temperature/Tint were close to the expected XMP, but the model-written RGB tone-curve highlight endpoints were not neutral (`Green Pt6=240/221`, `Blue Pt6=213/234`). Those endpoints colour-cast white highlights pink/red. The inference pipeline now forces RGB tone-curve black endpoints to `0/0` and white endpoints to `255/255`, while leaving mid-curve shape predictions intact.
 
-## Current task status
+## Verification
 
-**Between phases.** P0 is committed locally (`92703dd`) on `main`, **not pushed to origin/main**. Working tree state:
-- `origin/main` at `e0fb649` — 1 commit behind local HEAD
-- Local HEAD `92703dd` — P0 commit
-- Working tree dirty with the same pre-existing carry-overs as session entry (none introduced by this session): `M SESSION_STATE.md` (will be overwritten by this `/save`) + 6 untracked diagnostic items under `scripts/`. P0 touched only `saha-app/src/components/{editor,shell}.jsx`.
+- `uv run python -c "import torch; ..."` confirmed:
+  - `torch 2.11.0+cu128`
+  - `torch.cuda.is_available() == True`
+  - device: NVIDIA GeForce RTX 3050
+  - CUDA tensor matmul succeeded
+- `uv run python scripts\verify_environment.py` passed 11/11 checks.
+- `uv run ruff check scripts\train_profile.py pyproject.toml` passed.
+- `uv run ruff check src\sonna_editor\data\dataset.py src\sonna_editor\model\architecture.py src\sonna_editor\config.py scripts\train_profile.py tests\test_dataset.py tests\test_training.py` passed.
+- `uv run python -m py_compile scripts\train_profile.py` passed.
+- Targeted backend tests passed: `tests/api/test_profiles.py`, `tests/api/test_health.py`, `test_training_step_returns_scalar`, `test_training_step_loss_is_non_negative` (22 passed, 2 Lightning logging warnings).
+- Focused training/data tests passed: `uv run pytest tests\test_dataset.py tests\test_training.py::test_output_prior_initialisation_sets_exposure_and_zero_wb_residual tests\test_training.py::test_training_step_returns_scalar tests\test_config.py` -> 59 passed, 1 skipped.
+- Inference endpoint fix tests passed: `uv run pytest tests\test_inference_v2.py` -> 10 passed.
+- Real sample verification: applying the new endpoint stabiliser to the bad Sonna `0H5A3190A-2.xmp` changes RGB Pt6 endpoints to `255/255` for red, green, and blue. The temporary verification file was removed after the check.
+- Regenerated the affected local shoot output with `scripts\process_shoot_model.py` using `v1_learning\model-v2.0.0.ckpt`:
+  - input/output: `C:\Users\vikas.DESKTOP-61LEE8B\OneDrive\Pictures\Testing_Sonna`
+  - processed: 100 RAWs, failed: 0
+  - wrote fresh XMPs plus `sonna_predictions.json`
+  - verified `0H5A3190A-2.xmp` now has Red/Green/Blue Pt6 endpoints all at `255,255`
+- `npm run build:vite` passed in `saha-app`.
+- Full `uv run pytest tests` result: 691 passed, 12 skipped, 28 failed. Failures are concentrated in `tests/test_extract.py` and `tests/test_xmp.py` because the gitignored RAW/XMP fixtures are absent from `tests/fixtures/` (`sample.cr3`, `sample.xmp`, `sample_edit.xmp`) and two extract tests require Windows symlink privileges.
 
-The new UI passes the test suite but **has not been smoke-tested in the actual Electron app** this session (audit + commit only). Visual confirmation deferred to whichever session runs `npm run dev` next — likely useful to bundle with P1 before its commit.
+## Current Code Behavior Notes
 
-## Next task
+- `scripts/train_profile.py` default v2 recipe remains:
+  - `image_resolution=512`
+  - `lr=1e-4`
+  - `max_epochs=50`
+  - `freeze_backbone_epochs=3`
+  - Temperature loss weight=6.0
+  - Tint loss weight=6.0
+  - Exposure2012 loss weight=4.0
+  - Temperature bucket loss weight=0.15
+  - Tint bucket loss weight=2.0
+  - Sign-wrong penalty weight=0.2
+  - WB metadata skip enabled
+- Fresh training defaults to target-prior output initialisation. Use `--no-target-prior-init` only for an ablation.
+- Default training augmentation is now geometry-only; photometric jitter remains configurable but disabled by default.
+- `Profile.profile_type` is already implemented in backend profile responses and frontend profile classification. `None` means legacy/current Mode A trained profile; `"mode_b_initial"` means Lite/Mode B preset-derived profile.
 
-**P1 — Profile-type backend prep** (~45 min, 🟢, single commit).
+## Next Suggested Step
 
-Scope:
-- Add `profile_type: Optional[str] = None` to `api/models.py:Profile`. Document inline: `None` = Mode A trained (legacy + current v1.2.3); `"mode_b_initial"` = preset-derived; future categories possible.
-- In `routes/profiles.py:_build_profile`, read `sidecar.get("profile_type")` and pass into the `Profile(...)` constructor (sidecar is already loaded at line 76 via `_read_sidecar`).
-- Add a unit test in `tests/api/test_profiles.py` covering the two cases: sidecar without the field → `profile_type is None`; sidecar carrying `"mode_b_initial"` → flows through.
-- No UI change. The UI consumer (badge on the processing-page selector + the profiles list) lands in P5.
+First rerun inference on the affected shoot so the new RGB tone-curve endpoint stabilisation rewrites fresh XMPs. For further model-quality evaluation, run a fresh v2 training command from `TRAINING_COMMANDS.md` now that CUDA is active and the split/training defaults are fixed. Do not resume the earlier unsatisfactory checkpoint for that evaluation; start from scratch so the target-prior initialisation, geometry-only augmentation, and regenerated splits all take effect.
 
-Suggested commit message: `api: surface profile_type from ckpt sidecar in Profile model`
+Expect a new training process to show `GPU available: True, used: True`.
 
-Process for P1 (unchanged from P0):
-- Show diff + run `uv run pytest tests/` before committing.
-- Wait for approval before the commit lands.
-- Single-purpose commit. No Co-Authored-By trailer.
-
-## Open decisions / blockers
-
-- **P0 commit `92703dd` not pushed to origin/main.** No conflict with the plan (push when convenient), but worth noting.
-- **Visual smoke test of P0 in Electron deferred.** No `npm run dev` performed this session — only test-suite regression. Recommend running through the app once before P1's commit to confirm the trimmed Process page still feels right.
-- **Diagnostic scripts still untracked.** Carry-over from earlier sessions (`scripts/audit_all_sliders_v1.2.3.py`, `scripts/compare_saha_xmps.py`, `scripts/compare_three_way.py`, `scripts/output/`, `scripts/tint_deep_dive.py`, `scripts/verify_temperature_clamp.py`). Decision still pending: commit as operational artifacts, gitignore, or delete. User chose to defer at P0 start.
-- **WB head skip-connection code is implemented** (HANDOVER item 15, 2026-05-28) and now needs a v2 training run plus all-slider audit. **Phase 5 Mode B re-validation** (item 17 follow-up) remains queued.
-
-## Files changed this session
-
-### Source code (modified — P0 commit `92703dd`)
-- `saha-app/src/components/editor.jsx` — removed ThresholdSlider, Check, SKIP_TOGGLE_OPTIONS, _isOptionActive; trimmed CentreAction props + Editor state + handleProcess body + RightComplete; cleaned imports
-- `saha-app/src/components/shell.jsx` — removed History tab + history SVG branch + obsolete comment from NavRail
-
-### Memory (new)
-- `~/.claude/projects/-Users-darshil-sonnaeditor/memory/project_saha_ui_rebuild.md` — approved phase order + refinements + process rules
-- `~/.claude/projects/-Users-darshil-sonnaeditor/memory/project_saha_live_progress_bug.md` — P3 root cause + fix recipe
-- `~/.claude/projects/-Users-darshil-sonnaeditor/memory/MEMORY.md` — index extended with two entries
-
-### Session state
-- `SESSION_STATE.md` — overwritten by this `/save`
+Before relying on full-suite green status, restore the local fixture files under `tests/fixtures/` or mark those fixture-dependent tests as integration/local-data tests, then rerun `uv run pytest tests`.

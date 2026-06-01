@@ -72,13 +72,15 @@ DNG_CONVERTER_PATH = _default_dng_converter_path()
 #                     don't regress.
 IMAGE_RESOLUTION = 512
 
-# Training-time colour jitter must stay mild because targets are Lightroom
-# slider values for the original edit. Strong brightness/hue jitter makes the
-# same target describe visibly different exposures/white balances, which pushes
-# the model toward mean predictions on Exposure/Temperature/Tint.
-TRAIN_AUG_BRIGHTNESS = 0.10
-TRAIN_AUG_CONTRAST = 0.10
-TRAIN_AUG_SATURATION = 0.10
+# Training-time photometric jitter is disabled by default because targets are
+# Lightroom slider values for the original edit. Even mild brightness/colour
+# jitter can make the same target describe visibly different exposure/WB states,
+# which pushes the model toward mean predictions on Exposure/Temperature/Tint.
+# Keep augmentation geometric by default; enable photometric jitter only for
+# large, stable datasets where overfitting is the bigger risk than label noise.
+TRAIN_AUG_BRIGHTNESS = 0.0
+TRAIN_AUG_CONTRAST = 0.0
+TRAIN_AUG_SATURATION = 0.0
 TRAIN_AUG_HUE = 0.0
 
 # Supported RAW file extensions

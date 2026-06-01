@@ -8,6 +8,7 @@ Example:
         --test-parquet  data/splits/test.parquet  \\
         --output-dir    checkpoints/v1
 """
+# ruff: noqa: E402
 from __future__ import annotations
 
 import argparse
@@ -15,9 +16,11 @@ import json
 import logging
 import re
 import shutil
+import sys
 import warnings
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Callable
 
 warnings.filterwarnings(
     "ignore",
@@ -63,13 +66,15 @@ def _parse_args() -> argparse.Namespace:
                    help="Target slider set for training. v2 is the current default.")
     p.add_argument("--no-wb-metadata-skip", action="store_true",
                    help="Disable the direct AsShot Temperature/Tint residual in new models.")
+    p.add_argument("--no-target-prior-init", action="store_true",
+                   help="Disable fresh-model output bias initialisation from train target medians.")
     p.add_argument("--image-resolution", type=int, default=512,
                    help="Model input resolution for training (default: 512)")
     p.add_argument("--temperature-weight", type=float, default=6.0,
                    help="Override the per-slider loss weight for Temperature")
     p.add_argument("--tint-weight", type=float, default=6.0,
                    help="Override the per-slider loss weight for Tint")
-    p.add_argument("--exposure-weight", type=float, default=2.0,
+    p.add_argument("--exposure-weight", type=float, default=4.0,
                    help="Override the per-slider loss weight for Exposure2012")
     p.add_argument("--temperature-bucket-loss-weight", type=float, default=0.15,
                    help="Override TEMPERATURE_BUCKET_LOSS_WEIGHT")
@@ -91,30 +96,94 @@ def _parse_args() -> argparse.Namespace:
 
 
 def _apply_training_overrides(args: argparse.Namespace) -> None:
-    if args.image_resolution is not None:
-        config.IMAGE_RESOLUTION = args.image_resolution
-        log.info("Override IMAGE_RESOLUTION=%d", config.IMAGE_RESOLUTION)
-    if args.temperature_weight is not None:
-        config.SLIDER_LOSS_WEIGHTS["Temperature"] = args.temperature_weight
-        log.info("Override Temperature weight=%0.2f", args.temperature_weight)
-    if args.tint_weight is not None:
-        config.SLIDER_LOSS_WEIGHTS["Tint"] = args.tint_weight
-        log.info("Override Tint weight=%0.2f", args.tint_weight)
-    if args.exposure_weight is not None:
-        config.SLIDER_LOSS_WEIGHTS["Exposure2012"] = args.exposure_weight
-        log.info("Override Exposure2012 weight=%0.2f", args.exposure_weight)
-    if args.temperature_bucket_loss_weight is not None:
-        config.TEMPERATURE_BUCKET_LOSS_WEIGHT = args.temperature_bucket_loss_weight
-        log.info("Override TEMPERATURE_BUCKET_LOSS_WEIGHT=%0.2f", args.temperature_bucket_loss_weight)
-    if args.tint_bucket_loss_weight is not None:
-        config.TINT_BUCKET_LOSS_WEIGHT = args.tint_bucket_loss_weight
-        log.info("Override TINT_BUCKET_LOSS_WEIGHT=%0.2f", args.tint_bucket_loss_weight)
-    if args.spread_loss_weight is not None:
-        config.SPREAD_LOSS_WEIGHT = args.spread_loss_weight
-        log.info("Override SPREAD_LOSS_WEIGHT=%0.2f", args.spread_loss_weight)
-    if args.sign_wrong_penalty_weight is not None:
-        config.SIGN_WRONG_PENALTY_WEIGHT = args.sign_wrong_penalty_weight
-        log.info("Override SIGN_WRONG_PENALTY_WEIGHT=%0.2f", args.sign_wrong_penalty_weight)
+    provided_flags = {
+        arg
+        for raw in sys.argv[1:]
+        if raw.startswith("--")
+        for arg in (raw.split("=", 1)[0],)
+    }
+
+    def apply_value(
+        *,
+        flag: str,
+        label: str,
+        current: float | int,
+        value: float | int | None,
+        setter: Callable[[float | int], None],
+        fmt: str,
+    ) -> None:
+        if value is None:
+            return
+        setter(value)
+        prefix = "Override" if flag in provided_flags else "Training recipe"
+        if flag not in provided_flags and value == current:
+            return
+        log.info("%s %s=%s", prefix, label, fmt % value)
+
+    apply_value(
+        flag="--image-resolution",
+        label="IMAGE_RESOLUTION",
+        current=config.IMAGE_RESOLUTION,
+        value=args.image_resolution,
+        setter=lambda v: setattr(config, "IMAGE_RESOLUTION", int(v)),
+        fmt="%d",
+    )
+    apply_value(
+        flag="--temperature-weight",
+        label="Temperature weight",
+        current=config.SLIDER_LOSS_WEIGHTS["Temperature"],
+        value=args.temperature_weight,
+        setter=lambda v: config.SLIDER_LOSS_WEIGHTS.__setitem__("Temperature", float(v)),
+        fmt="%0.2f",
+    )
+    apply_value(
+        flag="--tint-weight",
+        label="Tint weight",
+        current=config.SLIDER_LOSS_WEIGHTS["Tint"],
+        value=args.tint_weight,
+        setter=lambda v: config.SLIDER_LOSS_WEIGHTS.__setitem__("Tint", float(v)),
+        fmt="%0.2f",
+    )
+    apply_value(
+        flag="--exposure-weight",
+        label="Exposure2012 weight",
+        current=config.SLIDER_LOSS_WEIGHTS["Exposure2012"],
+        value=args.exposure_weight,
+        setter=lambda v: config.SLIDER_LOSS_WEIGHTS.__setitem__("Exposure2012", float(v)),
+        fmt="%0.2f",
+    )
+    apply_value(
+        flag="--temperature-bucket-loss-weight",
+        label="TEMPERATURE_BUCKET_LOSS_WEIGHT",
+        current=config.TEMPERATURE_BUCKET_LOSS_WEIGHT,
+        value=args.temperature_bucket_loss_weight,
+        setter=lambda v: setattr(config, "TEMPERATURE_BUCKET_LOSS_WEIGHT", float(v)),
+        fmt="%0.2f",
+    )
+    apply_value(
+        flag="--tint-bucket-loss-weight",
+        label="TINT_BUCKET_LOSS_WEIGHT",
+        current=config.TINT_BUCKET_LOSS_WEIGHT,
+        value=args.tint_bucket_loss_weight,
+        setter=lambda v: setattr(config, "TINT_BUCKET_LOSS_WEIGHT", float(v)),
+        fmt="%0.2f",
+    )
+    apply_value(
+        flag="--spread-loss-weight",
+        label="SPREAD_LOSS_WEIGHT",
+        current=config.SPREAD_LOSS_WEIGHT,
+        value=args.spread_loss_weight,
+        setter=lambda v: setattr(config, "SPREAD_LOSS_WEIGHT", float(v)),
+        fmt="%0.2f",
+    )
+    apply_value(
+        flag="--sign-wrong-penalty-weight",
+        label="SIGN_WRONG_PENALTY_WEIGHT",
+        current=config.SIGN_WRONG_PENALTY_WEIGHT,
+        value=args.sign_wrong_penalty_weight,
+        setter=lambda v: setattr(config, "SIGN_WRONG_PENALTY_WEIGHT", float(v)),
+        fmt="%0.2f",
+    )
 
 
 def _load_best_weights_into_model(model, best_ckpt: str) -> None:
@@ -147,7 +216,8 @@ def _next_publish_stem(publish_dir: Path, slider_set_version: str) -> str:
             match = _VERSIONED_MODEL_RE.match(path.name)
             if not match:
                 continue
-            candidates.append(tuple(int(part) for part in match.groups()))
+            major_v, minor_v, patch_v = (int(part) for part in match.groups())
+            candidates.append((major_v, minor_v, patch_v))
 
     if not candidates:
         return f"model-v{major}.0.0"
@@ -194,6 +264,34 @@ def _profile_sidecar_payload(
 
 def _write_sidecar(path: Path, payload: dict) -> None:
     path.write_text(json.dumps(payload, indent=2))
+
+
+def _training_target_priors(train_parquet: Path, slider_set_version: str) -> dict[str, float]:
+    """Return median training targets for each slider field.
+
+    These priors are used only for fresh models. They put output-head biases in
+    a sensible starting state before gradient descent, which matters on small
+    datasets where random head outputs can dominate early validation behavior.
+    """
+    import pandas as pd
+
+    from sonna_editor.slider_set import fields_for_version
+
+    df = pd.read_parquet(train_parquet)
+    priors: dict[str, float] = {}
+    for field in fields_for_version(slider_set_version):
+        if field not in df.columns:
+            if field in config.SLIDER_DEFAULTS:
+                priors[field] = float(config.SLIDER_DEFAULTS[field])
+            continue
+        values = pd.to_numeric(df[field], errors="coerce")
+        if field == "Temperature":
+            values = values[values > 0]
+        if values.notna().any():
+            priors[field] = float(values.median())
+        elif field in config.SLIDER_DEFAULTS:
+            priors[field] = float(config.SLIDER_DEFAULTS[field])
+    return priors
 
 
 def _publish_profile_checkpoint(
@@ -296,6 +394,16 @@ def main() -> None:
             args.freeze_backbone_epochs,
             model._use_wb_metadata_skip,
         )
+        if not args.no_target_prior_init:
+            priors = _training_target_priors(args.train_parquet, args.slider_set_version)
+            model.initialise_output_priors(priors)
+            log.info(
+                "Initialised fresh output heads from training target medians "
+                "(Exposure2012=%0.3f, Temperature=%0.0f, Tint=%0.2f)",
+                priors.get("Exposure2012", 0.0),
+                priors.get("Temperature", 0.0),
+                priors.get("Tint", 0.0),
+            )
 
     lightning_module = SonnaLightningModule(
         model=model,
@@ -416,6 +524,7 @@ def main() -> None:
             "image_resolution": config.IMAGE_RESOLUTION,
             "slider_set_version": args.slider_set_version,
             "use_wb_metadata_skip": not args.no_wb_metadata_skip,
+            "target_prior_init": not args.no_target_prior_init,
             "temperature_weight": args.temperature_weight,
             "tint_weight": args.tint_weight,
             "exposure_weight": args.exposure_weight,

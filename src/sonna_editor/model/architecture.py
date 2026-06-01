@@ -231,6 +231,14 @@ def _make_head(in_dim: int, hidden_dims: list[int], out_dim: int) -> nn.Sequenti
     return nn.Sequential(*layers)
 
 
+def _last_linear(head: nn.Sequential) -> nn.Linear:
+    """Return the final Linear layer from an output head."""
+    for module in reversed(head):
+        if isinstance(module, nn.Linear):
+            return module
+    raise TypeError("output head does not contain a Linear layer")
+
+
 class SonnaEditor(nn.Module):
     """
     Predicts Lightroom slider values from image + camera metadata.
@@ -384,6 +392,68 @@ class SonnaEditor(nn.Module):
 
         if freeze_backbone:
             self.freeze_backbone()
+
+    # ------------------------------------------------------------------
+    # Output prior initialisation
+    # ------------------------------------------------------------------
+
+    def initialise_output_priors(
+        self,
+        priors: dict[str, float],
+        *,
+        zero_final_weights: bool = True,
+    ) -> None:
+        """Initialise output-head final biases from training target priors.
+
+        Fresh random heads are a poor starting point for small datasets: the
+        model can begin with arbitrary Exposure/WB values and spend early epochs
+        fighting that noise. This method sets each head's final bias to the
+        median training target in the model's prediction space. Temperature is
+        converted to log-Kelvin. When the direct WB metadata skip is enabled,
+        the WB head predicts a residual on top of AsShot WB, so its initial
+        residual is set to exactly zero.
+        """
+        head_specs: list[tuple[nn.Sequential, list[str]]] = [
+            (self.tone_head, config.SLIDER_FIELDS[0:8]),
+            (self.presence_head, config.SLIDER_FIELDS[8:11]),
+            (self.wb_head, config.SLIDER_FIELDS[11:13]),
+            (self.hsl_head, config.SLIDER_FIELDS[13:37]),
+            (self.parametric_head, config.SLIDER_FIELDS[37:44]),
+            (self.color_grading_head, config.SLIDER_FIELDS[44:58]),
+            (self.calibration_head, config.SLIDER_FIELDS[58:64]),
+            (self.detail_head, config.SLIDER_FIELDS[64:68]),
+            (self.noise_head, config.SLIDER_FIELDS[68:72]),
+            (self.effects_head, config.SLIDER_FIELDS[72:80]),
+            (self.lens_head, config.SLIDER_FIELDS[80:82]),
+            (self.transform_head, config.SLIDER_FIELDS[82:87]),
+            (self.tone_curve_head, config.SLIDER_FIELDS[87:135]),
+        ]
+        if self._slider_set_version == "v2":
+            head_specs.extend([
+                (self.noise_ext_head, config.SLIDER_FIELDS[135:137]),
+                (self.defringe_head, config.SLIDER_FIELDS[137:143]),
+                (self.lens_profile_head, config.SLIDER_FIELDS[143:145]),
+                (self.calibration_ext_head, config.SLIDER_FIELDS[145:146]),
+                (self.curve_ext_head, config.SLIDER_FIELDS[146:147]),
+            ])
+
+        with torch.no_grad():
+            for head, fields in head_specs:
+                layer = _last_linear(head)
+                if zero_final_weights:
+                    layer.weight.zero_()
+                values: list[float] = []
+                for field in fields:
+                    if self._use_wb_metadata_skip and field in {"Temperature", "Tint"}:
+                        values.append(0.0)
+                        continue
+                    value = priors.get(field)
+                    if value is None:
+                        value = config.SLIDER_DEFAULTS.get(field, 0.0)
+                    if field == "Temperature":
+                        value = float(torch.log(torch.tensor(max(float(value), 1.0))).item())
+                    values.append(float(value))
+                layer.bias.copy_(torch.tensor(values, dtype=layer.bias.dtype, device=layer.bias.device))
 
     # ------------------------------------------------------------------
     # Backbone freeze / unfreeze

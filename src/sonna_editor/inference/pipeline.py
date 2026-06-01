@@ -11,8 +11,6 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable, Iterable, Optional
-
-import torch
 from PIL import Image
 
 from sonna_editor import config
@@ -68,6 +66,12 @@ _V1_SKIP_FIELDS: frozenset[str] = frozenset({
 # Fields that get the WB substitution treatment when skipped (see above).
 _WB_SKIP_FIELDS: frozenset[str] = frozenset({"Temperature", "Tint"})
 
+_RGB_TONE_CURVE_PREFIXES: tuple[str, ...] = (
+    "ToneCurveRed",
+    "ToneCurveGreen",
+    "ToneCurveBlue",
+)
+
 
 def _apply_wb_skip_substitution(
     slider_dict: dict[str, float],
@@ -93,6 +97,22 @@ def _apply_wb_skip_substitution(
         slider_dict["Temperature"] = float(as_shot_wb[0])
     if "Tint" in effective_skip:
         slider_dict["Tint"] = float(as_shot_wb[1])
+
+
+def _stabilise_rgb_tone_curve_endpoints(slider_dict: dict[str, float]) -> None:
+    """Keep RGB tone-curve black/white endpoints neutral.
+
+    Lightroom per-channel tone curves are powerful enough to colour-cast the
+    neutral endpoints. A model prediction with Green/Blue highlight endpoints
+    below 255 makes white areas render pink/red, even when Temperature and Tint
+    are close to correct. Preserve the endpoints and let the model shape the
+    mid-curve points.
+    """
+    for prefix in _RGB_TONE_CURVE_PREFIXES:
+        slider_dict[f"{prefix}_Pt1_X"] = 0.0
+        slider_dict[f"{prefix}_Pt1_Y"] = 0.0
+        slider_dict[f"{prefix}_Pt6_X"] = 255.0
+        slider_dict[f"{prefix}_Pt6_Y"] = 255.0
 
 # Always-on XMP postprocess rules. These crs: attributes are written to every
 # XMP regardless of model prediction or version (v1.2.3 and v2). They are
@@ -326,6 +346,7 @@ def process_shoot_with_model(
         # Epistemic clamp on Temperature — bounded to training data range.
         # See TEMPERATURE_LOG_CLAMP definition above for rationale.
         _apply_temperature_clamp(full_slider_dict)
+        _stabilise_rgb_tone_curve_endpoints(full_slider_dict)
         full_predictions_by_file[raw_path.name] = full_slider_dict
 
         filtered_slider_dict = {

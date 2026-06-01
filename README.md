@@ -12,6 +12,18 @@ sidecars for new shoots.
 - Mode B preset/survey checkpoints use the same inference path as Mode A.
 - Platform target: macOS, Windows, and Linux. CUDA and Apple MPS are used when
   available; CPU fallback is supported for development and small runs.
+- Current Windows training workspace: PyTorch `2.11.0+cu128` is pinned through
+  `pyproject.toml` / `uv.lock` and verified on an NVIDIA GeForce RTX 3050.
+- The local dataset currently has 189 rows with shoot-grouped balanced splits:
+  train=132, val=27, test=30.
+- Current v2 training defaults use geometry-only augmentation, Exposure loss
+  weight 4.0, and fresh output-head target-prior initialisation from the
+  training split to reduce brightness/WB drift on small datasets.
+- Mode A inference stabilises RGB tone-curve endpoints before XMP write so
+  neutral white highlights do not shift pink/red from channel-curve endpoint
+  drift.
+- This checkout currently has `v1_learning/model-v2.0.0.ckpt` with matching
+  sidecar JSON, so the frontend can discover one local v2 profile.
 
 ## Quick Start
 
@@ -19,6 +31,10 @@ sidecars for new shoots.
 uv sync --extra dev
 uv run python scripts/verify_environment.py
 ```
+
+On Windows/Linux x86_64, `uv sync --extra dev` installs CUDA-enabled PyTorch
+from the pinned PyTorch CUDA 12.8 index. If no NVIDIA GPU is available, the app
+still runs with CPU fallback, but training will be slow.
 
 Run the backend:
 
