@@ -10,16 +10,16 @@ Windows PowerShell:
 
 ```powershell
 cd F:\Projects\SonnaEditor
-python -m uv sync --extra dev
-python -m uv run python --version
+uv sync --extra dev
+uv run python --version
 ```
 
 macOS/Linux shell:
 
 ```bash
 cd /path/to/SonnaEditor
-python3 -m uv sync --extra dev
-python3 -m uv run python --version
+uv sync --extra dev
+uv run python --version
 ```
 
 If `uv` is not installed yet:
@@ -34,7 +34,7 @@ launcher.
 ## 2. Verify
 
 ```bash
-python -m uv run python scripts/verify_environment.py
+uv run python scripts/verify_environment.py
 ```
 
 The verifier checks Python, imports, and the best available PyTorch device:
@@ -44,7 +44,7 @@ need RAW-to-DNG normalisation.
 ## 3. Backend API
 
 ```bash
-python -m uv run python scripts/serve.py --port 8765
+uv run python scripts/serve.py --port 8765
 ```
 
 The API should respond at `http://127.0.0.1:8765/api/health`.
@@ -79,41 +79,138 @@ $env:SONNA_DNG_CONVERTER = "C:\Path\To\Adobe DNG Converter.exe"
 
 ## 6. Train A Profile
 
-Use the stratified by-shoot splits and train a fresh v2 profile with the WB
-metadata skip enabled (default):
+Training needs target Lightroom slider values. RAW files alone are not enough
+for supervised training. Use one of these dataset sources:
+
+- RAW files with matching exported `.xmp` sidecars.
+- A Lightroom Classic `.lrcat` with develop settings and accessible RAW files.
+- Fine-tune captures from previous Saha runs.
+
+Preset + survey creates a Mode B initial checkpoint, but it is not supervised
+training from photos.
+
+Dataset preparation code paths:
+
+- `scripts/build_dataset.py` -> `src/sonna_editor/data/dataset.py` for RAW + XMP sidecar training.
+- `scripts/build_dataset_from_catalog.py` -> `src/sonna_editor/data/catalog_dataset.py` for Lightroom catalog training.
+- `src/sonna_editor/data/catalog.py` opens `.lrcat` files read-only and supplies catalog develop settings.
+- `src/sonna_editor/data/extract.py` supplies shared RAW previews, metadata, histograms, and AsShot WB for both paths.
+
+So `catalog_dataset.py` is the catalog-based dataset preparation module. It can train without exported XMP sidecars, but it still needs edited catalog develop settings plus accessible RAW files.
+
+### Preset / Mode B profile flow
+
+Preset-based profiles are Mode B/Lite profiles. They do not train from photo labels. They start with a trained Mode A checkpoint, read a Lightroom preset plus six survey answers, and create a new checkpoint whose output biases are calibrated to that preset.
+
+Create a survey JSON:
+
+```powershell
+uv run python scripts\run_style_survey.py `
+  --output v1_learning\wedding-lite-survey.json `
+  --non-interactive `
+  --answers exposure=0,temperature=1,tint=0,contrast=1,saturation=-1,shadows=1
+```
+
+Build and publish a frontend-visible Mode B checkpoint:
+
+```powershell
+uv run python scripts\build_mode_b_checkpoint.py `
+  --preset "D:\Lightroom\Presets\Sonna Wedding.xmp" `
+  --survey v1_learning\wedding-lite-survey.json `
+  --base-ckpt v1_learning\model-v1.2.3-prod256.ckpt `
+  --profile-name "Wedding Lite"
+```
+
+Without `--output`, the checkpoint is published as the next available `v1_learning\model-v0.N.0.ckpt`, with a matching `.json` sidecar. The frontend sees it through the same `/api/profiles` scan as trained profiles.
+
+Run it like any trained model:
+
+```powershell
+uv run python scripts\process_shoot_model.py `
+  --input-dir D:\Shoots\ClientShoot01 `
+  --model-path v1_learning\model-v0.1.0.ckpt `
+  --output-dir D:\Shoots\ClientShoot01\SahaOutput
+```
+
+For quick preset-only XMP output with no checkpoint/profile creation:
+
+```powershell
+uv run python scripts\process_shoot_preset.py `
+  --input-dir D:\Shoots\ClientShoot01 `
+  --preset "D:\Lightroom\Presets\Sonna Wedding.xmp" `
+  --output-dir D:\Shoots\ClientShoot01\PresetOutput
+```
+
+### Build dataset from RAW + XMP sidecars
+
+```powershell
+uv run python scripts\build_dataset.py `
+  --input-dir data\raw\sonna_training `
+  --output-dir v1_learning\dataset `
+  --profile-name "sonna_v2" `
+  --workers 4 `
+  --split `
+  --val-ratio 0.107 `
+  --test-ratio 0.139 `
+  --splits-dir-name splits_v2_stratified
+```
+
+### Build dataset from Lightroom catalog
+
+Lightroom Classic must be closed. The catalog is opened read-only.
+
+```powershell
+uv run python scripts\build_dataset_from_catalog.py `
+  --catalog-path "D:\Lightroom\Sonna Catalog.lrcat" `
+  --output-dir v1_learning\dataset `
+  --profile-name "sonna_v2" `
+  --limit 30000 `
+  --workers 4 `
+  --split `
+  --val-ratio 0.107 `
+  --test-ratio 0.139 `
+  --splits-dir-name splits_v2_stratified
+```
+
+### Train from prepared splits
+
+Use the stratified by-shoot splits and train a fresh v2 profile. The current default recipe uses 512px input, direct AsShot WB metadata skip, stronger Temperature/Tint/Exposure loss weights, and frontend publishing into `v1_learning/`.
 
 ```bash
-python -m uv run python scripts/train_profile.py \
-  --train-parquet data/splits/train.parquet \
-  --val-parquet data/splits/val.parquet \
-  --test-parquet data/splits/test.parquet \
+uv run python scripts/train_profile.py \
+  --train-parquet v1_learning/dataset/splits_v2_stratified/train.parquet \
+  --val-parquet v1_learning/dataset/splits_v2_stratified/val.parquet \
+  --test-parquet v1_learning/dataset/splits_v2_stratified/test.parquet \
   --output-dir data/models/sonna-v2-run01 \
+  --profile-name "Sonna v2 Run 01" \
   --slider-set-version v2 \
-  --image-resolution 512 \
   --batch-size 16 \
-  --max-epochs 100
+  --max-epochs 50
 ```
 
 Windows PowerShell uses the same command with backticks for line continuation:
 
 ```powershell
-python -m uv run python scripts/train_profile.py `
-  --train-parquet data\splits\train.parquet `
-  --val-parquet data\splits\val.parquet `
-  --test-parquet data\splits\test.parquet `
+uv run python scripts/train_profile.py `
+  --train-parquet v1_learning\dataset\splits_v2_stratified\train.parquet `
+  --val-parquet v1_learning\dataset\splits_v2_stratified\val.parquet `
+  --test-parquet v1_learning\dataset\splits_v2_stratified\test.parquet `
   --output-dir data\models\sonna-v2-run01 `
+  --profile-name "Sonna v2 Run 01" `
   --slider-set-version v2 `
-  --image-resolution 512 `
   --batch-size 16 `
-  --max-epochs 100
+  --max-epochs 50
 ```
 
 The script writes `model.ckpt`, `model.json`, TensorBoard logs, and
 `training_summary.json` into the output directory. The exported `model.ckpt`
 contains the best validation checkpoint, not just the final epoch.
+It also publishes a versioned UI-visible copy such as
+`v1_learning/model-v2.0.0.ckpt` plus `v1_learning/model-v2.0.0.json`.
+Use `--resume-from-checkpoint <path>` to continue training from an existing checkpoint, or omit it to start fresh. Use `--output-dir` for run-specific artifacts, and allow the script to publish the visible checkpoint into `v1_learning/` for frontend discovery.
 
 Monitor training:
 
 ```bash
-python -m uv run tensorboard --logdir data/models/sonna-v2-run01
+uv run tensorboard --logdir data/models/sonna-v2-run01
 ```

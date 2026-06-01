@@ -16,14 +16,14 @@ sidecars for new shoots.
 ## Quick Start
 
 ```powershell
-python -m uv sync --extra dev
-python -m uv run python scripts/verify_environment.py
+uv sync --extra dev
+uv run python scripts/verify_environment.py
 ```
 
 Run the backend:
 
 ```powershell
-python -m uv run python scripts/serve.py --port 8765
+uv run python scripts/serve.py --port 8765
 ```
 
 Run the Electron app from a second terminal:
@@ -47,3 +47,26 @@ DNG. The app discovers it from:
 3. `PATH`
 
 If it is absent, tests and non-DNG workflows still run.
+
+## Training Data Sources
+
+The trained model is supervised slider regression, so RAW files alone are not
+enough. Training requires target Lightroom slider values from one of:
+
+- RAW files with matching exported `.xmp` sidecars.
+- A Lightroom Classic `.lrcat` opened read-only, with accessible RAW files.
+- Fine-tune captures from previous Saha runs.
+
+Preset + survey creates a Mode B initial checkpoint, but it is not supervised
+training from photos. See `TRAINING_COMMANDS.md` for the full runbook.
+
+## Preset / Mode B Profiles
+
+Mode B/Lite starts from a trained Mode A checkpoint, a Lightroom preset, and a
+six-question style survey. The checkpoint builder publishes `model-v0.N.0.ckpt`
+under `v1_learning/` when no explicit `--output` is provided, so the frontend
+can discover it like any trained profile.
+
+Direct preset execution is also available through `scripts/process_shoot_preset.py`
+when you only want preset-derived XMP files and do not need a selectable model
+profile.

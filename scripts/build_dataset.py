@@ -43,6 +43,10 @@ def main() -> None:
         "--test-ratio", type=float, default=0.1,
         help="Fraction of data for test split (default: 0.1).",
     )
+    parser.add_argument(
+        "--splits-dir-name", default="splits",
+        help="Name of the split directory under output-dir (default: splits).",
+    )
     args = parser.parse_args()
 
     # Late import so errors surface cleanly
@@ -76,7 +80,7 @@ def main() -> None:
         train, val, test = split_dataset(
             df, val_ratio=args.val_ratio, test_ratio=args.test_ratio
         )
-        splits_dir = output_dir / "splits"
+        splits_dir = output_dir / args.splits_dir_name
         save_split(train, val, test, splits_dir)
         print(f"Splits:  train={len(train)}, val={len(val)}, test={len(test)} → {splits_dir}")
 

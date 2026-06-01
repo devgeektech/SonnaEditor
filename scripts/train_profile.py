@@ -13,7 +13,10 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import re
+import shutil
 import warnings
+from datetime import datetime, timezone
 from pathlib import Path
 
 warnings.filterwarnings(
@@ -37,6 +40,9 @@ from sonna_editor.runtime import preferred_lightning_accelerator
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 log = logging.getLogger(__name__)
 
+_VERSIONED_MODEL_RE = re.compile(r"^model-v(\d+)\.(\d+)\.(\d+)(?:-\w+)?\.ckpt$")
+_PUBLISH_VERSION_RE = re.compile(r"^(?:model-)?v\d+\.\d+\.\d+(?:-\w+)?$")
+
 
 def _parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description="Train a Sonna Editor profile")
@@ -45,34 +51,42 @@ def _parse_args() -> argparse.Namespace:
     p.add_argument("--test-parquet",  required=True, type=Path, metavar="PATH")
     p.add_argument("--output-dir",    required=True, type=Path, metavar="DIR",
                    help="Directory for checkpoints and TensorBoard logs")
-    p.add_argument("--max-epochs",    type=int,   default=100)
+    p.add_argument("--max-epochs",    type=int,   default=50)
     p.add_argument("--batch-size",    type=int,   default=16)
-    p.add_argument("--lr",            type=float, default=3e-4)
+    p.add_argument("--lr",            type=float, default=1e-4)
     p.add_argument("--weight-decay",  type=float, default=1e-4)
-    p.add_argument("--freeze-backbone-epochs", type=int, default=10,
-                   help="Number of epochs to keep backbone frozen (default: 10)")
+    p.add_argument("--freeze-backbone-epochs", type=int, default=3,
+                   help="Number of epochs to keep backbone frozen (default: 3)")
     p.add_argument("--num-workers",   type=int,   default=4)
     p.add_argument("--resume-from-checkpoint", type=Path, default=None, metavar="CKPT")
     p.add_argument("--slider-set-version", choices=("v1", "v2"), default="v2",
                    help="Target slider set for training. v2 is the current default.")
     p.add_argument("--no-wb-metadata-skip", action="store_true",
                    help="Disable the direct AsShot Temperature/Tint residual in new models.")
-    p.add_argument("--image-resolution", type=int, default=None,
-                   help="Override model input resolution for training (default: config IMAGE_RESOLUTION)")
-    p.add_argument("--temperature-weight", type=float, default=None,
+    p.add_argument("--image-resolution", type=int, default=512,
+                   help="Model input resolution for training (default: 512)")
+    p.add_argument("--temperature-weight", type=float, default=6.0,
                    help="Override the per-slider loss weight for Temperature")
-    p.add_argument("--tint-weight", type=float, default=None,
+    p.add_argument("--tint-weight", type=float, default=6.0,
                    help="Override the per-slider loss weight for Tint")
-    p.add_argument("--exposure-weight", type=float, default=None,
+    p.add_argument("--exposure-weight", type=float, default=2.0,
                    help="Override the per-slider loss weight for Exposure2012")
-    p.add_argument("--temperature-bucket-loss-weight", type=float, default=None,
+    p.add_argument("--temperature-bucket-loss-weight", type=float, default=0.15,
                    help="Override TEMPERATURE_BUCKET_LOSS_WEIGHT")
-    p.add_argument("--tint-bucket-loss-weight", type=float, default=None,
+    p.add_argument("--tint-bucket-loss-weight", type=float, default=2.0,
                    help="Override TINT_BUCKET_LOSS_WEIGHT")
     p.add_argument("--spread-loss-weight", type=float, default=None,
                    help="Override SPREAD_LOSS_WEIGHT")
-    p.add_argument("--sign-wrong-penalty-weight", type=float, default=None,
+    p.add_argument("--sign-wrong-penalty-weight", type=float, default=0.2,
                    help="Override SIGN_WRONG_PENALTY_WEIGHT")
+    p.add_argument("--profile-name", default=None,
+                   help="Display name written to the profile sidecar for the UI")
+    p.add_argument("--publish-dir", type=Path, default=config.CHECKPOINTS_DIR,
+                   help="Directory scanned by the frontend profile API (default: v1_learning)")
+    p.add_argument("--publish-version", default=None,
+                   help="Optional version stem, e.g. v2.0.0 or model-v2.0.0")
+    p.add_argument("--no-publish", action="store_true",
+                   help="Only save output-dir/model.ckpt; do not copy a versioned profile for the UI")
     return p.parse_args()
 
 
@@ -117,6 +131,110 @@ def _load_best_weights_into_model(model, best_ckpt: str) -> None:
         if k.startswith("model.")
     }
     model.load_state_dict(state, strict=True)
+
+
+def _slugify(value: str) -> str:
+    slug = re.sub(r"[^a-z0-9]+", "-", value.lower()).strip("-")
+    return slug or "sonna-trained-profile"
+
+
+def _next_publish_stem(publish_dir: Path, slider_set_version: str) -> str:
+    """Return the next model-vX.Y.Z stem for the frontend-scanned directory."""
+    major = 2 if slider_set_version == "v2" else 1
+    candidates: list[tuple[int, int, int]] = []
+    if publish_dir.exists():
+        for path in publish_dir.glob(f"model-v{major}.*.ckpt"):
+            match = _VERSIONED_MODEL_RE.match(path.name)
+            if not match:
+                continue
+            candidates.append(tuple(int(part) for part in match.groups()))
+
+    if not candidates:
+        return f"model-v{major}.0.0"
+
+    cur_major, cur_minor, cur_patch = max(candidates)
+    return f"model-v{cur_major}.{cur_minor}.{cur_patch + 1}"
+
+
+def _normalise_publish_stem(value: str) -> str:
+    raw = value.removesuffix(".ckpt")
+    if not _PUBLISH_VERSION_RE.match(raw):
+        raise ValueError(
+            "--publish-version must look like v2.0.0 or model-v2.0.0 "
+            "(optional single suffix like -prod is allowed)"
+        )
+    return raw if raw.startswith("model-") else f"model-{raw}"
+
+
+def _profile_sidecar_payload(
+    *,
+    checkpoint_path: Path,
+    display_name: str,
+    profile_id: str,
+    slider_set_version: str,
+    use_wb_metadata_skip: bool,
+    train_rows: int,
+    val_loss: float,
+) -> dict:
+    return {
+        "display_name": display_name,
+        "profile_type": "mode_a_trained",
+        "profile_id": profile_id,
+        "checkpoint_path": str(checkpoint_path),
+        "date_iso": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+        "resolution": config.IMAGE_RESOLUTION,
+        "image_resolution": config.IMAGE_RESOLUTION,
+        "slider_set_version": slider_set_version,
+        "use_wb_metadata_skip": use_wb_metadata_skip,
+        "default_skip_fields": [],
+        "train_rows": train_rows,
+        "val_loss": val_loss,
+    }
+
+
+def _write_sidecar(path: Path, payload: dict) -> None:
+    path.write_text(json.dumps(payload, indent=2))
+
+
+def _publish_profile_checkpoint(
+    *,
+    source_ckpt: Path,
+    publish_dir: Path,
+    publish_version: str | None,
+    display_name: str,
+    slider_set_version: str,
+    use_wb_metadata_skip: bool,
+    train_rows: int,
+    val_loss: float,
+) -> Path:
+    """Copy the trained native checkpoint into the directory scanned by the UI."""
+    publish_dir.mkdir(parents=True, exist_ok=True)
+    stem = (
+        _normalise_publish_stem(publish_version)
+        if publish_version
+        else _next_publish_stem(publish_dir, slider_set_version)
+    )
+    dest = publish_dir / f"{stem}.ckpt"
+    if dest.exists():
+        raise FileExistsError(
+            f"Refusing to overwrite existing published checkpoint: {dest}"
+        )
+
+    shutil.copy2(source_ckpt, dest)
+    profile_id = f"{_slugify(display_name)}-{stem.removeprefix('model-')}"
+    _write_sidecar(
+        dest.with_suffix(".json"),
+        _profile_sidecar_payload(
+            checkpoint_path=dest.resolve(),
+            display_name=display_name,
+            profile_id=profile_id,
+            slider_set_version=slider_set_version,
+            use_wb_metadata_skip=use_wb_metadata_skip,
+            train_rows=train_rows,
+            val_loss=val_loss,
+        ),
+    )
+    return dest
 
 
 def main() -> None:
@@ -246,26 +364,48 @@ def main() -> None:
     # -----------------------------------------------------------------------
     # Save final model + summary
     # -----------------------------------------------------------------------
+    best_val_loss = float(trainer.checkpoint_callback.best_model_score or 0.0)
+    display_name = args.profile_name or f"Sonna trained profile ({args.slider_set_version})"
     final_model_path = args.output_dir / "model.ckpt"
     if best_ckpt:
         _load_best_weights_into_model(lightning_module.model, best_ckpt)
     lightning_module.model.save_checkpoint(final_model_path)
     log.info("Saved final model to %s", final_model_path)
     sidecar_path = final_model_path.with_suffix(".json")
-    sidecar_path.write_text(json.dumps({
-        "display_name": f"Sonna trained profile ({args.slider_set_version})",
-        "checkpoint_path": str(final_model_path),
-        "image_resolution": config.IMAGE_RESOLUTION,
-        "slider_set_version": lightning_module.model._slider_set_version,
-        "use_wb_metadata_skip": lightning_module.model._use_wb_metadata_skip,
-        "default_skip_fields": [],
-    }, indent=2))
+    _write_sidecar(
+        sidecar_path,
+        _profile_sidecar_payload(
+            checkpoint_path=final_model_path.resolve(),
+            display_name=display_name,
+            profile_id=_slugify(display_name),
+            slider_set_version=lightning_module.model._slider_set_version,
+            use_wb_metadata_skip=lightning_module.model._use_wb_metadata_skip,
+            train_rows=len(dm._train_ds),
+            val_loss=best_val_loss,
+        ),
+    )
     log.info("Saved model sidecar to %s", sidecar_path)
 
+    published_model_path: str | None = None
+    if not args.no_publish:
+        published = _publish_profile_checkpoint(
+            source_ckpt=final_model_path,
+            publish_dir=args.publish_dir,
+            publish_version=args.publish_version,
+            display_name=display_name,
+            slider_set_version=lightning_module.model._slider_set_version,
+            use_wb_metadata_skip=lightning_module.model._use_wb_metadata_skip,
+            train_rows=len(dm._train_ds),
+            val_loss=best_val_loss,
+        )
+        published_model_path = str(published)
+        log.info("Published frontend-visible profile to %s", published)
+
     summary = {
-        "best_val_loss": float(trainer.checkpoint_callback.best_model_score or 0.0),
+        "best_val_loss": best_val_loss,
         "best_checkpoint": best_ckpt,
         "final_model": str(final_model_path),
+        "published_model": published_model_path,
         "test_results": test_results[0] if test_results else {},
         "epochs_trained": trainer.current_epoch,
         "hparams": {

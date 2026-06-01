@@ -497,8 +497,8 @@ def build_mode_b_checkpoint(
         "notes": (
             "Initialised via Mode B preset-to-checkpoint converter (Step 2). "
             "Backbone + metadata encoder warm-loaded from base checkpoint; "
-            "output-head final-layer weights zeroed and biases set to "
-            "preset+survey prescribed values in prediction space."
+            "output-head final-layer weights inherited from base checkpoint; "
+            "biases shifted by preset+survey deltas in prediction space."
         ),
         "experimental": False,
     }

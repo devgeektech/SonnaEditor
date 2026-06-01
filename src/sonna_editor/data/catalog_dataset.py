@@ -92,6 +92,11 @@ def _process_catalog_row(args: tuple) -> dict | None:
 
         shoot_id = _derive_shoot_id(cap_dt, metadata.get("camera_body"))
 
+        as_shot_temperature = None
+        as_shot_tint = None
+        if metadata.get("as_shot_wb") is not None:
+            as_shot_temperature, as_shot_tint = metadata["as_shot_wb"]
+
         row: dict = {
             "id": file_id,
             "profile": profile_name,
@@ -114,6 +119,8 @@ def _process_catalog_row(args: tuple) -> dict | None:
             "camera_profile": metadata.get("camera_profile"),
             "width": metadata.get("width"),
             "height": metadata.get("height"),
+            "as_shot_temperature": as_shot_temperature,
+            "as_shot_tint": as_shot_tint,
             "histogram": _histogram_to_bytes(histogram),
         }
 
