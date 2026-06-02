@@ -1,16 +1,15 @@
 # Session State - Sonna Editor
 
-**Saved:** 2026-06-01 17:22 local time
-**Current phase/task:** Training-console warning cleanup after Lite profile v2 compatibility fix.
+**Saved:** 2026-06-02 local time
+**Current phase/task:** Quick diagnostic row-count display fix.
 
 ## Current Workspace
 
 - Repo path: `C:\Users\vikas.DESKTOP-61LEE8B\Projects\SonnaEditor`
 - Branch: `main`, tracking `origin/main`
 - Recent committed history in this checkout: `aac360a feat: Enhance dataset building and training scripts` on top of four earlier commits.
-- Current intentional dirty files from this work: `HANDOVER.md`, `SESSION_STATE.md`, `TRAINING_COMMANDS.md`, `project_knowledge.md`, `scripts/train_profile.py`, `scripts/build_mode_b_checkpoint.py`, `scripts/train_v1_2_0_full_production.py`, `scripts/analyse_prediction_collapse.py`, `scripts/audit_dataset_diversity.py`, `src/sonna_editor/config.py`, `src/sonna_editor/data/catalog_dataset.py`, `src/sonna_editor/data/dataset.py`, `src/sonna_editor/data/extract.py`, `src/sonna_editor/finetune/capture.py`, `src/sonna_editor/finetune/retrain.py`, `src/sonna_editor/inference/engine.py`, `src/sonna_editor/mode_b/checkpoint_builder.py`, `src/sonna_editor/model/architecture.py`, `src/sonna_editor/training/__init__.py`, `src/sonna_editor/training/datamodule.py`, `src/sonna_editor/training/module.py`, `tests/test_architecture.py`, `tests/test_checkpoint_builder.py`, `tests/test_dataset.py`, `tests/test_extract.py`, `tests/test_training.py`.
-- Generated local diagnostics/run artifacts from this pass are under gitignored `data/audits/` and `data/models/sonna-v2-scene-stats-run01/`.
-- `TRAINING_COMMANDS.md` already had user edits before this pass; they were preserved and cleaned up around the resume-training note.
+- Current intentional dirty files from this work: `SESSION_STATE.md`, `TRAINING_COMMANDS.md`, `project_knowledge.md`, `scripts/quick_diagnostic.py`.
+- No generated artifacts were created by this quick diagnostic fix.
 
 ## Environment
 
@@ -59,6 +58,7 @@ The earlier `GPU available: False` training issue was caused by a CPU-only PyTor
 - Fixed frontend Lite profile creation when the active Personal AI base is v2. `src/sonna_editor/mode_b/checkpoint_builder.py` now loads the base checkpoint at its native slider set, computes preset/survey bias deltas for `v1` or `v2`, writes the matching `slider_set_version` into the Lite sidecar, and preserves v2 extension-head weights instead of calling `from_checkpoint(target_slider_set_version="v1")`.
 - Removed stale v2-rejection behavior from the Mode B tests and removed an unused test import. Added focused v2 coverage proving Lite creation from a v2 base succeeds and keeps extension heads intact.
 - Cleaned up noisy training console warnings. `scripts/train_profile.py` now chooses `log_every_n_steps` from the actual train-batch count so the 132-row local split uses 9 instead of tripping Lightning's default-10 warning. The training package, current trainer, legacy production trainer, and fine-tune path suppress the upstream Lightning `LeafSpec` deprecation and optional Torch Triton FLOP-counter warning.
+- Fixed `scripts/quick_diagnostic.py` so old training summaries that do not embed row counts still print dataset split row counts. It now checks nested summary fields first, then summary parquet path fields if present, then falls back to the canonical `v1_learning/dataset/splits_v2_stratified/*.parquet` metadata. It also replaced emoji status markers with ASCII `OK`/`BAD` labels so the script finishes cleanly in Windows PowerShell.
 
 ## Verification
 
@@ -92,6 +92,7 @@ The earlier `GPU available: False` training issue was caused by a CPU-only PyTor
 - Full `uv run pytest tests` result: 691 passed, 12 skipped, 28 failed. Failures are concentrated in `tests/test_extract.py` and `tests/test_xmp.py` because the gitignored RAW/XMP fixtures are absent from `tests/fixtures/` (`sample.cr3`, `sample.xmp`, `sample_edit.xmp`) and two extract tests require Windows symlink privileges.
 - Lite compatibility verification passed: `uv run ruff check src\sonna_editor\mode_b\checkpoint_builder.py tests\test_checkpoint_builder.py tests\api\test_profiles.py`; `uv run pytest tests\test_checkpoint_builder.py tests\api\test_profiles.py -q` -> 53 passed; `uv run python -m py_compile src\sonna_editor\mode_b\checkpoint_builder.py scripts\build_mode_b_checkpoint.py`; real smoke build from `v1_learning\model-v2.0.0.ckpt` to `%TEMP%\sonna-lite-v2-smoke\mode-b-v2-smoke.ckpt` succeeded and wrote sidecar `slider_set_version: v2`.
 - Training warning cleanup verification passed: `uv run ruff check scripts\train_profile.py scripts\train_v1_2_0_full_production.py src\sonna_editor\training\__init__.py src\sonna_editor\finetune\retrain.py tests\test_training.py`; `uv run pytest tests\test_training.py::test_train_profile_log_interval_adapts_to_small_dataset tests\test_training.py::test_training_step_returns_scalar tests\test_training.py::test_training_step_loss_is_non_negative -q` -> 3 passed; `uv run python -m py_compile scripts\train_profile.py scripts\train_v1_2_0_full_production.py src\sonna_editor\finetune\retrain.py src\sonna_editor\training\__init__.py`; one-epoch smoke training with `--num-workers 2 --no-publish` completed without the pasted `LeafSpec`, Triton FLOP-counter, or `log_every_n_steps` warnings.
+- Quick diagnostic row-count verification passed: `uv run ruff check scripts\quick_diagnostic.py`; `uv run python -m py_compile scripts\quick_diagnostic.py`; `uv run python scripts\quick_diagnostic.py --summary-path data\models\sonna-v2-run01\training_summary.json` now prints train=132, val=27, test=30 and completes successfully.
 
 ## Current Code Behavior Notes
 

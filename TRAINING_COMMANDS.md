@@ -390,7 +390,7 @@ uv run python scripts\audit_all_sliders_v1.2.3.py
 ```
 
 Notes:
-- `quick_diagnostic.py` now discovers training summary JSON files automatically under the project tree and can also list published checkpoints in `v1_learning/` for selection.
+- `quick_diagnostic.py` now discovers training summary JSON files automatically under the project tree and can also list published checkpoints in `v1_learning/` for selection. If an older summary does not include row counts, it reads train/val/test counts from split parquet metadata, falling back to `v1_learning/dataset/splits_v2_stratified/`.
 - `audit_all_sliders_v1.2.3.py` now discovers published checkpoints under `v1_learning/model-v*.ckpt` and will prompt you to choose one if multiple are found.
 - Audit scripts (like `audit_all_sliders_v1.2.3.py`) are read-only analyses that load a published checkpoint and a test split; they may take longer and require the test parquet to exist. Output goes to `scripts/output/` — keep those reports under version control only when intended.
 

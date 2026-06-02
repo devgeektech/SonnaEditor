@@ -246,6 +246,7 @@ This section tracks what each backend source file/folder does. Keep it updated w
 - `scripts/process_shoot_preset.py`: direct preset-to-XMP execution with heuristic per-photo corrections, without creating a model checkpoint
 - `scripts/train_v1_2_0_full_production.py`: train the main v1 model
 - `scripts/train_profile.py`: current supported training entry point for new profiles
+- `scripts/quick_diagnostic.py`: inspects training summary JSON files and key test metrics; if a summary omits train/val/test row counts, it reads counts from parquet split metadata, falling back to `v1_learning/dataset/splits_v2_stratified/`.
 - `scripts/analyse_prediction_collapse.py`: runs a checkpoint on a validation parquet and reports per-slider prediction variance, target variance, MAE, and collapsed sliders
 - `scripts/audit_dataset_diversity.py`: audits scene/edit diversity buckets from a parquet, using scene-stat columns or histogram-derived approximations
 - `scripts/finetune_profile.py`: fine-tune a profile checkpoint
@@ -270,6 +271,7 @@ Mode B checkpoints are marked with `profile_type: mode_b_initial` in the sidecar
 - Dark-image mismatch diagnosis, 2026-06-01: the Lightroom mismatch on `0H5A4599` is an Exposure2012 model-collapse issue, not an XMP writer issue. The reference/training XMP uses `Exposure2012=+1.11`; active `model-v2.0.0` writes about `+0.105` while nearby tone/WB sliders and curves are close to the reference. Across the 189-row dataset, target Exposure std is ~0.454 but model output std is ~0.061, and the darkest luminance quartile needs ~`+0.695` on average while the model predicts only ~`+0.090`.
 - Lite profile v2 compatibility fix, 2026-06-01: `src/sonna_editor/mode_b/checkpoint_builder.py` no longer forces `target_slider_set_version="v1"` when creating Mode B/Lite checkpoints. This fixes frontend Lite creation while `v1_learning/model-v2.0.0.ckpt` is active and preserves v2 extension-head weights.
 - Training warning cleanup, 2026-06-01: current training suppresses the upstream Lightning `LeafSpec` deprecation and optional Torch Triton FLOP-counter warning, and adjusts `log_every_n_steps` for tiny datasets. A one-epoch smoke run on the local 132-row split with two workers completed without those three warnings.
+- Quick diagnostic row-count fix, 2026-06-02: `scripts/quick_diagnostic.py` now reports train/val/test row counts for older summaries that do not embed those fields by reading split parquet metadata. It also uses ASCII `OK`/`BAD` status labels so it completes cleanly in Windows PowerShell.
 - Earlier UI progress fix: `src/sonna_editor/inference/pipeline.py::process_shoot_with_model()` fires the per-photo `on_photo_complete` callback immediately after predictions are available, before the XMP write.
 
 ## Important behavior notes

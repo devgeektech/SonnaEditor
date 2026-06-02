@@ -2,8 +2,8 @@
 """Quick diagnostic: analyze training summary and config to explain current model performance."""
 import argparse
 import json
-import math
 from pathlib import Path
+from typing import Any
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
@@ -122,6 +122,100 @@ def _prompt_checkpoint_choice() -> Path | None:
     return _select_path(checkpoints, "published checkpoint")
 
 
+def _as_int(value: Any) -> int | None:
+    if isinstance(value, int) and not isinstance(value, bool):
+        return value
+    return None
+
+
+def _nested_int(payload: dict[str, Any], key: str) -> int | None:
+    value = _as_int(payload.get(key))
+    if value is not None:
+        return value
+
+    for section_name in ("dataset", "data", "config", "hparams"):
+        section = payload.get(section_name)
+        if isinstance(section, dict):
+            value = _as_int(section.get(key))
+            if value is not None:
+                return value
+    return None
+
+
+def _resolve_path(value: Any, *, summary_path: Path) -> Path | None:
+    if not isinstance(value, str) or not value.strip():
+        return None
+
+    candidate = Path(value)
+    candidates = [candidate]
+    if not candidate.is_absolute():
+        candidates.append(PROJECT_ROOT / candidate)
+        candidates.append(summary_path.parent / candidate)
+
+    for path in candidates:
+        if path.exists():
+            return path
+    return None
+
+
+def _nested_path(payload: dict[str, Any], keys: tuple[str, ...], *, summary_path: Path) -> Path | None:
+    for key in keys:
+        path = _resolve_path(payload.get(key), summary_path=summary_path)
+        if path is not None:
+            return path
+
+    for section_name in ("dataset", "data", "config", "hparams"):
+        section = payload.get(section_name)
+        if not isinstance(section, dict):
+            continue
+        for key in keys:
+            path = _resolve_path(section.get(key), summary_path=summary_path)
+            if path is not None:
+                return path
+    return None
+
+
+def _parquet_row_count(path: Path) -> int | None:
+    try:
+        import pyarrow.parquet as pq
+
+        metadata = pq.ParquetFile(path).metadata
+        return int(metadata.num_rows)
+    except Exception:
+        return None
+
+
+def _split_row_count(
+    summary: dict[str, Any],
+    summary_path: Path,
+    split: str,
+) -> int | None:
+    row_count = _nested_int(summary, f"{split}_rows")
+    if row_count is not None:
+        return row_count
+
+    parquet_path = _nested_path(
+        summary,
+        (f"{split}_parquet", f"{split}_path"),
+        summary_path=summary_path,
+    )
+    if parquet_path is not None:
+        row_count = _parquet_row_count(parquet_path)
+        if row_count is not None:
+            return row_count
+
+    default_path = (
+        PROJECT_ROOT
+        / "v1_learning"
+        / "dataset"
+        / "splits_v2_stratified"
+        / f"{split}.parquet"
+    )
+    if default_path.exists():
+        return _parquet_row_count(default_path)
+    return None
+
+
 def main():
     parser = argparse.ArgumentParser(description="Quick diagnostic on a training summary JSON.")
     parser.add_argument("--summary-path", help="Path to a training summary JSON file.")
@@ -163,9 +257,9 @@ def main():
     hparams = summary.get("hparams", {})
     loss_cfg = summary.get("loss_settings", {}) or hparams
 
-    train_rows = cfg.get("train_rows") if isinstance(cfg.get("train_rows"), int) else summary.get("train_rows")
-    val_rows = cfg.get("val_rows") if isinstance(cfg.get("val_rows"), int) else summary.get("val_rows")
-    test_rows = cfg.get("test_rows") if isinstance(cfg.get("test_rows"), int) else summary.get("test_rows")
+    train_rows = _split_row_count(summary, summary_path, "train")
+    val_rows = _split_row_count(summary, summary_path, "val")
+    test_rows = _split_row_count(summary, summary_path, "test")
 
     print("=" * 80)
     print("DIAGNOSTIC SUMMARY")
@@ -193,7 +287,7 @@ def main():
     print(f"  Spread loss:        {loss_cfg.get('spread_loss_weight', 'unknown')}")
     print(f"  Sign wrong penalty: {loss_cfg.get('sign_wrong_penalty_weight', 'unknown')}")
     
-    # Test results — KEY METRICS
+    # Test results - key metrics
     test_results = summary.get("test_results", {})
     print(f"\n{'CRITICAL METRICS':^80}")
     print(f"{'='*80}")
@@ -221,7 +315,7 @@ def main():
         printed_keys.add(key)
         status = "🟡 OK"
         if threshold is not None and isinstance(val, (int, float)):
-            status = "🔴 BAD" if val > threshold else "🟡 OK"
+            status = "🔴BAD" if val > threshold else "OK"
         print(f"  {label:30} {_fmt_float(val, 4):>8}   {status}   ({note})")
 
     extra_keys = [k for k in sorted(test_results) if k not in printed_keys]
@@ -254,22 +348,22 @@ def main():
 
     recs = []
     if test_results.get("test_mae_temperature", float('inf')) > 500:
-        recs.append("1. Temperature error too high (>500K) — data quality or insufficient training signal.")
+        recs.append("1. Temperature error too high (>500K): data quality or insufficient training signal.")
     if test_results.get("test_mae_exposure", float('inf')) > 0.25:
-        recs.append("2. Exposure error >0.25 stops — consider higher resolution or more data.")
+        recs.append("2. Exposure error >0.25 stops: consider higher resolution or more data.")
     if test_results.get("test_mae_hsl_avg", float('inf')) > 10:
-        recs.append("3. HSL/color tuning weak — may need stronger loss weights or augmentation.")
+        recs.append("3. HSL/color tuning weak: may need stronger loss weights or augmentation.")
     if isinstance(cfg.get("image_resolution"), int) and cfg.get("image_resolution") < 512:
-        recs.append("4. Input resolution is below 512px — retrain at 512px or higher.")
+        recs.append("4. Input resolution is below 512px: retrain at 512px or higher.")
     if isinstance(loss_cfg.get("temperature_bucket_loss_weight"), (int, float)) and loss_cfg.get("temperature_bucket_loss_weight") < 0.5:
-        recs.append("5. Temperature bucket weight low — bump from config.py TEMPERATURE_BUCKET_LOSS_WEIGHT.")
+        recs.append("5. Temperature bucket weight low: bump from config.py TEMPERATURE_BUCKET_LOSS_WEIGHT.")
     if summary.get("published_model") is None:
-        recs.append("6. No published model path was found in the summary — confirm training/publish completed.")
+        recs.append("6. No published model path was found in the summary: confirm training/publish completed.")
     if not recs:
         recs.append("Model performance looks reasonable. Consider fine-tuning on specific shots or retraining with more data.")
 
     for rec in recs:
-        print(f"  • {rec}")
+        print(f"  - {rec}")
 
     print(f"\n{'NEXT STEPS':^80}")
     print(f"{'='*80}")
