@@ -40,8 +40,8 @@ The earlier `GPU available: False` training issue was caused by a CPU-only PyTor
 
 - Moved transient app state to repo-local `.saha\` instead of `~\.saha\`. Active profile, recent folders, queued job snapshots, Personal AI training workspaces, and fine-tune scratch runs now resolve from the project root by default.
 - Added `config.ensure_runtime_directories()` and wired it into backend/server and CLI entrypoints so a fresh clone auto-creates `data\training_sources\`, `data\raw\`, `data\raw\sonna_training\`, `data\datasets\`, `data\dng\`, `data\parquet\`, `data\captures\`, `data\audits\`, `data\dbg\`, `v1_learning\`, and `.saha\` before use.
-- Split local learning inputs from generated outputs. Source photos now belong under separate gitignored child folders such as `data\training_sources\sonna_personal_001\raw_xmp\`; future FiveK image-pair inputs should use folders such as `data\training_sources\fivek_expert_c\raw_dng\` and `data\training_sources\fivek_expert_c\expert_tiff\`. Generated Parquet/checkpoint outputs remain under `data\training_workspace\` and `data\foundation_repo\`.
-- Moved the default training workspace and hidden foundation repo into the project tree as well. `SONNA_TRAINING_WORKSPACE` now defaults to `data\training_workspace\`, and `SONNA_FOUNDATION_REPO` defaults to `data\foundation_repo\`. Both are auto-created on startup unless the operator overrides them.
+- Split local learning inputs from generated outputs. Source photos now belong under separate gitignored child folders such as `data\training_sources\sonna_personal_001\raw_xmp\`; future FiveK image-pair inputs should use folders such as `data\training_sources\fivek_expert_c\raw_dng\` and `data\training_sources\fivek_expert_c\expert_tiff\`. Generated Parquet/checkpoint run outputs remain under `data\training_workspace\`.
+- `SONNA_TRAINING_WORKSPACE` defaults to `data\training_workspace\`. `SONNA_FOUNDATION_REPO` defaults to the sibling `SonnaEditorFoundation\` repo so promoted foundation checkpoints are outside gitignored `data\` and can be synced/versioned separately. Runtime directories are auto-created on startup unless the operator overrides them.
 - Updated `scripts\process_shoot_model.py` so the default model path resolves to the newest published `v1_learning\model-v*.ckpt` instead of a stale hardcoded legacy checkpoint path. If no published profile exists yet, the CLI now fails with a clear instruction.
 
 - Decoupled Lite profile creation from active Personal AI profiles. `POST /api/profiles/lite` now resolves the configured foundation checkpoint and passes that to the Lite checkpoint builder.
@@ -91,6 +91,9 @@ The earlier `GPU available: False` training issue was caused by a CPU-only PyTor
 - Verified MIT-Adobe FiveK is suitable foundation material, with the caveat that it is 5,000 DNG inputs plus five expert renditions/catalog edits, not 25,000 independent RAW inputs. Use one expert target style first.
 - Implemented the TIFF/image foundation path. `scripts\train_foundation_model.py` now accepts `--raw-image-dir` plus `--target-tiff-dir` for paired `RAW/DNG/image -> edited TIFF` training, saving an `image_to_image_v1` checkpoint in the foundation repo. Personal AI warm-start and Lite profile creation can copy the image-foundation ConvNeXt backbone into a fresh `SonnaEditor`; Mode A remains RAW+XMP slider regression.
 - Updated foundation training semantics so each new foundation run warm-starts from the active foundation checkpoint by default, writes a new versioned checkpoint, promotes it as the active default, and keeps previous checkpoints untouched. If the active checkpoint file is removed after a bad run, resolution falls back to the newest remaining checkpoint in the foundation repo.
+- Updated the foundation and operator docs so RAW+XMP foundation training uses direct script commands only: Lightroom metadata export/source-folder expectation, inspectable dataset/split build, audits, training from prepared splits, and the direct `--raw-xmp-dir` shortcut. Operator-facing stale references to repo-local `data\foundation_repo\`, old local dataset presence, and old Lite profile artifacts were cleaned up.
+- Added `matplotlib` to the base project dependencies and refreshed `uv.lock` so dataset audit plots generate without optional-import warnings. `scripts\audit_catalog.py` now prints ASCII `OK`/`WARN`/`STOP` status labels so Windows PowerShell does not fail on emoji encoding.
+- Fixed foundation training CUDA OOM handling. `scripts\train_foundation_model.py` now defaults to `--batch-size 8` for foundation runs and the RAW+XMP slider-regression path automatically catches CUDA memory failures, clears the CUDA cache, and retries with halved batch sizes. Foundation docs now recommend batch 8 on the Windows RTX 3050 workstation.
 - Adjusted Lite/preset auto-exposure for low-light images. Dark scenes with no near-clipped highlights now receive a stronger positive exposure floor, so event frames like the sofa/table example lift closer to the Imagen-style reference instead of staying slightly underexposed. WB remains conservative by default.
 - Guarded Lightning metric logging in `src/sonna_editor/training/module.py` so standalone `training_step()` unit tests no longer emit `self.log()` warnings without a Trainer.
 
@@ -109,6 +112,18 @@ The earlier `GPU available: False` training issue was caused by a CPU-only PyTor
   - `npm run build:vite` passed in `saha-app/`.
   - `uv run pytest tests\test_style_survey.py tests\test_checkpoint_builder.py tests\api\test_profiles.py tests\test_architecture.py tests\api\test_callback_bridge.py::test_mode_b_initial_uses_per_photo_preset_adjuster tests\test_inference_pipeline_integration.py::test_mode_b_end_to_end_sidecar_propagation tests\test_training.py::test_foundation_warm_start_keeps_training_registry tests\test_training.py::test_training_step_returns_scalar tests\test_training.py::test_training_step_loss_is_non_negative tests\test_training.py::test_loss_gradient_flow_to_predictions tests\test_training.py::test_output_prior_initialisation_sets_exposure_and_zero_wb_residual -q` passed: 148 passed, 6 skipped, no warnings.
   - `uv run mypy src scripts` is still not clean in this workspace; it reports broad pre-existing strict-typing debt and missing third-party stubs across many files. Treat that as a dedicated type-hardening task, separate from lint/compile/test cleanup.
+- Documentation-only RAW+XMP foundation runbook pass completed on 2026-06-03. Reviewed `FOUNDATION_TRAINING.md`, `CLI_COMMANDS.md`, `RUN.md`, `README.md`, `MAC_SETUP.md`, `HANDOVER.md`, `SESSION_STATE.md`, and `project_knowledge.md`; no code tests were required for this docs-only update.
+- Dataset audit warning fix verification:
+  - `uv lock` added `matplotlib` and plotting dependencies.
+  - `uv sync --extra dev` installed `matplotlib==3.10.9`.
+  - `uv run python scripts\audit_catalog.py --parquet-path data\training_workspace\sonna_foundation_001_dataset\dataset.parquet --output-dir data\training_workspace\sonna_foundation_001_dataset\audit` completed with no missing-matplotlib warnings and no PowerShell encoding error; status remained `WARN` because the 189-photo dataset is small and has 40 outlier sliders.
+  - `uv run ruff check scripts\audit_catalog.py pyproject.toml` passed.
+  - `uv run pytest tests\test_audit.py -q` passed: 26 passed.
+- Foundation CUDA OOM fix verification:
+  - `uv run ruff check scripts\train_foundation_model.py tests\test_train_foundation_model.py` passed.
+  - `uv run pytest tests\test_train_foundation_model.py -q` passed: 5 passed.
+  - `uv run python -m py_compile scripts\train_foundation_model.py` passed.
+  - One-epoch smoke completed on CUDA with `--batch-size 8 --workers 0 --no-warm-start`, using `data\training_workspace\sonna_foundation_001_dataset\splits_v2_stratified` and disposable foundation repo `data\tmp_foundation_oom_smoke_repo`. It promoted `data\tmp_foundation_oom_smoke_repo\checkpoints\foundation-oom-smoke.ckpt`; the real sibling foundation repo was not touched.
 - Reviewed existing `HANDOVER.md`, `SESSION_STATE.md`, `project_knowledge.md`, `SONNA_EDITOR_BUILD_SPEC.md`, `CLI_COMMANDS.md`, `RUN.md`, `README.md`, `pyproject.toml`, and `saha-app/package.json` before writing the Mac guide.
 - `uv run python -c "import torch; ..."` confirmed:
   - `torch 2.11.0+cu128`
@@ -183,8 +198,8 @@ The earlier `GPU available: False` training issue was caused by a CPU-only PyTor
   - Tint bucket loss weight=2.0
   - Sign-wrong penalty weight=0.2
   - WB metadata skip enabled
-- Fresh training defaults to target-prior output initialisation. On the current 189-row dataset, this can win validation loss while still producing collapsed predictions; always run collapse analysis before promoting a small-data candidate.
-- Active `model-v2.0.0` under-brightens dark/low-light photos because its Exposure2012 head is nearly averaged. Example: `0H5A4599` mean luminance `0.126`, target `+1.11`, prediction about `+0.10`.
+- Fresh training defaults to target-prior output initialisation. On the previous 189-row diagnostic dataset, this could win validation loss while still producing collapsed predictions; always run collapse analysis before promoting a small-data candidate.
+- The previous `model-v2.0.0` diagnostic profile under-brightened dark/low-light photos because its Exposure2012 head was nearly averaged. Example: `0H5A4599` mean luminance `0.126`, target `+1.11`, prediction about `+0.10`.
 - Default training augmentation is now geometry-only; photometric jitter remains configurable but disabled by default.
 - Training on tiny splits now logs once that it adjusted `log_every_n_steps` instead of letting Lightning warn. This is expected for the current 132-row train split, which has 9 batches at batch size 16.
 - `Profile.profile_type` is already implemented in backend profile responses and frontend profile classification. `None` means a legacy trained profile; `"mode_b_initial"` means a Lite preset-derived profile.

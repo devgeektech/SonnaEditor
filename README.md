@@ -17,7 +17,7 @@ sidecars for new shoots.
   available; CPU fallback is supported for development and small runs.
 - Current Windows training workspace: PyTorch `2.11.0+cu128` is pinned through
   `pyproject.toml` / `uv.lock` and verified on an NVIDIA GeForce RTX 3050.
-- Training/profile caches were cleared on 2026-06-02 so a fresh dataset can be
+- Training/profile caches were cleared on 2026-06-03 so a fresh dataset can be
   added. There is currently no guaranteed local dataset or visible checkpoint.
 - Current training defaults use geometry-only augmentation, Exposure loss
   weight 5.0, and fresh output-head target-prior initialisation from the
@@ -47,8 +47,10 @@ Runtime working folders are now created automatically from the project root on
 backend or CLI startup, including `data/training_sources/`, `data/raw/`,
 `data/datasets/`, `v1_learning/`, and `.saha/`.
 That keeps a fresh clone usable even though those directories are gitignored.
-The default foundation workspace also stays inside the repo now:
-`data/training_workspace/` and `data/foundation_repo/`.
+Generated foundation training runs stay under `data/training_workspace/` by
+default. Promoted foundation checkpoints live outside the gitignored `data/`
+tree in the sibling `SonnaEditorFoundation` repo unless `SONNA_FOUNDATION_REPO`
+points somewhere else.
 
 On Windows/Linux x86_64, `uv sync --extra dev` installs CUDA-enabled PyTorch
 from the pinned PyTorch CUDA 12.8 index. If no NVIDIA GPU is available, the app
@@ -122,7 +124,7 @@ sidecar and copied preset/survey metadata match the current flow.
 
 Only profiles placed in `v1_learning/` are scanned by the UI. The foundation
 checkpoint lives in the separate foundation repo configured by
-`SONNA_FOUNDATION_REPO` or the default repo-local `data/foundation_repo/`.
+`SONNA_FOUNDATION_REPO` or the default sibling `SonnaEditorFoundation` repo.
 
 Direct preset execution is also available through `scripts/process_shoot_preset.py`
 when you only want preset-derived XMP files and do not need a selectable model

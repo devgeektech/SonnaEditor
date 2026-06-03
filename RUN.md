@@ -46,7 +46,7 @@ need RAW-to-DNG normalisation.
 
 It also bootstraps the repo-local runtime layout used by the app and scripts:
 `data/`, `data/training_sources/`, `data/raw/`, `data/raw/sonna_training/`,
-`data/datasets/`, `data/training_workspace/`, `data/foundation_repo/`,
+`data/datasets/`, `data/training_workspace/`,
 `v1_learning/`, and `.saha/`.
 A fresh clone no longer needs those gitignored folders created by hand.
 
@@ -118,7 +118,7 @@ Foundation has two implemented CLI paths:
 
 Every foundation run is versioned. By default, it warm-starts from the active
 foundation checkpoint, trains on the new dataset, writes a new checkpoint under
-`data/foundation_repo/checkpoints/`, and makes that checkpoint active in
+`..\SonnaEditorFoundation\checkpoints\`, and makes that checkpoint active in
 `foundation_manifest.json`. Older checkpoints are kept. If a bad run is
 promoted, remove the bad new `.ckpt`; the resolver falls back to the newest
 remaining checkpoint. Use `--no-warm-start` only for a deliberate scratch run.
@@ -147,11 +147,11 @@ Foundation model training is intentionally **not** exposed in the frontend. Trai
 uv run python scripts\train_foundation_model.py `
   --raw-xmp-dir data\training_sources\sonna_personal_001\raw_xmp `
   --workspace-dir data\training_workspace `
-  --foundation-repo data\foundation_repo `
+  --foundation-repo ..\SonnaEditorFoundation `
   --profile-name "Sonna Parameter Foundation" `
   --version-stem foundation-sonna-parameter-001 `
   --max-epochs 100 `
-  --batch-size 16 `
+  --batch-size 8 `
   --workers 4 `
   --init-git
 ```
@@ -163,18 +163,22 @@ uv run python scripts\train_foundation_model.py `
   --raw-image-dir data\training_sources\fivek_expert_c\raw_dng `
   --target-tiff-dir data\training_sources\fivek_expert_c\expert_tiff `
   --workspace-dir data\training_workspace `
-  --foundation-repo data\foundation_repo `
+  --foundation-repo ..\SonnaEditorFoundation `
   --profile-name "Sonna FiveK Image Foundation Expert C" `
   --run-name foundation-fivek-image-expert-c-001 `
   --version-stem foundation-fivek-image-expert-c-001 `
   --image-resolution 512 `
   --max-epochs 100 `
-  --batch-size 16 `
+  --batch-size 8 `
   --workers 8
 ```
 
 This produces an `image_to_image_v1` foundation checkpoint. Mode A still trains
 from RAW+XMP; the TIFF checkpoint only warm-starts the visual backbone.
+
+On the Windows RTX 3050 workstation, start foundation runs at `--batch-size 8`.
+The RAW+XMP foundation CLI automatically retries with smaller batch sizes after
+CUDA memory failures.
 
 ### Lite profile flow
 
@@ -207,9 +211,8 @@ Important: Lite profiles created before the 2026-06-02 Mode B fixes can over-app
 
 Also restart the backend/Electron app after pulling this fix. A running backend
 keeps the old Python code loaded, so processing from the UI without a restart can
-still write the old double-applied XMPs. In this workspace, the stale
-`model-v0.1.0` Lite profile was removed; the corrected replacement is
-`v1_learning\model-v0.2.0.ckpt` / `.json`.
+still write the old double-applied XMPs. Rebuild any old `model-v0.*.ckpt` Lite
+profile with the current code before judging Lite output.
 
 Run the published Lite profile with the model-processing CLI:
 
@@ -319,7 +322,7 @@ Treat this as an internal file version, not a model-family choice.
 Use `--resume-from-checkpoint <path>` to continue from a saved training checkpoint when resuming a run, or omit it to start fresh. Use `--output-dir` for run-specific artifacts, and allow the script to publish the visible checkpoint into `v1_learning/` for frontend discovery.
 Use `--base-model-checkpoint <path>` when you want to initialise from the hidden foundation checkpoint without carrying over optimizer or epoch state.
 
-The current small local dataset contains:
+The earlier diagnostic small dataset contained:
 
 ```text
 v1_learning/dataset/dataset.parquet: 189 rows
@@ -328,7 +331,7 @@ splits_v2_stratified/val.parquet: 27 rows
 splits_v2_stratified/test.parquet: 30 rows
 ```
 
-The current split is grouped by shoot and balanced across Temperature correction, Exposure2012, and Tint correction. Fresh current-recipe training also starts output heads from the training-set target medians and uses geometry-only augmentation by default, which directly addresses the earlier brightness/WB drift in small-data runs.
+That dataset/checkpoint cache was later cleared for a fresh data reset, so do not assume those files exist locally. New splits are still grouped by shoot and balanced across Temperature correction, Exposure2012, and Tint correction. Fresh current-recipe training also starts output heads from the training-set target medians and uses geometry-only augmentation by default, which directly addresses the earlier brightness/WB drift in small-data runs.
 
 Fresh current-recipe models use the scene-stat architecture, which adds six preview-derived luminance scene statistics to the metadata path. The default loss recipe prioritises visually important sliders: Exposure=5.0, Temperature/Tint=4.0, Contrast/Highlights/Shadows=3.0, and Whites/Blacks/Saturation/Vibrance=2.0 minimums.
 

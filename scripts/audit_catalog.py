@@ -30,7 +30,7 @@ def main() -> None:
     summary = audit_dataset(args.parquet_path, args.output_dir)
 
     status = summary["status"]
-    status_symbol = {"GO": "✅", "WARN": "⚠️", "STOP": "🛑"}.get(status, status)
+    status_symbol = {"GO": "OK", "WARN": "WARN", "STOP": "STOP"}.get(status, status)
 
     print(f"\n{status_symbol}  Status: {status}")
     print(f"   Photos:            {summary['n_photos']:,}")

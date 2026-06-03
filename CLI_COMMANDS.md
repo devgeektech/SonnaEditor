@@ -38,11 +38,13 @@ RAW+XMP data preparation and foundation training are not the same thing.
 
 Foundation runs are versioned. By default a new foundation run warm-starts from
 the active foundation checkpoint, trains on the new dataset, saves a new
-checkpoint under `data/foundation_repo/checkpoints/`, and makes that new
-checkpoint active in `foundation_manifest.json`. Existing checkpoints are not
-overwritten. If a new run is bad, remove that new `.ckpt`; the resolver falls
-back to the newest remaining checkpoint. Use `--no-warm-start` only for a
-deliberate scratch foundation run.
+checkpoint under `..\SonnaEditorFoundation\checkpoints\`, and makes that new
+checkpoint active in `foundation_manifest.json`. The default foundation repo is
+the sibling `..\SonnaEditorFoundation`, not gitignored `data/`, so it can be
+synced/versioned separately. Existing checkpoints are not overwritten. If a new
+run is bad, remove that new `.ckpt`; the resolver falls back to the newest
+remaining checkpoint. Use `--no-warm-start` only for a deliberate scratch
+foundation run.
 
 ## Project Flow
 
@@ -95,27 +97,27 @@ deliberate scratch foundation run.
 
 ## Important Paths
 
-| Purpose | Path |
-|---|---|
-| Source training RAW + XMP folder | Separate gitignored source folders, for example `data/training_sources/sonna_personal_001/raw_xmp/` |
-| FiveK image-pair source folders | `data/training_sources/fivek_expert_c/raw_dng/` and `data/training_sources/fivek_expert_c/expert_tiff/`; image-to-image foundation training only |
-| Source Lightroom catalog | Any `.lrcat` path, opened read-only |
-| Personal AI dataset output root | `v1_learning/dataset/` or frontend job workspace |
-| Foundation training workspace | `SONNA_TRAINING_WORKSPACE` or `data/training_workspace/` |
-| Foundation repo | `SONNA_FOUNDATION_REPO` or `data/foundation_repo/` |
-| Foundation manifest | `<foundation_repo>/foundation_manifest.json` |
-| Foundation checkpoint path | `<foundation_repo>/checkpoints/<version>.ckpt` |
-| Personal AI training run outputs | `data/models/<run_name>/` or frontend job workspace |
-| Best native checkpoint for a run | `<run_output>/model.ckpt` |
-| Training summary | `<run_output>/training_summary.json` |
-| Frontend-visible profile directory | `v1_learning/` |
-| Frontend-visible checkpoint pattern | `v1_learning/model-vX.Y.Z.ckpt` |
-| Frontend-visible sidecar pattern | `v1_learning/model-vX.Y.Z.json` |
-| Training source root | `data/training_sources/` | Local RAW/XMP learning inputs only; keep one child folder per dataset/run. |
-| Generated data/artifacts | `data/` | Created by dataset/train/audit scripts; keep this directory gitignored. |
-| Inference output XMP path | Next to RAWs when `write_xmp_in_place=True` |
-| Prediction capture sidecar | `<output_dir>/sonna_predictions.json` or shoot folder output |
-| Fine-tune captures | `data/captures/` or frontend-selected captures folder |
+| Purpose | Path | Notes |
+|---|---|---|
+| Source training RAW + XMP folder | Separate gitignored source folders, for example `data/training_sources/sonna_personal_001/raw_xmp/` | Edited RAW/DNG files plus same-stem `.xmp` sidecars |
+| FiveK image-pair source folders | `data/training_sources/fivek_expert_c/raw_dng/` and `data/training_sources/fivek_expert_c/expert_tiff/` | Image-to-image foundation training only |
+| Source Lightroom catalog | Any `.lrcat` path, opened read-only | Lightroom should be closed for catalog reads |
+| Personal AI dataset output root | `v1_learning/dataset/` or frontend job workspace | Used for frontend-visible profile training |
+| Foundation training workspace | `SONNA_TRAINING_WORKSPACE` or `data/training_workspace/` | Generated foundation datasets and run folders |
+| Foundation repo | `SONNA_FOUNDATION_REPO` or sibling `..\SonnaEditorFoundation` | Promoted hidden checkpoints, outside gitignored `data/` |
+| Foundation manifest | `<foundation_repo>/foundation_manifest.json` | Active foundation pointer and history |
+| Foundation checkpoint path | `<foundation_repo>/checkpoints/<version>.ckpt` | Never overwrite old checkpoints |
+| Personal AI training run outputs | `data/models/<run_name>/` or frontend job workspace | Non-foundation profile training artifacts |
+| Best native checkpoint for a run | `<run_output>/model.ckpt` | Best validation checkpoint exported by trainer |
+| Training summary | `<run_output>/training_summary.json` | Metrics and recipe record |
+| Frontend-visible profile directory | `v1_learning/` | Only this directory is scanned by the UI |
+| Frontend-visible checkpoint pattern | `v1_learning/model-vX.Y.Z.ckpt` | Personal AI or fine-tuned profile |
+| Frontend-visible sidecar pattern | `v1_learning/model-vX.Y.Z.json` | Profile metadata for the UI |
+| Training source root | `data/training_sources/` | Local learning inputs only, one child folder per dataset/run |
+| Generated data/artifacts | `data/` | Created by dataset/train/audit scripts, gitignored |
+| Inference output XMP path | Next to RAWs when `write_xmp_in_place=True` | Or in the chosen output folder |
+| Prediction capture sidecar | `<output_dir>/sonna_predictions.json` or shoot folder output | Needed for later fine-tuning |
+| Fine-tune captures | `data/captures/` or frontend-selected captures folder | User correction data |
 
 ## What Can Train The Model
 
@@ -207,9 +209,8 @@ Important: Lite profiles created before the 2026-06-02 Mode B fixes can over-app
 
 After updating code, restart the backend/Electron app before processing from the
 UI. A live backend process will otherwise keep the old Mode B processing code in
-memory. In the current Windows workspace, stale `model-v0.1.0` artifacts were
-removed and `model-v0.2.0` is the corrected Lite profile built from the same
-preset/survey.
+memory. Rebuild any old `model-v0.*.ckpt` Lite profile before judging current
+Lite output.
 
 Run the Lite checkpoint on a shoot:
 
@@ -464,6 +465,41 @@ Foundation training, resume, retrain, promotion, and FiveK-specific guidance
 live in `FOUNDATION_TRAINING.md`. Keep the foundation checkpoint in the separate
 foundation repo, not in `v1_learning/`, so it stays hidden from the frontend.
 
+For RAW+XMP foundation training, first export Lightroom metadata to sidecars,
+keep the source files in a dedicated folder, build/audit inspectable splits, and
+then train from those splits:
+
+```powershell
+uv run python scripts\build_dataset.py `
+  --input-dir data\training_sources\sonna_foundation_001\raw_xmp `
+  --output-dir data\training_workspace\sonna_foundation_001_dataset `
+  --profile-name "sonna_foundation_001" `
+  --workers 8 `
+  --split `
+  --val-ratio 0.107 `
+  --test-ratio 0.139 `
+  --splits-dir-name splits_v2_stratified
+```
+
+```powershell
+uv run python scripts\audit_catalog.py `
+  --parquet-path data\training_workspace\sonna_foundation_001_dataset\dataset.parquet `
+  --output-dir data\training_workspace\sonna_foundation_001_dataset\audit
+```
+
+```powershell
+uv run python scripts\train_foundation_model.py `
+  --splits-dir data\training_workspace\sonna_foundation_001_dataset\splits_v2_stratified `
+  --workspace-dir data\training_workspace `
+  --foundation-repo ..\SonnaEditorFoundation `
+  --profile-name "Sonna RAW XMP Foundation" `
+  --run-name foundation-sonna-raw-xmp-001 `
+  --version-stem foundation-sonna-raw-xmp-001 `
+  --max-epochs 100 `
+  --batch-size 8 `
+  --workers 8
+```
+
 TIFF/image foundation training uses paired folders matched by file stem:
 
 ```powershell
@@ -471,18 +507,22 @@ uv run python scripts\train_foundation_model.py `
   --raw-image-dir data\training_sources\fivek_expert_c\raw_dng `
   --target-tiff-dir data\training_sources\fivek_expert_c\expert_tiff `
   --workspace-dir data\training_workspace `
-  --foundation-repo data\foundation_repo `
+  --foundation-repo ..\SonnaEditorFoundation `
   --profile-name "Sonna FiveK Image Foundation Expert C" `
   --run-name foundation-fivek-image-expert-c-001 `
   --version-stem foundation-fivek-image-expert-c-001 `
   --image-resolution 512 `
   --max-epochs 100 `
-  --batch-size 16 `
+  --batch-size 8 `
   --workers 8
 ```
 
 Mode A still trains from RAW+XMP. The TIFF path creates a foundation backbone
 checkpoint, not direct Lightroom slider labels.
+
+On the Windows RTX 3050 workstation, start foundation runs at `--batch-size 8`.
+The RAW+XMP foundation CLI will automatically retry with smaller batch sizes if
+CUDA runs out of memory.
 
 ## 5. Train With Explicit Published Version
 

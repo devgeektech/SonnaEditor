@@ -229,22 +229,51 @@ This is CLI-only. It is not exposed in the frontend. The foundation checkpoint
 is promoted into a separate private foundation repo and is used as the base for
 Lite profile creation.
 
+For RAW+XMP foundation data, first export metadata from Lightroom and keep the
+edited RAW/DNG files plus same-stem `.xmp` sidecars in a dedicated source
+folder. For important runs, build and audit splits before training:
+
+```bash
+uv run python scripts/build_dataset.py \
+  --input-dir "$HOME/SonnaEditorTraining/raw/edited-with-xmp" \
+  --output-dir "$HOME/SonnaEditorTraining/workspace/sonna_foundation_001_dataset" \
+  --profile-name "sonna_foundation_001" \
+  --workers 4 \
+  --split \
+  --val-ratio 0.107 \
+  --test-ratio 0.139 \
+  --splits-dir-name splits_v2_stratified
+```
+
+```bash
+uv run python scripts/audit_catalog.py \
+  --parquet-path "$HOME/SonnaEditorTraining/workspace/sonna_foundation_001_dataset/dataset.parquet" \
+  --output-dir "$HOME/SonnaEditorTraining/workspace/sonna_foundation_001_dataset/audit"
+```
+
+Train from the inspected splits:
+
 ```bash
 uv run python scripts/train_foundation_model.py \
-  --raw-xmp-dir "$HOME/SonnaEditorTraining/raw/edited-with-xmp" \
+  --splits-dir "$HOME/SonnaEditorTraining/workspace/sonna_foundation_001_dataset/splits_v2_stratified" \
   --workspace-dir "$HOME/SonnaEditorTraining/workspace" \
   --foundation-repo "$HOME/Projects/SonnaEditorFoundation" \
-  --profile-name "Sonna Foundation" \
-  --version-stem foundation-current \
+  --profile-name "Sonna RAW XMP Foundation" \
+  --run-name foundation-sonna-raw-xmp-001 \
+  --version-stem foundation-sonna-raw-xmp-001 \
   --max-epochs 100 \
-  --batch-size 16 \
+  --batch-size 8 \
   --workers 4 \
   --init-git
 ```
 
 The foundation repo contains `foundation_manifest.json` and
-`checkpoints/foundation-current.ckpt`. Install Git LFS before pushing the
+`checkpoints/foundation-sonna-raw-xmp-001.ckpt`. Install Git LFS before pushing the
 foundation repo to GitHub:
+
+For small GPUs, start foundation runs at `--batch-size 8`. The RAW+XMP
+foundation CLI automatically retries with smaller batch sizes after CUDA memory
+failures.
 
 ```bash
 brew install git-lfs

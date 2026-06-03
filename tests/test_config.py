@@ -22,8 +22,8 @@ class TestPlatformPaths:
     def test_training_workspace_defaults_to_project_data(self) -> None:
         assert config.TRAINING_WORKSPACE_DIR == config.DATA_DIR / "training_workspace"
 
-    def test_foundation_repo_defaults_to_project_data(self) -> None:
-        assert config.FOUNDATION_REPO_DIR == config.DATA_DIR / "foundation_repo"
+    def test_foundation_repo_defaults_to_sibling_repo(self) -> None:
+        assert config.FOUNDATION_REPO_DIR == config.PROJECT_ROOT.parent / "SonnaEditorFoundation"
 
     def test_training_sources_default_to_project_data(self) -> None:
         assert config.TRAINING_SOURCES_DIR == config.DATA_DIR / "training_sources"
@@ -36,6 +36,7 @@ class TestPlatformPaths:
         data_dir = tmp_path / "data"
         app_state_dir = tmp_path / ".saha"
         checkpoints_dir = tmp_path / "v1_learning"
+        foundation_repo_dir = tmp_path / "SonnaEditorFoundation"
         monkeypatch.setattr(config, "DATA_DIR", data_dir)
         monkeypatch.setattr(config, "RAW_DIR", data_dir / "raw")
         monkeypatch.setattr(config, "RAW_TRAINING_DIR", data_dir / "raw" / "sonna_training")
@@ -48,6 +49,7 @@ class TestPlatformPaths:
         monkeypatch.setattr(config, "AUDITS_DIR", data_dir / "audits")
         monkeypatch.setattr(config, "DEBUG_DIR", data_dir / "dbg")
         monkeypatch.setattr(config, "CHECKPOINTS_DIR", checkpoints_dir)
+        monkeypatch.setattr(config, "FOUNDATION_REPO_DIR", foundation_repo_dir)
         monkeypatch.setattr(config, "APP_STATE_DIR", app_state_dir)
         monkeypatch.setattr(config, "JOBS_DIR", app_state_dir / "jobs")
         monkeypatch.setattr(config, "PROFILE_TRAINING_RUNS_DIR", app_state_dir / "profile_training_runs")
@@ -68,7 +70,7 @@ class TestPlatformPaths:
             config.AUDITS_DIR,
             config.DEBUG_DIR,
             config.TRAINING_WORKSPACE_DIR,
-            config.FOUNDATION_REPO_DIR,
+            foundation_repo_dir,
             checkpoints_dir,
             app_state_dir,
             config.JOBS_DIR,

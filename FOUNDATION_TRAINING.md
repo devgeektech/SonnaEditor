@@ -55,8 +55,9 @@ preference, preset behaviour, and event-specific colour grading.
 ## Foundation Visibility Rule
 
 - Foundation checkpoints live in a hidden foundation repo, by default
-  `data/foundation_repo/` inside this project, or a custom path from
-  `SONNA_FOUNDATION_REPO`.
+  the sibling folder `..\SonnaEditorFoundation`, or a custom path from
+  `SONNA_FOUNDATION_REPO`. Keep this outside gitignored `data/` so foundation
+  checkpoints can be synced/versioned separately.
 - The UI scans only `v1_learning/model-v*.ckpt`, so foundation checkpoints stay
   unseen as long as they remain in the foundation repo.
 - Lite profiles and Personal AI profile creation resolve the foundation
@@ -70,7 +71,7 @@ preference, preset behaviour, and event-specific colour grading.
 Every foundation training run writes a new versioned checkpoint under:
 
 ```text
-data/foundation_repo/checkpoints/<version-stem>.ckpt
+..\SonnaEditorFoundation/checkpoints/<version-stem>.ckpt
 ```
 
 The previous checkpoint is never overwritten. After a successful run,
@@ -95,7 +96,7 @@ new checkpoint = previous active foundation + new dataset training
 ```
 
 The previous active checkpoint file stays untouched. If a bad new checkpoint is
-promoted, remove that bad `.ckpt` file from `data/foundation_repo/checkpoints/`.
+promoted, remove that bad `.ckpt` file from `..\SonnaEditorFoundation\checkpoints\`.
 When the manifest points at a missing active checkpoint, the resolver falls back
 to the newest remaining checkpoint in that folder. For a deliberate scratch
 foundation run that should not warm-start from the active checkpoint, pass
@@ -152,20 +153,14 @@ data/training_sources/
 
 These folders are for local learning inputs only. They are under gitignored
 `data/`, so RAWs, TIFFs, XMPs, and downloaded datasets do not get committed.
-Generated datasets, thumbnails, training summaries, and checkpoints stay under
-`data/training_workspace/` and `data/foundation_repo/`.
-
-Recommended project-local paths:
-
-```powershell
-$env:SONNA_TRAINING_WORKSPACE = "$PWD\data\training_workspace"
-$env:SONNA_FOUNDATION_REPO = "$PWD\data\foundation_repo"
-$env:FIVEK_ROOT = "$PWD\data\training_sources\fivek_expert_c\MITAdobeFiveK"
-```
+Generated datasets, thumbnails, and training summaries stay under
+`data/training_workspace/`. Promoted foundation checkpoints stay in the separate
+foundation repo, outside `data/`.
 
 `data\training_sources\` is part of the auto-created repo-local layout. You
 still need to place the actual FiveK files or Sonna RAW+XMP folders there
-yourself.
+yourself. Commands below use explicit paths so no shell environment setup is
+required.
 
 ## FiveK Image-To-Image Foundation Training
 
@@ -196,13 +191,13 @@ uv run python scripts\train_foundation_model.py `
   --raw-image-dir "$PWD\data\training_sources\fivek_expert_c\raw_dng" `
   --target-tiff-dir "$PWD\data\training_sources\fivek_expert_c\expert_tiff" `
   --workspace-dir "$PWD\data\training_workspace" `
-  --foundation-repo "$PWD\data\foundation_repo" `
+  --foundation-repo "..\SonnaEditorFoundation" `
   --profile-name "Sonna FiveK Image Foundation Expert C" `
   --run-name "foundation-fivek-image-expert-c-001" `
   --version-stem "foundation-fivek-image-expert-c-001" `
   --image-resolution 512 `
   --max-epochs 100 `
-  --batch-size 16 `
+  --batch-size 8 `
   --workers 8 `
   --l1-weight 1.0 `
   --ssim-weight 0.2 `
@@ -214,8 +209,8 @@ Expected outputs:
 ```text
 <project>\data\training_workspace\foundation_runs\foundation-fivek-image-expert-c-001\
 <project>\data\training_workspace\foundation_runs\foundation-fivek-image-expert-c-001\training\model.ckpt
-<project>\data\foundation_repo\checkpoints\foundation-fivek-image-expert-c-001.ckpt
-<project>\data\foundation_repo\foundation_manifest.json
+<project-parent>\SonnaEditorFoundation\checkpoints\foundation-fivek-image-expert-c-001.ckpt
+<project-parent>\SonnaEditorFoundation\foundation_manifest.json
 ```
 
 The promoted checkpoint is not a full Lightroom slider-regression checkpoint.
@@ -223,25 +218,121 @@ It contains image-foundation backbone weights. Personal AI warm-start and Lite
 profile creation know how to copy those backbone weights into a fresh
 `SonnaEditor` model while keeping the RAW+XMP profile training contract intact.
 
-## Build Dataset From RAW + XMP
+## RAW+XMP Foundation Data Prep And Training
 
-Use this only when your data is already exported as edited RAW/DNG files with
-matching Lightroom `.xmp` sidecars, such as Sonna internal profile data. This is
-parameter-supervised training for the existing `SonnaEditor` model. It is not
-the recommended FiveK TIFF workflow. This RAW+XMP path is still fully supported.
-Unless `--no-warm-start` is supplied, it starts from the active foundation
-checkpoint and writes a new versioned foundation checkpoint.
+Use this when your foundation material is edited Sonna-style RAW/DNG files with
+matching Lightroom `.xmp` sidecars. This is parameter-supervised training for
+the existing `SonnaEditor` slider-regression model. It is not the FiveK TIFF
+workflow. RAW+XMP remains fully supported for internal Sonna foundation data.
+
+The foundation CLI can build the dataset internally from `--raw-xmp-dir`. For
+important runs, use the script-based data-prep pass first so the dataset and
+splits can be inspected before training.
+
+### Step 1: Export Lightroom Sidecars
+
+In Lightroom Classic:
+
+1. Select the edited training photos.
+2. Run `Metadata -> Save Metadata to File`.
+3. Confirm each RAW/DNG has a same-stem `.xmp` sidecar next to it.
+4. Keep Lightroom closed if you later use a catalog path.
+
+RAW-only folders are not valid for this path. The XMP sidecar provides the
+target Lightroom slider values.
+
+### Step 2: Put The Source Files In The Training Source Folder
+
+Copy exported RAW/DNG files and matching `.xmp` sidecars into:
+
+```text
+data\training_sources\sonna_foundation_001\raw_xmp\
+```
+
+The dataset script creates its output folders automatically and skips RAW files
+without matching XMP labels. You can also point `--input-dir` at an external
+drive. Never move or overwrite original RAW files just to satisfy this layout.
+
+### Step 3: Build Inspectable Dataset Splits
+
+This explicit prep route writes a dataset you can audit before the foundation
+run:
+
+```powershell
+uv run python scripts\build_dataset.py `
+  --input-dir "data\training_sources\sonna_foundation_001\raw_xmp" `
+  --output-dir "data\training_workspace\sonna_foundation_001_dataset" `
+  --profile-name "sonna_foundation_001" `
+  --workers 8 `
+  --split `
+  --val-ratio 0.107 `
+  --test-ratio 0.139 `
+  --splits-dir-name splits_v2_stratified
+```
+
+Expected prep outputs:
+
+```text
+<project>\data\training_workspace\sonna_foundation_001_dataset\dataset.parquet
+<project>\data\training_workspace\sonna_foundation_001_dataset\thumbnails\
+<project>\data\training_workspace\sonna_foundation_001_dataset\splits_v2_stratified\train.parquet
+<project>\data\training_workspace\sonna_foundation_001_dataset\splits_v2_stratified\val.parquet
+<project>\data\training_workspace\sonna_foundation_001_dataset\splits_v2_stratified\test.parquet
+```
+
+### Step 4: Audit Before Training
+
+Run both the general data-quality audit and the scene/edit diversity audit:
+
+```powershell
+uv run python scripts\audit_catalog.py `
+  --parquet-path "data\training_workspace\sonna_foundation_001_dataset\dataset.parquet" `
+  --output-dir "data\training_workspace\sonna_foundation_001_dataset\audit"
+```
+
+```powershell
+uv run python scripts\audit_dataset_diversity.py `
+  --parquet "data\training_workspace\sonna_foundation_001_dataset\dataset.parquet" `
+  --output "data\training_workspace\sonna_foundation_001_dataset\dataset_diversity.md"
+```
+
+Stop and fix the source set if the audit shows missing labels, too few shoots,
+large unedited clusters, broken thumbnails, or narrow exposure/WB coverage.
+
+### Step 5A: Train From Prepared Splits
+
+Use this route for serious foundation runs because the split files are already
+visible and audited:
 
 ```powershell
 uv run python scripts\train_foundation_model.py `
-  --raw-xmp-dir "$PWD\data\training_sources\sonna_personal_001\raw_xmp" `
-  --workspace-dir "$PWD\data\training_workspace" `
-  --foundation-repo "$PWD\data\foundation_repo" `
-  --profile-name "Sonna Foundation" `
-  --run-name "foundation-sonna-parameter-001" `
-  --version-stem "foundation-sonna-parameter-001" `
+  --splits-dir "data\training_workspace\sonna_foundation_001_dataset\splits_v2_stratified" `
+  --workspace-dir "data\training_workspace" `
+  --foundation-repo "..\SonnaEditorFoundation" `
+  --profile-name "Sonna RAW XMP Foundation" `
+  --run-name "foundation-sonna-raw-xmp-001" `
+  --version-stem "foundation-sonna-raw-xmp-001" `
   --max-epochs 100 `
-  --batch-size 16 `
+  --batch-size 8 `
+  --workers 8 `
+  --init-git
+```
+
+### Step 5B: Direct Train From RAW+XMP
+
+Use this shortcut for quick runs. It builds the dataset inside the run folder,
+then trains and promotes the checkpoint:
+
+```powershell
+uv run python scripts\train_foundation_model.py `
+  --raw-xmp-dir "data\training_sources\sonna_foundation_001\raw_xmp" `
+  --workspace-dir "data\training_workspace" `
+  --foundation-repo "..\SonnaEditorFoundation" `
+  --profile-name "Sonna RAW XMP Foundation" `
+  --run-name "foundation-sonna-raw-xmp-001" `
+  --version-stem "foundation-sonna-raw-xmp-001" `
+  --max-epochs 100 `
+  --batch-size 8 `
   --workers 8 `
   --init-git
 ```
@@ -249,11 +340,15 @@ uv run python scripts\train_foundation_model.py `
 Expected outputs:
 
 ```text
-<project>\data\training_workspace\foundation_runs\foundation-sonna-parameter-001\
-<project>\data\training_workspace\foundation_runs\foundation-sonna-parameter-001\training\model.ckpt
-<project>\data\foundation_repo\checkpoints\foundation-sonna-parameter-001.ckpt
-<project>\data\foundation_repo\foundation_manifest.json
+<project>\data\training_workspace\foundation_runs\foundation-sonna-raw-xmp-001\
+<project>\data\training_workspace\foundation_runs\foundation-sonna-raw-xmp-001\training\model.ckpt
+<project-parent>\SonnaEditorFoundation\checkpoints\foundation-sonna-raw-xmp-001.ckpt
+<project-parent>\SonnaEditorFoundation\foundation_manifest.json
 ```
+
+Unless `--no-warm-start` is supplied, either RAW+XMP route starts from the
+active foundation checkpoint and writes a new versioned foundation checkpoint.
+The previous active foundation checkpoint is kept.
 
 ## Future FiveK Catalog Investigation
 
@@ -290,12 +385,12 @@ separate experimental checkpoint from those prepared splits:
 uv run python scripts\train_foundation_model.py `
   --splits-dir "$PWD\data\training_workspace\fivek_expert_c_dataset\splits_v2_stratified" `
   --workspace-dir "$PWD\data\training_workspace" `
-  --foundation-repo "$PWD\data\foundation_repo" `
+  --foundation-repo "..\SonnaEditorFoundation" `
   --profile-name "Sonna Foundation FiveK Expert C" `
   --run-name "foundation-fivek-expert-c-001" `
   --version-stem "foundation-fivek-expert-c-001" `
   --max-epochs 100 `
-  --batch-size 16 `
+  --batch-size 8 `
   --workers 8 `
   --init-git
 ```
@@ -313,7 +408,7 @@ uv run python scripts\train_profile.py `
   --output-dir "$PWD\data\training_workspace\foundation_runs\foundation-sonna-parameter-001\training" `
   --resume-from-checkpoint "$PWD\data\training_workspace\foundation_runs\foundation-sonna-parameter-001\training\checkpoints\last.ckpt" `
   --max-epochs 100 `
-  --batch-size 16 `
+  --batch-size 8 `
   --num-workers 8 `
   --no-publish `
   --profile-name "Sonna Parameter Foundation"
@@ -334,17 +429,22 @@ new version stem:
 uv run python scripts\train_foundation_model.py `
   --splits-dir "$PWD\data\training_workspace\sonna_parameter_dataset\splits_v2_stratified" `
   --workspace-dir "$PWD\data\training_workspace" `
-  --foundation-repo "$PWD\data\foundation_repo" `
+  --foundation-repo "..\SonnaEditorFoundation" `
   --profile-name "Sonna Parameter Foundation" `
   --run-name "foundation-sonna-parameter-002" `
   --version-stem "foundation-sonna-parameter-002" `
   --max-epochs 150 `
-  --batch-size 16 `
+  --batch-size 8 `
   --workers 8
 ```
 
 The manifest will point Lite and foundation-based profile creation at the newest
 promoted checkpoint.
+
+On CUDA machines with limited VRAM, the foundation CLI automatically retries
+RAW+XMP slider-regression training with smaller batch sizes after a CUDA memory
+failure. The Windows RTX 3050 workstation should start foundation runs at
+`--batch-size 8`.
 
 ## Use Foundation For Profiles
 

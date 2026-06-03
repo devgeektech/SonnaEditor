@@ -14,9 +14,13 @@ Supported training modes:
 from __future__ import annotations
 
 import argparse
+import gc
+import logging
 import os
 from datetime import datetime, timezone
 from pathlib import Path
+
+import torch
 
 from sonna_editor import config
 from sonna_editor.foundation import (
@@ -26,6 +30,8 @@ from sonna_editor.foundation import (
 )
 from sonna_editor.training.image_foundation import train_image_foundation
 from sonna_editor.training.profile_runner import train_profile
+
+log = logging.getLogger(__name__)
 
 
 def _parse_args() -> argparse.Namespace:
@@ -79,7 +85,7 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--version-stem", default=None)
     parser.add_argument("--workers", type=int, default=4)
     parser.add_argument("--max-epochs", type=int, default=100)
-    parser.add_argument("--batch-size", type=int, default=16)
+    parser.add_argument("--batch-size", type=int, default=8)
     parser.add_argument("--image-resolution", type=int, default=config.IMAGE_RESOLUTION)
     parser.add_argument("--val-ratio", type=float, default=0.107)
     parser.add_argument("--test-ratio", type=float, default=0.139)
@@ -96,6 +102,76 @@ def _parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--init-git", action="store_true")
     return parser.parse_args()
+
+
+def _batch_size_attempts(initial_batch_size: int) -> list[int]:
+    if initial_batch_size < 1:
+        raise ValueError("--batch-size must be >= 1")
+    attempts: list[int] = []
+    batch_size = initial_batch_size
+    while batch_size >= 1:
+        attempts.append(batch_size)
+        if batch_size == 1:
+            break
+        batch_size = max(1, batch_size // 2)
+    return attempts
+
+
+def _is_cuda_memory_failure(exc: Exception) -> bool:
+    current: BaseException | None = exc
+    seen: set[int] = set()
+    while current is not None and id(current) not in seen:
+        seen.add(id(current))
+        message = str(current).lower()
+        if (
+            "cuda" in message
+            and (
+                "out of memory" in message
+                or "cudnn_status_execution_failed_cudart" in message
+                or "cudaerrormemoryallocation" in message
+            )
+        ):
+            return True
+        current = current.__cause__ or current.__context__
+    return False
+
+
+def _clear_cuda_after_failure() -> None:
+    gc.collect()
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+        try:
+            torch.cuda.ipc_collect()
+        except RuntimeError:
+            pass
+
+
+def _train_profile_with_cuda_oom_retry(train_args: argparse.Namespace) -> dict:
+    requested_batch_size = int(train_args.batch_size)
+    last_error: Exception | None = None
+    for attempt_batch_size in _batch_size_attempts(requested_batch_size):
+        train_args.batch_size = attempt_batch_size
+        if attempt_batch_size != requested_batch_size:
+            log.warning(
+                "Retrying foundation training with --batch-size %d after CUDA memory failure",
+                attempt_batch_size,
+            )
+        try:
+            summary = train_profile(train_args)
+            if attempt_batch_size != requested_batch_size:
+                summary["auto_reduced_batch_size_from"] = requested_batch_size
+                summary["auto_reduced_batch_size_to"] = attempt_batch_size
+            return summary
+        except Exception as exc:
+            if not _is_cuda_memory_failure(exc) or attempt_batch_size == 1:
+                raise
+            last_error = exc
+            log.warning(
+                "CUDA memory failure at --batch-size %d. Clearing CUDA cache and retrying.",
+                attempt_batch_size,
+            )
+            _clear_cuda_after_failure()
+    raise RuntimeError("Foundation training failed after reducing batch size to 1") from last_error
 
 
 def _active_foundation_or_none() -> Path | None:
@@ -223,7 +299,7 @@ def main() -> None:
             on_epoch_complete=None,
             cancel_event=None,
         )
-        summary = train_profile(train_args)
+        summary = _train_profile_with_cuda_oom_retry(train_args)
     final_model = summary.get("final_model")
     if not final_model:
         raise RuntimeError("Training did not produce a final model checkpoint")
