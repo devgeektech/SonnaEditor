@@ -25,15 +25,16 @@ import threading
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from pathlib import Path
 from typing import Any, Literal, Optional
+
+from sonna_editor import config
 
 logger = logging.getLogger(__name__)
 
 
 # ── Paths ──────────────────────────────────────────────────────────────────
 
-JOBS_DIR = Path.home() / ".saha" / "jobs"
+JOBS_DIR = config.JOBS_DIR
 PIDFILE = JOBS_DIR / ".serve.pid"
 
 # Persist every Nth photo / epoch update during a running job.
@@ -211,7 +212,7 @@ def is_terminal(state: JobState) -> bool:
 # ── Persistence ────────────────────────────────────────────────────────────
 
 def persist(record: JobRecord) -> None:
-    """Atomically write the record's snapshot to ~/.saha/jobs/<job_id>.json."""
+    """Atomically write the record's snapshot to .saha/jobs/<job_id>.json."""
     JOBS_DIR.mkdir(parents=True, exist_ok=True)
     with record.lock:
         snapshot = record.snapshot_dict()

@@ -25,9 +25,13 @@ sidecars for new shoots.
 - Inference stabilises RGB tone-curve endpoints before XMP write so
   neutral white highlights do not shift pink/red from channel-curve endpoint
   drift.
-- Foundation model training is CLI-only through `scripts/train_foundation_model.py`.
-  The promoted checkpoint lives in a separate private foundation repo and is
-  used as the base for Personal AI and Lite profiles.
+- Foundation model training is CLI-only. `scripts/train_foundation_model.py`
+  supports both parameter-supervised training from real Lightroom labels and
+  image-supervised MIT-Adobe FiveK-style training from `RAW/DNG -> expert TIFF`.
+  The TIFF path learns foundation backbone weights, not fake XMP labels.
+- Foundation runs are versioned and warm-start from the active foundation
+  checkpoint by default. A successful run promotes the new checkpoint as active
+  while keeping older checkpoints available for fallback.
 
 ## Quick Start
 
@@ -38,6 +42,13 @@ uv run python scripts/verify_environment.py
 
 For Mac setup from a clean machine through frontend/CLI operation, see
 `MAC_SETUP.md`.
+
+Runtime working folders are now created automatically from the project root on
+backend or CLI startup, including `data/training_sources/`, `data/raw/`,
+`data/datasets/`, `v1_learning/`, and `.saha/`.
+That keeps a fresh clone usable even though those directories are gitignored.
+The default foundation workspace also stays inside the repo now:
+`data/training_workspace/` and `data/foundation_repo/`.
 
 On Windows/Linux x86_64, `uv sync --extra dev` installs CUDA-enabled PyTorch
 from the pinned PyTorch CUDA 12.8 index. If no NVIDIA GPU is available, the app
@@ -84,6 +95,12 @@ Preset + survey creates a Lite profile, but it is not supervised training from
 photos. See `CLI_COMMANDS.md` for operator commands and
 `FOUNDATION_TRAINING.md` for hidden foundation-model training.
 
+Local learning photos should be kept in separate child folders under
+`data/training_sources/`, for example `sonna_personal_001/raw_xmp/` for
+RAW+XMP profile data, and `fivek_expert_c/raw_dng/` plus
+`fivek_expert_c/expert_tiff/` for future FiveK image-pair foundation data. The
+whole `data/` tree is gitignored, so those photos stay local.
+
 ## Lite Profiles
 
 Lite starts from the configured foundation checkpoint, a Lightroom preset, and
@@ -105,7 +122,7 @@ sidecar and copied preset/survey metadata match the current flow.
 
 Only profiles placed in `v1_learning/` are scanned by the UI. The foundation
 checkpoint lives in the separate foundation repo configured by
-`SONNA_FOUNDATION_REPO` or the default sibling folder `SonnaEditorFoundation`.
+`SONNA_FOUNDATION_REPO` or the default repo-local `data/foundation_repo/`.
 
 Direct preset execution is also available through `scripts/process_shoot_preset.py`
 when you only want preset-derived XMP files and do not need a selectable model

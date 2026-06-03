@@ -9,7 +9,15 @@ valid for development, tests, metadata work, and small inference runs.
 import platform
 import sys
 
-from sonna_editor.config import DNG_CONVERTER_ENV_VAR, DNG_CONVERTER_PATH
+from sonna_editor.config import (
+    APP_STATE_DIR,
+    CHECKPOINTS_DIR,
+    DNG_CONVERTER_ENV_VAR,
+    DNG_CONVERTER_PATH,
+    RAW_DIR,
+    TRAINING_SOURCES_DIR,
+    ensure_runtime_directories,
+)
 from sonna_editor.runtime import preferred_torch_device
 
 
@@ -25,6 +33,7 @@ def check(label: str, ok: bool, detail: str = "") -> bool:
 
 def main() -> int:
     """Run import, device, and optional external-tool checks for this host."""
+    ensure_runtime_directories()
     print("\n=== Sonna Editor — Environment Verification ===\n")
     results = []
 
@@ -39,6 +48,10 @@ def main() -> int:
     # Platform
     print(f"  [INFO] Platform: {platform.platform()}")
     print(f"  [INFO] Architecture: {platform.machine()}")
+    print(f"  [INFO] Project root data dir: {RAW_DIR}")
+    print(f"  [INFO] Training source root: {TRAINING_SOURCES_DIR}")
+    print(f"  [INFO] Project root checkpoints dir: {CHECKPOINTS_DIR}")
+    print(f"  [INFO] App state dir: {APP_STATE_DIR}")
 
     # PyTorch
     try:

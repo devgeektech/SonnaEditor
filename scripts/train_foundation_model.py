@@ -5,6 +5,10 @@ This is the canonical path for creating the base checkpoint used by Lite
 profile creation. It is intentionally separate from Personal AI profile
 training: the output is promoted to the configured foundation repo, not to the
 frontend profile directory.
+
+Supported training modes:
+- parameter-supervised: RAW+XMP or prepared parquet splits -> Lightroom sliders
+- image-supervised: RAW/DNG/image inputs -> edited TIFF targets
 """
 
 from __future__ import annotations
@@ -18,13 +22,18 @@ from sonna_editor import config
 from sonna_editor.foundation import (
     ensure_foundation_repo_layout,
     promote_foundation_checkpoint,
+    resolve_foundation_checkpoint,
 )
+from sonna_editor.training.image_foundation import train_image_foundation
 from sonna_editor.training.profile_runner import train_profile
 
 
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Train the foundation checkpoint from RAW+XMP data or prepared splits."
+        description=(
+            "Train the foundation checkpoint from RAW+XMP data, prepared splits, "
+            "or paired RAW/DNG -> edited TIFF images."
+        )
     )
     source = parser.add_mutually_exclusive_group(required=True)
     source.add_argument(
@@ -36,6 +45,16 @@ def _parse_args() -> argparse.Namespace:
         "--splits-dir",
         type=Path,
         help="Existing directory containing train.parquet, val.parquet, and test.parquet.",
+    )
+    source.add_argument(
+        "--raw-image-dir",
+        type=Path,
+        help="Folder containing RAW/DNG/image inputs for image-to-image foundation training.",
+    )
+    parser.add_argument(
+        "--target-tiff-dir",
+        type=Path,
+        help="Folder containing edited TIFF targets matched to --raw-image-dir by file stem.",
     )
     parser.add_argument(
         "--workspace-dir",
@@ -61,10 +80,29 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--workers", type=int, default=4)
     parser.add_argument("--max-epochs", type=int, default=100)
     parser.add_argument("--batch-size", type=int, default=16)
+    parser.add_argument("--image-resolution", type=int, default=config.IMAGE_RESOLUTION)
     parser.add_argument("--val-ratio", type=float, default=0.107)
     parser.add_argument("--test-ratio", type=float, default=0.139)
+    parser.add_argument("--l1-weight", type=float, default=1.0)
+    parser.add_argument("--ssim-weight", type=float, default=0.2)
+    parser.add_argument(
+        "--no-warm-start",
+        action="store_true",
+        help=(
+            "Start from pretrained/default weights instead of the active foundation "
+            "checkpoint. By default each foundation run warm-starts from the active "
+            "checkpoint and writes a new versioned checkpoint."
+        ),
+    )
     parser.add_argument("--init-git", action="store_true")
     return parser.parse_args()
+
+
+def _active_foundation_or_none() -> Path | None:
+    try:
+        return resolve_foundation_checkpoint()
+    except FileNotFoundError:
+        return None
 
 
 def _timestamp() -> str:
@@ -116,6 +154,10 @@ def _resolve_splits(args: argparse.Namespace, run_dir: Path) -> Path:
 
 def main() -> None:
     args = _parse_args()
+    if args.raw_image_dir is not None and args.target_tiff_dir is None:
+        raise SystemExit("--target-tiff-dir is required with --raw-image-dir")
+    if args.raw_image_dir is None and args.target_tiff_dir is not None:
+        raise SystemExit("--target-tiff-dir can only be used with --raw-image-dir")
 
     foundation_repo = args.foundation_repo.expanduser()
     config.FOUNDATION_REPO_DIR = foundation_repo
@@ -127,42 +169,61 @@ def main() -> None:
     run_dir = workspace_dir / "foundation_runs" / run_name
     training_dir = run_dir / "training"
     training_dir.mkdir(parents=True, exist_ok=True)
+    base_foundation = None if args.no_warm_start else _active_foundation_or_none()
 
-    splits_dir = _resolve_splits(args, run_dir)
+    if args.raw_image_dir is not None:
+        summary = train_image_foundation(
+            source_dir=args.raw_image_dir,
+            target_dir=args.target_tiff_dir,
+            output_dir=training_dir,
+            profile_name=args.profile_name,
+            max_epochs=args.max_epochs,
+            batch_size=args.batch_size,
+            workers=args.workers,
+            image_resolution=args.image_resolution,
+            val_ratio=args.val_ratio,
+            test_ratio=args.test_ratio,
+            l1_weight=args.l1_weight,
+            ssim_weight=args.ssim_weight,
+            base_model_checkpoint=base_foundation,
+        )
+    else:
+        splits_dir = _resolve_splits(args, run_dir)
 
-    train_args = argparse.Namespace(
-        train_parquet=splits_dir / "train.parquet",
-        val_parquet=splits_dir / "val.parquet",
-        test_parquet=splits_dir / "test.parquet",
-        output_dir=training_dir,
-        max_epochs=args.max_epochs,
-        batch_size=args.batch_size,
-        lr=1e-4,
-        weight_decay=1e-4,
-        freeze_backbone_epochs=3,
-        num_workers=args.workers,
-        resume_from_checkpoint=None,
-        slider_set_version=config.CURRENT_SLIDER_SET_VERSION,
-        no_wb_metadata_skip=False,
-        no_target_prior_init=False,
-        image_resolution=config.IMAGE_RESOLUTION,
-        temperature_weight=4.0,
-        tint_weight=4.0,
-        exposure_weight=5.0,
-        temperature_bucket_loss_weight=0.15,
-        tint_bucket_loss_weight=2.0,
-        spread_loss_weight=None,
-        exposure_scene_loss_weight=4.0,
-        sign_wrong_penalty_weight=0.2,
-        profile_name=args.profile_name,
-        publish_dir=config.CHECKPOINTS_DIR,
-        publish_version=None,
-        no_publish=True,
-        enable_progress_bar=True,
-        on_epoch_complete=None,
-        cancel_event=None,
-    )
-    summary = train_profile(train_args)
+        train_args = argparse.Namespace(
+            train_parquet=splits_dir / "train.parquet",
+            val_parquet=splits_dir / "val.parquet",
+            test_parquet=splits_dir / "test.parquet",
+            output_dir=training_dir,
+            max_epochs=args.max_epochs,
+            batch_size=args.batch_size,
+            lr=1e-4,
+            weight_decay=1e-4,
+            freeze_backbone_epochs=3,
+            num_workers=args.workers,
+            resume_from_checkpoint=None,
+            base_model_checkpoint=base_foundation,
+            slider_set_version=config.CURRENT_SLIDER_SET_VERSION,
+            no_wb_metadata_skip=False,
+            no_target_prior_init=False,
+            image_resolution=args.image_resolution,
+            temperature_weight=4.0,
+            tint_weight=4.0,
+            exposure_weight=5.0,
+            temperature_bucket_loss_weight=0.15,
+            tint_bucket_loss_weight=2.0,
+            spread_loss_weight=None,
+            exposure_scene_loss_weight=4.0,
+            sign_wrong_penalty_weight=0.2,
+            profile_name=args.profile_name,
+            publish_dir=config.CHECKPOINTS_DIR,
+            publish_version=None,
+            no_publish=True,
+            enable_progress_bar=True,
+            on_epoch_complete=None,
+            cancel_event=None,
+        )
+        summary = train_profile(train_args)
     final_model = summary.get("final_model")
     if not final_model:
         raise RuntimeError("Training did not produce a final model checkpoint")

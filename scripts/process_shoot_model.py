@@ -8,12 +8,18 @@ import logging
 import sys
 from pathlib import Path
 
+from sonna_editor import config
+
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
 
-_DEFAULT_MODEL = Path(__file__).parent.parent / "v1_learning" / "model-v1.0.1.ckpt"
+
+def _latest_published_model() -> Path | None:
+    candidates = sorted(config.CHECKPOINTS_DIR.glob("model-v*.ckpt"))
+    return candidates[-1] if candidates else None
 
 
 def main() -> None:
+    config.ensure_runtime_directories()
     parser = argparse.ArgumentParser(
         description=(
             "Run the trained SonnaEditor model on a folder of RAW files. "
@@ -22,8 +28,15 @@ def main() -> None:
     )
     parser.add_argument("--input-dir", required=True, type=Path,
                         help="Folder containing RAW files.")
-    parser.add_argument("--model-path", type=Path, default=_DEFAULT_MODEL,
-                        help=f"Path to trained checkpoint (default: {_DEFAULT_MODEL}).")
+    parser.add_argument(
+        "--model-path",
+        type=Path,
+        default=None,
+        help=(
+            "Path to trained checkpoint. Defaults to the newest model-v*.ckpt "
+            f"under {config.CHECKPOINTS_DIR}."
+        ),
+    )
     parser.add_argument("--output-dir", type=Path, default=None,
                         help="Override: write XMPs to this directory instead of next to each RAW.")
     parser.add_argument("--batch-size", type=int, default=32,
@@ -42,9 +55,19 @@ def main() -> None:
                         action="store_false", default=True,
                         help="Skip writing sonna_predictions.json (disables continuous learning capture).")
     args = parser.parse_args()
+    if args.model_path is None:
+        args.model_path = _latest_published_model()
 
     if not args.input_dir.is_dir():
         print(f"Error: --input-dir '{args.input_dir}' does not exist.", file=sys.stderr)
+        sys.exit(1)
+    if args.model_path is None:
+        print(
+            "Error: no published model checkpoint was found. "
+            f"Train or publish a profile into '{config.CHECKPOINTS_DIR}' "
+            "or pass --model-path explicitly.",
+            file=sys.stderr,
+        )
         sys.exit(1)
     if not args.model_path.exists():
         print(f"Error: --model-path '{args.model_path}' does not exist.", file=sys.stderr)

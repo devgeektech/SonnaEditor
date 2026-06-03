@@ -1,7 +1,7 @@
 """POST /api/finetune — wraps finetune_model() as an async job.
 
-Output checkpoint goes under ~/.saha/finetune_runs/<job_id>/. Promotion is
-deliberately NOT automatic — after the job completes, the user must call
+Scratch parquet output goes under .saha/finetune_runs/<job_id> at the project
+root. Promotion is deliberately NOT automatic — after the job completes, the user must call
 /api/profiles/{new_id}/activate to switch to it. This matches the Phase 5
 "no auto-trigger" rule.
 """
@@ -26,7 +26,7 @@ from sonna_editor.finetune import retrain as finetune_retrain
 router = APIRouter()
 _logger = logging.getLogger(__name__)
 
-_FINETUNE_RUNS_DIR = Path.home() / ".saha" / "finetune_runs"
+_FINETUNE_RUNS_DIR = config.FINETUNE_RUNS_DIR
 
 
 def _resolve_profile_path(profile_id: str) -> Optional[Path]:
@@ -76,7 +76,7 @@ async def _run_finetune_job(
         # Output the new checkpoint into config.CHECKPOINTS_DIR so /api/profiles
         # discovers it without any change to the discovery code (Phase 6 will
         # replace this with a proper profile registry). The intermediate
-        # finetune parquet stays under ~/.saha/finetune_runs/<job_id>/ since
+        # finetune parquet stays under .saha/finetune_runs/<job_id>/ since
         # it's job-scoped scratch data.
         result = await asyncio.to_thread(
             finetune_retrain.finetune_model,

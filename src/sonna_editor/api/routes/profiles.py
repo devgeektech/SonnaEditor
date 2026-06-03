@@ -44,8 +44,8 @@ _logger = logging.getLogger(__name__)
 # don't match — they are training artefacts, not user-facing profiles.
 _VERSION_RE = re.compile(r"^model-v(\d+)\.(\d+)\.(\d+)(?:-(\w+))?\.ckpt$")
 
-_ACTIVE_PROFILE_FILE = Path.home() / ".saha" / "active_profile.txt"
-_PROFILE_TRAINING_RUNS_DIR = Path.home() / ".saha" / "profile_training_runs"
+_ACTIVE_PROFILE_FILE = config.ACTIVE_PROFILE_PATH
+_PROFILE_TRAINING_RUNS_DIR = config.PROFILE_TRAINING_RUNS_DIR
 
 # Used as Profile.name when a ckpt's sidecar lacks display_name — covers the
 # v1.x Mode A production ckpts whose sidecars predate the field. Mode B and

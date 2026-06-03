@@ -1,4 +1,4 @@
-"""Fixtures for API route tests — isolates per-test ~/.saha state and CHECKPOINTS_DIR."""
+"""Fixtures for API route tests — isolates per-test .saha state and CHECKPOINTS_DIR."""
 
 from __future__ import annotations
 

@@ -367,6 +367,39 @@ def _warm_start_model_from_checkpoint(
     and skip categorical embedding tables while copying shared visual/metadata
     layers and heads.
     """
+    from sonna_editor.foundation import is_image_foundation_checkpoint
+
+    if is_image_foundation_checkpoint(checkpoint_path):
+        log.info("Warm-starting from image-to-image foundation backbone")
+        model = model_cls(
+            registry=registry,
+            freeze_backbone=True,
+            _pretrained_backbone=False,
+            arch_version=3,
+            slider_set_version=slider_set_version,
+            use_wb_metadata_skip=True,
+        )
+        ckpt = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
+        state: dict[str, torch.Tensor] = ckpt["model_state"]
+        current_state = model.state_dict()
+        filtered_state = {
+            key: value
+            for key, value in state.items()
+            if key.startswith("backbone_features.")
+            and key in current_state
+            and current_state[key].shape == value.shape
+        }
+        missing, unexpected = model.load_state_dict(filtered_state, strict=False)
+        log.info(
+            "Warm-start copied %d image-foundation backbone tensors from %s; "
+            "skipped %d missing and %d unexpected tensors",
+            len(filtered_state),
+            checkpoint_path,
+            len(missing),
+            len(unexpected),
+        )
+        return model
+
     ckpt = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
     state: dict[str, torch.Tensor] = ckpt["model_state"]
     arch_config = ckpt.get("arch_config", {}) or {}
@@ -463,6 +496,7 @@ def _publish_profile_checkpoint(
 
 def train_profile(args: argparse.Namespace) -> dict:
     """Train and optionally publish a Sonna profile from parsed arguments."""
+    config.ensure_runtime_directories()
     args.output_dir.mkdir(parents=True, exist_ok=True)
     _apply_training_overrides(args)
 

@@ -10,7 +10,7 @@
 - Recent committed history in this checkout: `aac360a feat: Enhance dataset building and training scripts` on top of four earlier commits.
 - Training/profile caches were intentionally cleared for a fresh dataset reset.
 - Cleared repo-local generated artifacts: `v1_learning\dataset`, `data\models`, `data\parquet`, `data\captures`, `data\thumbnails`, `data\audits`, `data\dbg`, `data\raw\sonna_training`, `.pytest_cache`, `.ruff_cache`.
-- Cleared frontend active-profile pointer: `~\.saha\active_profile.txt`.
+- Cleared frontend active-profile pointer: `.saha\active_profile.txt`.
 - `v1_learning\` is currently empty; there is no guaranteed frontend-visible profile until a fresh Personal AI profile is trained or a checkpoint is intentionally published.
 
 ## Environment
@@ -37,6 +37,12 @@ The earlier `GPU available: False` training issue was caused by a CPU-only PyTor
 - A fresh scene-stats candidate was trained at `data/models/sonna-v2-scene-stats-run01/`, but it was rejected for frontend use. It briefly published as `v1_learning/model-v2.0.1.*`, then those frontend-visible copies were removed after collapse analysis showed worse prediction spread than v2.0.0.
 
 ## What Changed This Session
+
+- Moved transient app state to repo-local `.saha\` instead of `~\.saha\`. Active profile, recent folders, queued job snapshots, Personal AI training workspaces, and fine-tune scratch runs now resolve from the project root by default.
+- Added `config.ensure_runtime_directories()` and wired it into backend/server and CLI entrypoints so a fresh clone auto-creates `data\training_sources\`, `data\raw\`, `data\raw\sonna_training\`, `data\datasets\`, `data\dng\`, `data\parquet\`, `data\captures\`, `data\audits\`, `data\dbg\`, `v1_learning\`, and `.saha\` before use.
+- Split local learning inputs from generated outputs. Source photos now belong under separate gitignored child folders such as `data\training_sources\sonna_personal_001\raw_xmp\`; future FiveK image-pair inputs should use folders such as `data\training_sources\fivek_expert_c\raw_dng\` and `data\training_sources\fivek_expert_c\expert_tiff\`. Generated Parquet/checkpoint outputs remain under `data\training_workspace\` and `data\foundation_repo\`.
+- Moved the default training workspace and hidden foundation repo into the project tree as well. `SONNA_TRAINING_WORKSPACE` now defaults to `data\training_workspace\`, and `SONNA_FOUNDATION_REPO` defaults to `data\foundation_repo\`. Both are auto-created on startup unless the operator overrides them.
+- Updated `scripts\process_shoot_model.py` so the default model path resolves to the newest published `v1_learning\model-v*.ckpt` instead of a stale hardcoded legacy checkpoint path. If no published profile exists yet, the CLI now fails with a clear instruction.
 
 - Decoupled Lite profile creation from active Personal AI profiles. `POST /api/profiles/lite` now resolves the configured foundation checkpoint and passes that to the Lite checkpoint builder.
 - Added `src/sonna_editor/foundation.py` helpers for creating the separate foundation repo layout, resolving the active foundation checkpoint from env/manifest/fallback, and promoting trained checkpoints into that repo.
@@ -83,6 +89,9 @@ The earlier `GPU available: False` training issue was caused by a CPU-only PyTor
 - Renamed `TRAINING_COMMANDS.md` to `CLI_COMMANDS.md` and created `FOUNDATION_TRAINING.md` for foundation train, resume, retrain, promotion, and FiveK guidance.
 - Updated frontend Personal AI backend flow so RAW+XMP profile training resolves the configured hidden foundation checkpoint and warm-starts model weights from it before publishing a user-facing checkpoint into `v1_learning/`. Warm-start now uses `base_model_checkpoint` rather than Lightning resume state, keeps the new training registry, and skips categorical embedding-table copies.
 - Verified MIT-Adobe FiveK is suitable foundation material, with the caveat that it is 5,000 DNG inputs plus five expert renditions/catalog edits, not 25,000 independent RAW inputs. Use one expert target style first.
+- Implemented the TIFF/image foundation path. `scripts\train_foundation_model.py` now accepts `--raw-image-dir` plus `--target-tiff-dir` for paired `RAW/DNG/image -> edited TIFF` training, saving an `image_to_image_v1` checkpoint in the foundation repo. Personal AI warm-start and Lite profile creation can copy the image-foundation ConvNeXt backbone into a fresh `SonnaEditor`; Mode A remains RAW+XMP slider regression.
+- Updated foundation training semantics so each new foundation run warm-starts from the active foundation checkpoint by default, writes a new versioned checkpoint, promotes it as the active default, and keeps previous checkpoints untouched. If the active checkpoint file is removed after a bad run, resolution falls back to the newest remaining checkpoint in the foundation repo.
+- Adjusted Lite/preset auto-exposure for low-light images. Dark scenes with no near-clipped highlights now receive a stronger positive exposure floor, so event frames like the sofa/table example lift closer to the Imagen-style reference instead of staying slightly underexposed. WB remains conservative by default.
 - Guarded Lightning metric logging in `src/sonna_editor/training/module.py` so standalone `training_step()` unit tests no longer emit `self.log()` warnings without a Trainer.
 
 ## Verification
@@ -185,6 +194,6 @@ The earlier `GPU available: False` training issue was caused by a CPU-only PyTor
 
 Add the fresh RAW+XMP dataset, start the backend/Electron app, and create a Personal AI profile from the frontend. Use Lite profile creation from the frontend after a foundation checkpoint is configured in `SONNA_FOUNDATION_CHECKPOINT`, `SONNA_FOUNDATION_REPO/foundation_manifest.json`, or `SONNA_FOUNDATION_REPO/foundation.ckpt`.
 
-For foundation model work, use `scripts\train_foundation_model.py` so the checkpoint is promoted to the separate foundation repo and stays out of the frontend profile list.
+For current parameter-supervised foundation model work, use `scripts\train_foundation_model.py --raw-xmp-dir ...` or `--splits-dir ...` so the checkpoint is promoted to the separate foundation repo and stays out of the frontend profile list. It will warm-start from the active foundation checkpoint unless `--no-warm-start` is supplied. For MIT-Adobe FiveK, use `scripts\train_foundation_model.py --raw-image-dir ... --target-tiff-dir ...`; do not push FiveK TIFF targets through the existing RAW+XMP pipeline.
 
 Before relying on full-suite green status, restore the local fixture files under `tests/fixtures/` or mark those fixture-dependent tests as integration/local-data tests, then rerun `uv run pytest tests`.

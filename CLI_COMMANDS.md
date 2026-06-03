@@ -10,10 +10,11 @@ training, resume, and retrain commands live in `FOUNDATION_TRAINING.md`.
 - PyTorch is `2.11.0+cu128`; CUDA is verified on the local NVIDIA GeForce RTX 3050.
 - `uv sync --extra dev` now preserves CUDA PyTorch on Windows/Linux x86_64 through the pinned PyTorch CUDA 12.8 index in `pyproject.toml` / `uv.lock`.
 - Training/profile caches were intentionally cleared so a fresh dataset can be added.
-- `v1_learning\dataset\`, `data\models\`, `data\parquet\`, `data\captures\`, `data\thumbnails\`, `data\audits\`, `data\dbg\`, `data\raw\sonna_training\`, `.pytest_cache`, `.ruff_cache`, and `~\.saha\active_profile.txt` were removed or emptied.
+- `v1_learning\dataset\`, `data\models\`, `data\parquet\`, `data\captures\`, `data\thumbnails\`, `data\audits\`, `data\dbg\`, `data\raw\sonna_training\`, `.pytest_cache`, `.ruff_cache`, and `.saha\active_profile.txt` were removed or emptied.
 - There is currently no guaranteed local frontend-visible checkpoint in `v1_learning\`. Add fresh RAW+XMP data and train a Personal AI profile from the UI, or configure the hidden foundation checkpoint using `FOUNDATION_TRAINING.md`.
+- Runtime directories are now created automatically from the project root. A fresh clone will bootstrap repo-local `data\training_sources\`, `data\raw\`, `data\raw\sonna_training\`, `v1_learning\`, and `.saha\` on backend or CLI startup.
 - Lite profile creation now uses the configured foundation checkpoint. It does not depend on whichever Personal AI profile is active in the frontend.
-- Raw training photos should live outside this app repo, for example `D:\SonnaTraining\EditedRawWithXmp\` on Windows or `~/SonnaEditorTraining/raw/` on Mac. Generated datasets and training runs can live in `SONNA_TRAINING_WORKSPACE`.
+- Raw training photos should live in separate repo-local child folders under `data/training_sources/` by default. Generated datasets and foundation runs default to `data/training_workspace/` unless you override `SONNA_TRAINING_WORKSPACE`.
 - `scripts\train_profile.py` now logs default recipe values as `Training recipe ...`; only values explicitly supplied as CLI flags are logged as `Override ...`.
 - Fresh training now initialises output-head biases from the training-set target medians. With the current split those priors are Exposure2012=0.22, Temperature=5191K, Tint=5. WB residual heads start at zero when AsShot WB skip is enabled.
 - Default image augmentation is geometry-only. Photometric jitter is disabled by default because changing input brightness/colour without changing XMP labels adds noise to Exposure and white-balance learning.
@@ -26,8 +27,22 @@ RAW+XMP data preparation and foundation training are not the same thing.
 
 - **RAW+XMP dataset build:** reads edited photos, extracts previews/metadata/slider labels, and writes Parquet splits. This is just data preparation.
 - **Personal AI profile training:** trains from those splits, warm-starting from the configured hidden foundation checkpoint in the frontend flow, and publishes a frontend-visible profile into `v1_learning/`.
-- **Foundation training:** trains from the same kind of supervised RAW+XMP labels, but promotes the final checkpoint into a separate foundation repo. It does not publish to `v1_learning/`.
+- **Current parameter-supervised foundation training:** trains from real Lightroom
+  slider labels (`RAW+XMP` or catalog-derived settings), but promotes the final
+  checkpoint into a separate foundation repo. It does not publish to
+  `v1_learning/`.
+- **TIFF/image foundation training:** uses paired images
+  (`RAW/DNG -> expert TIFF`) to learn general photographic enhancement. Do not
+  convert FiveK TIFF outputs into fake XMP labels.
 - **Lite profile creation:** does not train from photos. It combines the configured foundation checkpoint with a preset and survey answers.
+
+Foundation runs are versioned. By default a new foundation run warm-starts from
+the active foundation checkpoint, trains on the new dataset, saves a new
+checkpoint under `data/foundation_repo/checkpoints/`, and makes that new
+checkpoint active in `foundation_manifest.json`. Existing checkpoints are not
+overwritten. If a new run is bad, remove that new `.ckpt`; the resolver falls
+back to the newest remaining checkpoint. Use `--no-warm-start` only for a
+deliberate scratch foundation run.
 
 ## Project Flow
 
@@ -36,6 +51,16 @@ RAW+XMP data preparation and foundation training are not the same thing.
    - **Lightroom catalog:** edited photos in a `.lrcat`; no exported XMP required because slider targets are read from the catalog.
    - **Fine-tune captures:** previous Saha predictions plus final user-edited XMPs.
    - **Lite preset:** a foundation checkpoint + Lightroom preset + style survey can create an initial checkpoint, but this is not supervised model training from photos.
+
+   Keep each source in its own folder so FiveK image-pair data, Sonna Personal
+   AI runs, and future learning sets do not get mixed:
+
+   ```text
+   data/training_sources/fivek_expert_c/raw_dng/
+   data/training_sources/fivek_expert_c/expert_tiff/
+   data/training_sources/sonna_personal_001/raw_xmp/
+   data/training_sources/sonna_personal_002/raw_xmp/
+   ```
 
 2. Build the training dataset.
    - RAW + XMP path: run `scripts/build_dataset.py`.
@@ -66,17 +91,18 @@ RAW+XMP data preparation and foundation training are not the same thing.
 
 - **Personal AI profile:** built from RAW files plus matching Lightroom XMP sidecars. This is the normal profile-training path for operators and is now started from the Saha frontend. The backend resolves the configured foundation checkpoint, uses the same dataset builder and `sonna_editor.training.profile_runner.train_profile()` recipe as the CLI, warm-starts from that foundation, then publishes a versioned profile into `v1_learning/`.
 - **Lite profile:** built from the configured foundation checkpoint plus a Lightroom preset and the six-question Lite survey. It does not depend on an active Personal AI profile. The first Lite processing pass dynamically adjusts Exposure, Temperature, and Tint because the preset owns the look sliders; all six survey answers are still stored in the profile package for calibration metadata and future fine-tuning.
-- **Foundation model:** CLI-only and hidden from the UI. Use `FOUNDATION_TRAINING.md` for the complete train, resume, retrain, promotion, and FiveK guidance.
+- **Foundation model:** CLI-only and hidden from the UI. Use `FOUNDATION_TRAINING.md` for the complete train, resume, retrain, promotion, and FiveK guidance. The foundation CLI supports both parameter-supervised RAW+XMP training and image-supervised TIFF training.
 
 ## Important Paths
 
 | Purpose | Path |
 |---|---|
-| Source training RAW + XMP folder | Any absolute folder outside the app repo, for example `D:\SonnaTraining\EditedRawWithXmp\` or `~/SonnaEditorTraining/raw/` |
+| Source training RAW + XMP folder | Separate gitignored source folders, for example `data/training_sources/sonna_personal_001/raw_xmp/` |
+| FiveK image-pair source folders | `data/training_sources/fivek_expert_c/raw_dng/` and `data/training_sources/fivek_expert_c/expert_tiff/`; image-to-image foundation training only |
 | Source Lightroom catalog | Any `.lrcat` path, opened read-only |
 | Personal AI dataset output root | `v1_learning/dataset/` or frontend job workspace |
-| Foundation training workspace | `SONNA_TRAINING_WORKSPACE` or `~/SonnaEditorTraining` |
-| Foundation repo | `SONNA_FOUNDATION_REPO` or sibling folder `SonnaEditorFoundation` |
+| Foundation training workspace | `SONNA_TRAINING_WORKSPACE` or `data/training_workspace/` |
+| Foundation repo | `SONNA_FOUNDATION_REPO` or `data/foundation_repo/` |
 | Foundation manifest | `<foundation_repo>/foundation_manifest.json` |
 | Foundation checkpoint path | `<foundation_repo>/checkpoints/<version>.ckpt` |
 | Personal AI training run outputs | `data/models/<run_name>/` or frontend job workspace |
@@ -85,6 +111,7 @@ RAW+XMP data preparation and foundation training are not the same thing.
 | Frontend-visible profile directory | `v1_learning/` |
 | Frontend-visible checkpoint pattern | `v1_learning/model-vX.Y.Z.ckpt` |
 | Frontend-visible sidecar pattern | `v1_learning/model-vX.Y.Z.json` |
+| Training source root | `data/training_sources/` | Local RAW/XMP learning inputs only; keep one child folder per dataset/run. |
 | Generated data/artifacts | `data/` | Created by dataset/train/audit scripts; keep this directory gitignored. |
 | Inference output XMP path | Next to RAWs when `write_xmp_in_place=True` |
 | Prediction capture sidecar | `<output_dir>/sonna_predictions.json` or shoot folder output |
@@ -97,6 +124,7 @@ RAW+XMP data preparation and foundation training are not the same thing.
 | RAW files only, never edited | No | Nothing. RAW pixels/metadata are inputs only, not labels. | Not supported |
 | RAW files + matching `.xmp` sidecars | Yes | Lightroom sidecar slider values | `scripts/build_dataset.py` then `scripts/train_profile.py` |
 | Lightroom Classic catalog `.lrcat` + accessible RAW files | Yes | Catalog develop-settings blobs | `scripts/build_dataset_from_catalog.py` then `scripts/train_profile.py` |
+| FiveK DNG + expert TIFF pairs | Foundation only | Edited TIFF image target, not slider labels | `scripts/train_foundation_model.py --raw-image-dir ... --target-tiff-dir ...` |
 | Lightroom preset only | Not supervised training | Preset supplies fixed baseline values | `scripts/process_shoot_preset.py` |
 | Foundation checkpoint + preset + style survey | Creates Lite initial profile | Foundation checkpoint supplies reusable model shell; preset + survey supply style baseline; initial processing adds per-photo auto corrections | `scripts/build_mode_b_checkpoint.py` |
 | New shoot processed by Saha, then user edits XMPs | Yes, fine-tuning only | Final user-edited XMP compared against `sonna_predictions.json` | `scripts/finetune_profile.py` |
@@ -236,23 +264,23 @@ In Lightroom Classic:
 3. Confirm every RAW has a matching `.xmp` sidecar next to it.
 4. Place or point to that folder as the dataset input.
 
-Recommended local folders outside the app repo:
+Recommended repo-local training source folders:
 
 ```powershell
-D:\SonnaTraining\EditedRawWithXmp\
+data\training_sources\sonna_personal_001\raw_xmp\
 ```
 
 Mac example:
 
 ```bash
-~/SonnaEditorTraining/raw/edited-with-xmp/
+data/training_sources/sonna_personal_001/raw_xmp/
 ```
 
 ## 3A. Build Dataset And Splits From RAW + XMP Sidecars
 
 ```powershell
 uv run python scripts\build_dataset.py `
-  --input-dir D:\SonnaTraining\EditedRawWithXmp `
+  --input-dir data\training_sources\sonna_personal_001\raw_xmp `
   --output-dir v1_learning\dataset `
   --profile-name "sonna_v2" `
   --workers 4 `
@@ -435,6 +463,26 @@ Notes:
 Foundation training, resume, retrain, promotion, and FiveK-specific guidance
 live in `FOUNDATION_TRAINING.md`. Keep the foundation checkpoint in the separate
 foundation repo, not in `v1_learning/`, so it stays hidden from the frontend.
+
+TIFF/image foundation training uses paired folders matched by file stem:
+
+```powershell
+uv run python scripts\train_foundation_model.py `
+  --raw-image-dir data\training_sources\fivek_expert_c\raw_dng `
+  --target-tiff-dir data\training_sources\fivek_expert_c\expert_tiff `
+  --workspace-dir data\training_workspace `
+  --foundation-repo data\foundation_repo `
+  --profile-name "Sonna FiveK Image Foundation Expert C" `
+  --run-name foundation-fivek-image-expert-c-001 `
+  --version-stem foundation-fivek-image-expert-c-001 `
+  --image-resolution 512 `
+  --max-epochs 100 `
+  --batch-size 16 `
+  --workers 8
+```
+
+Mode A still trains from RAW+XMP. The TIFF path creates a foundation backbone
+checkpoint, not direct Lightroom slider labels.
 
 ## 5. Train With Explicit Published Version
 

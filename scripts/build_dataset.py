@@ -8,10 +8,13 @@ import logging
 import sys
 from pathlib import Path
 
+from sonna_editor import config
+
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
 
 
 def main() -> None:
+    config.ensure_runtime_directories()
     parser = argparse.ArgumentParser(
         description="Build a Sonna Editor training dataset from RAW+XMP pairs."
     )

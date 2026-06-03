@@ -8,8 +8,12 @@ import shutil
 import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any
+
+import torch
 
 from sonna_editor import config
+from sonna_editor.training.image_foundation import FOUNDATION_IMAGE_TYPE
 
 
 def foundation_repo_dir() -> Path:
@@ -26,9 +30,9 @@ def foundation_manifest_path() -> Path:
 def ensure_foundation_repo_layout(*, initialise_git: bool = False) -> Path:
     """Create the local foundation repo layout and helper metadata files.
 
-    The foundation repo is intentionally separate from the app repo. It can be
-    pushed to its own private Git repository, and it is the only place where the
-    long-lived base checkpoint should be versioned.
+    By default the foundation repo lives under the project root so a fresh clone
+    is self-contained. Operators can still point SONNA_FOUNDATION_REPO at a
+    separate private Git/LFS repo when they want that workflow.
     """
     repo = foundation_repo_dir()
     (repo / "checkpoints").mkdir(parents=True, exist_ok=True)
@@ -77,6 +81,17 @@ def _resolve_relative_to_repo(value: str) -> Path:
     return path
 
 
+def _latest_existing_checkpoint() -> Path | None:
+    """Return the newest existing versioned foundation checkpoint, if any."""
+    checkpoints_dir = foundation_repo_dir() / "checkpoints"
+    if not checkpoints_dir.exists():
+        return None
+    candidates = [path for path in checkpoints_dir.glob("*.ckpt") if path.is_file()]
+    if not candidates:
+        return None
+    return max(candidates, key=lambda path: (path.stat().st_mtime, path.name))
+
+
 def resolve_foundation_checkpoint() -> Path:
     """Find the active foundation checkpoint.
 
@@ -103,6 +118,9 @@ def resolve_foundation_checkpoint() -> Path:
             raise ValueError(f"Foundation manifest missing active_checkpoint: {manifest_path}")
         path = _resolve_relative_to_repo(str(active))
         if not path.exists():
+            fallback = _latest_existing_checkpoint()
+            if fallback is not None:
+                return fallback
             raise FileNotFoundError(f"Active foundation checkpoint does not exist: {path}")
         return path
 
@@ -142,6 +160,32 @@ def write_foundation_manifest(
         "updated_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
     }
     manifest_path = foundation_manifest_path()
+    history: list[dict[str, Any]] = []
+    if manifest_path.exists():
+        try:
+            existing = json.loads(manifest_path.read_text(encoding="utf-8"))
+            if isinstance(existing.get("history"), list):
+                history = list(existing["history"])
+            if existing.get("active_checkpoint"):
+                history.append({
+                    "checkpoint": existing.get("active_checkpoint"),
+                    "sidecar": existing.get("active_sidecar"),
+                    "display_name": existing.get("display_name"),
+                    "source_run_dir": existing.get("source_run_dir"),
+                    "updated_at": existing.get("updated_at"),
+                    "foundation_type": existing.get("foundation_type"),
+                })
+        except json.JSONDecodeError:
+            history = []
+    try:
+        ckpt = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
+    except Exception:
+        ckpt = {}
+    if isinstance(ckpt, dict):
+        payload["foundation_type"] = ckpt.get("foundation_type") or (
+            ckpt.get("arch_config") or {}
+        ).get("foundation_type") or "sonna_editor_slider_regression"
+    payload["history"] = history[-20:]
     manifest_path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
     return manifest_path
 
@@ -175,3 +219,61 @@ def promote_foundation_checkpoint(
         source_run_dir=source_run_dir,
     )
     return dest
+
+
+def is_image_foundation_checkpoint(path: Path) -> bool:
+    """Return True when `path` is an image-to-image foundation checkpoint."""
+    ckpt = torch.load(path, map_location="cpu", weights_only=False)
+    if not isinstance(ckpt, dict):
+        return False
+    return (
+        ckpt.get("foundation_type") == FOUNDATION_IMAGE_TYPE
+        or (ckpt.get("arch_config") or {}).get("foundation_type") == FOUNDATION_IMAGE_TYPE
+    )
+
+
+def image_foundation_resolution(path: Path) -> int:
+    """Return the training resolution recorded in an image foundation checkpoint."""
+    ckpt = torch.load(path, map_location="cpu", weights_only=False)
+    arch_config = ckpt.get("arch_config") or {}
+    return int(arch_config.get("image_resolution") or config.IMAGE_RESOLUTION)
+
+
+def load_sonna_model_from_foundation_checkpoint(
+    checkpoint_path: Path,
+    *,
+    registry: Any | None = None,
+    slider_set_version: str = config.CURRENT_SLIDER_SET_VERSION,
+):
+    """Load a foundation checkpoint as a `SonnaEditor` instance.
+
+    Full `SonnaEditor` checkpoints load normally. Image-to-image foundation
+    checkpoints initialise a fresh `SonnaEditor` and copy only compatible
+    ConvNeXt backbone tensors, preserving the RAW+XMP profile-training contract.
+    """
+    from sonna_editor.model.architecture import SonnaEditor
+
+    checkpoint_path = Path(checkpoint_path)
+    if not is_image_foundation_checkpoint(checkpoint_path):
+        return SonnaEditor.from_checkpoint(checkpoint_path)
+
+    ckpt = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
+    state: dict[str, torch.Tensor] = ckpt["model_state"]
+    model = SonnaEditor(
+        registry=registry,
+        freeze_backbone=True,
+        _pretrained_backbone=False,
+        arch_version=3,
+        slider_set_version=slider_set_version,
+        use_wb_metadata_skip=True,
+    )
+    current_state = model.state_dict()
+    backbone_state = {
+        key: value
+        for key, value in state.items()
+        if key.startswith("backbone_features.")
+        and key in current_state
+        and current_state[key].shape == value.shape
+    }
+    model.load_state_dict(backbone_state, strict=False)
+    return model

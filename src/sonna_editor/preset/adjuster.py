@@ -46,28 +46,41 @@ def _stops_to_hit_target(current_luma: float) -> float:
 
 
 def _exposure_delta(image: Image.Image) -> float:
-    """Exposure correction that protects already-bright upper tones.
+    """Exposure correction with a stronger low-light lift.
 
-    A mean-only target badly over-brightens event photos with black suits,
-    dark rooms, or stage backgrounds because shadows dominate the average.
-    Lite mode should lift genuinely dark photos, but not push faces/signage
-    into clipping when the upper tonal range is already bright.
+    Imagen-like event output tends to lift low-light frames decisively while
+    still pulling back genuinely overexposed frames. Use the mean luminance as
+    the main brightness signal, then cap positive lifts only when the top
+    percentiles are close to clipping. This is deliberately less conservative
+    than the earlier p85 guard, which made sofa/table scenes stay too dark.
     """
     lum = _luminance_values(image)
     if lum.size == 0:
         return 0.0
 
     mean_delta = _stops_to_hit_target(float(lum.mean()))
+    mean_luma = float(lum.mean())
+    median_luma = float(np.median(lum))
     p85 = float(np.percentile(lum, 85))
     p95 = float(np.percentile(lum, 95))
+    p99 = float(np.percentile(lum, 99))
 
     candidates = [mean_delta]
-    if p85 > 0:
-        candidates.append(float(np.log2(150.0 / p85)))
     if p95 > 0:
-        candidates.append(float(np.log2(205.0 / p95)))
+        candidates.append(float(np.log2(235.0 / p95)))
+    if p99 > 0:
+        candidates.append(float(np.log2(248.0 / p99)))
 
-    return min(candidates)
+    delta = min(candidates)
+
+    # Low-light event frames often have bright cushions, shirts, signage, or
+    # decor but still read underexposed overall. Give those frames a floor so
+    # they do not stay stuck around +0.2 to +0.3 stops.
+    if mean_luma < 92.0 and median_luma < 82.0 and p95 < 230.0:
+        low_light_floor = min(0.75, max(0.35, float(np.log2(170.0 / max(p85, 1.0)))))
+        delta = max(delta, low_light_floor)
+
+    return float(np.clip(delta, -2.0, 1.25))
 
 
 def _grey_world_wb(image: Image.Image) -> tuple[float, float]:

@@ -110,12 +110,21 @@ def test_very_dark_image_gets_large_exposure_delta() -> None:
     assert delta.get("Exposure2012", 0.0) > 0.7
 
 
-def test_shadow_heavy_image_with_bright_upper_tones_does_not_over_lift() -> None:
+def test_shadow_heavy_image_with_bright_upper_tones_gets_controlled_lift() -> None:
     arr = np.full((64, 64, 3), 24, dtype=np.uint8)
     arr[:, 44:, :] = 190
     img = Image.fromarray(arr, "RGB")
     delta = compute_adjustment(img, {}, _base_preset(), _opts())
-    assert delta.get("Exposure2012", 0.0) <= 0.0
+    assert 0.25 <= delta.get("Exposure2012", 0.0) <= 0.75
+
+
+def test_dark_scene_with_no_clipped_highlights_gets_imagen_style_lift() -> None:
+    arr = np.full((64, 64, 3), 36, dtype=np.uint8)
+    arr[8:28, 8:56, :] = 125
+    arr[0:8, 0:20, :] = 210
+    img = Image.fromarray(arr, "RGB")
+    delta = compute_adjustment(img, {}, _base_preset(), _opts())
+    assert delta.get("Exposure2012", 0.0) >= 0.35
 
 
 def test_no_exposure_when_disabled() -> None:

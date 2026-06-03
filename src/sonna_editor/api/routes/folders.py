@@ -19,7 +19,7 @@ from sonna_editor.api.models import (
 router = APIRouter()
 
 _MAX_FILES_RETURNED = 500
-_RECENT_FOLDERS_FILE = Path.home() / ".saha" / "recent_folders.json"
+_RECENT_FOLDERS_FILE = config.RECENT_FOLDERS_PATH
 
 
 def _scan_raws(folder: Path) -> list[Path]:

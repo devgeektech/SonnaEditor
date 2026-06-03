@@ -14,11 +14,13 @@ import argparse
 import sys
 
 import uvicorn
+from sonna_editor import config
 
 _ALLOWED_HOST = "127.0.0.1"
 
 
 def main() -> None:
+    config.ensure_runtime_directories()
     parser = argparse.ArgumentParser(description="Run the Sonna Editor API on localhost.")
     parser.add_argument("--host", default=_ALLOWED_HOST,
                         help=f"Bind host (must be {_ALLOWED_HOST}).")

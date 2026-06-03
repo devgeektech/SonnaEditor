@@ -4,22 +4,28 @@ import shutil
 from pathlib import Path
 
 # Project root
-PROJECT_ROOT = Path(__file__).parent.parent.parent
+PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 
 # Data directories
 DATA_DIR = PROJECT_ROOT / "data"
 RAW_DIR = DATA_DIR / "raw"
+RAW_TRAINING_DIR = RAW_DIR / "sonna_training"
+DIGITAL_DATASETS_DIR = DATA_DIR / "datasets"
+# Local supervised-learning source folders. Keep one child directory per dataset
+# or run (for example fivek_expert_c/raw_xmp, sonna_personal_001/raw_xmp).
+TRAINING_SOURCES_DIR = DATA_DIR / "training_sources"
 DNG_DIR = DATA_DIR / "dng"
 PARQUET_DIR = DATA_DIR / "parquet"
 THUMBNAIL_DIR = DATA_DIR / "thumbnails"
 CAPTURES_DIR = DATA_DIR / "captures"
 AUDITS_DIR = DATA_DIR / "audits"
+DEBUG_DIR = DATA_DIR / "dbg"
 
 # External local training workspace. Source RAW files should live outside this
-# repo; this directory is for generated datasets/splits/thumbnails when running
-# long-lived local training workflows.
+# repo only when the operator explicitly points them there; by default this
+# workspace now lives inside the project so a fresh clone is self-contained.
 TRAINING_WORKSPACE_DIR = Path(
-    os.environ.get("SONNA_TRAINING_WORKSPACE", Path.home() / "SonnaEditorTraining")
+    os.environ.get("SONNA_TRAINING_WORKSPACE", DATA_DIR / "training_workspace")
 ).expanduser()
 
 # Trained checkpoints directory — scanned by the API's /api/profiles endpoint.
@@ -27,13 +33,26 @@ TRAINING_WORKSPACE_DIR = Path(
 # registry will replace this with a manifest-based discovery layer.
 CHECKPOINTS_DIR = PROJECT_ROOT / "v1_learning"
 
+# Repo-local runtime state. Keeping this under the project root avoids
+# user-home path assumptions and makes a fresh clone boot into a predictable
+# layout on any machine.
+APP_STATE_ENV_VAR = "SONNA_APP_STATE_DIR"
+APP_STATE_DIR = Path(
+    os.environ.get(APP_STATE_ENV_VAR, PROJECT_ROOT / ".saha")
+).expanduser()
+ACTIVE_PROFILE_PATH = APP_STATE_DIR / "active_profile.txt"
+RECENT_FOLDERS_PATH = APP_STATE_DIR / "recent_folders.json"
+JOBS_DIR = APP_STATE_DIR / "jobs"
+PROFILE_TRAINING_RUNS_DIR = APP_STATE_DIR / "profile_training_runs"
+FINETUNE_RUNS_DIR = APP_STATE_DIR / "finetune_runs"
+
 # Foundation/base model repository. This is intentionally outside the app repo
-# so the base checkpoint can be versioned in its own private Git repo while
-# user profiles and generated app artifacts stay local.
+# only when the operator explicitly points it elsewhere. The default now lives
+# under the repo so the project works out of the box on a fresh clone.
 FOUNDATION_REPO_ENV_VAR = "SONNA_FOUNDATION_REPO"
 FOUNDATION_CHECKPOINT_ENV_VAR = "SONNA_FOUNDATION_CHECKPOINT"
 FOUNDATION_REPO_DIR = Path(
-    os.environ.get(FOUNDATION_REPO_ENV_VAR, PROJECT_ROOT.parent / "SonnaEditorFoundation")
+    os.environ.get(FOUNDATION_REPO_ENV_VAR, DATA_DIR / "foundation_repo")
 ).expanduser()
 FOUNDATION_MANIFEST_PATH = FOUNDATION_REPO_DIR / "foundation_manifest.json"
 FOUNDATION_CHECKPOINT_FALLBACK_PATH = FOUNDATION_REPO_DIR / "foundation.ckpt"
@@ -80,6 +99,31 @@ def _default_dng_converter_path() -> Path:
 
 
 DNG_CONVERTER_PATH = _default_dng_converter_path()
+
+
+def ensure_runtime_directories() -> None:
+    """Create the repo-local runtime layout expected by the app and scripts."""
+    for path in (
+        DATA_DIR,
+        RAW_DIR,
+        RAW_TRAINING_DIR,
+        DIGITAL_DATASETS_DIR,
+        TRAINING_SOURCES_DIR,
+        DNG_DIR,
+        PARQUET_DIR,
+        THUMBNAIL_DIR,
+        CAPTURES_DIR,
+        AUDITS_DIR,
+        DEBUG_DIR,
+        TRAINING_WORKSPACE_DIR,
+        FOUNDATION_REPO_DIR,
+        CHECKPOINTS_DIR,
+        APP_STATE_DIR,
+        JOBS_DIR,
+        PROFILE_TRAINING_RUNS_DIR,
+        FINETUNE_RUNS_DIR,
+    ):
+        path.mkdir(parents=True, exist_ok=True)
 
 # Model input resolution
 #   v1.0.x (legacy):  384 — value preserved in each ckpt's arch_config so

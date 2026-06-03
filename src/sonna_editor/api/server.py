@@ -9,6 +9,7 @@ from typing import AsyncIterator
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from sonna_editor import config
 from sonna_editor.api import jobs
 from sonna_editor.api.routes import (
     captures,
@@ -22,6 +23,7 @@ from sonna_editor.api.routes import (
 
 @asynccontextmanager
 async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
+    config.ensure_runtime_directories()
     # Mark any persisted jobs that were "running" when the previous server
     # died as failed — a killed inference run is not safely resumable.
     jobs.recover_orphaned_jobs()

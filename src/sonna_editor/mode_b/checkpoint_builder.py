@@ -54,6 +54,11 @@ import torch
 
 from sonna_editor import config
 from sonna_editor.data.xmp import LR_DEFAULTS, read_xmp
+from sonna_editor.foundation import (
+    image_foundation_resolution,
+    is_image_foundation_checkpoint,
+    load_sonna_model_from_foundation_checkpoint,
+)
 from sonna_editor.mode_b.survey import (
     QUESTION_ORDER,
     QUESTION_SLIDER_MAP,
@@ -334,15 +339,18 @@ def verify_checkpoint(
     Raises RuntimeError with a descriptive message on first mismatch.
     """
     new_model = SonnaEditor.from_checkpoint(ckpt_path)
-    base_model = SonnaEditor.from_checkpoint(base_ckpt_path)
-    if new_model._slider_set_version != base_model._slider_set_version:
-        raise RuntimeError(
-            "Verification failed: Mode B checkpoint changed slider_set_version "
-            f"from {base_model._slider_set_version!r} to "
-            f"{new_model._slider_set_version!r}."
-        )
+    base_model: SonnaEditor | None = None
+    if not is_image_foundation_checkpoint(base_ckpt_path):
+        base_model = SonnaEditor.from_checkpoint(base_ckpt_path)
+        if new_model._slider_set_version != base_model._slider_set_version:
+            raise RuntimeError(
+                "Verification failed: Mode B checkpoint changed slider_set_version "
+                f"from {base_model._slider_set_version!r} to "
+                f"{new_model._slider_set_version!r}."
+            )
     new_model.eval()
-    base_model.eval()
+    if base_model is not None:
+        base_model.eval()
 
     slider_set_version = new_model._slider_set_version
     fields = fields_for_version(slider_set_version)
@@ -467,22 +475,34 @@ def build_mode_b_checkpoint(
     # (engine.py:128 reads `resolution` from the sidecar first). For v1.2.3,
     # that's 256 — the previous behaviour recorded 512 (the current global
     # default) which made the engine extract previews at the wrong size.
-    _base_ckpt_blob = torch.load(
-        base_ckpt_path, map_location="cpu", weights_only=False
-    )
-    _base_arch_cfg = _base_ckpt_blob.get("arch_config") or {}
-    base_slider_set_version = str(
-        _base_arch_cfg.get("slider_set_version")
-        or ("v2" if int(_base_arch_cfg.get("num_sliders", V1_OUTPUT_COUNT)) >= V2_OUTPUT_COUNT else "v1")
-    )
-    fields_for_version(base_slider_set_version)
-    base_resolution: int = int(
-        _base_arch_cfg.get("image_resolution") or config.IMAGE_RESOLUTION
-    )
+    if is_image_foundation_checkpoint(base_ckpt_path):
+        base_slider_set_version = config.CURRENT_SLIDER_SET_VERSION
+        base_resolution = image_foundation_resolution(base_ckpt_path)
+        model = load_sonna_model_from_foundation_checkpoint(
+            base_ckpt_path,
+            slider_set_version=base_slider_set_version,
+        )
+    else:
+        _base_ckpt_blob = torch.load(
+            base_ckpt_path, map_location="cpu", weights_only=False
+        )
+        _base_arch_cfg = _base_ckpt_blob.get("arch_config") or {}
+        base_slider_set_version = str(
+            _base_arch_cfg.get("slider_set_version")
+            or (
+                "v2"
+                if int(_base_arch_cfg.get("num_sliders", V1_OUTPUT_COUNT)) >= V2_OUTPUT_COUNT
+                else "v1"
+            )
+        )
+        fields_for_version(base_slider_set_version)
+        base_resolution = int(
+            _base_arch_cfg.get("image_resolution") or config.IMAGE_RESOLUTION
+        )
 
-    # Keep the Lite checkpoint on the same slider set as the active base; forcing
-    # v1 here would discard v2 extension-head weights.
-    model = SonnaEditor.from_checkpoint(base_ckpt_path)
+        # Keep the Lite checkpoint on the same slider set as the active base; forcing
+        # v1 here would discard v2 extension-head weights.
+        model = SonnaEditor.from_checkpoint(base_ckpt_path)
 
     bias_vector = compute_bias_vector(
         preset,
@@ -515,6 +535,11 @@ def build_mode_b_checkpoint(
         "resolution": base_resolution,
         "base_checkpoint": str(base_ckpt_path),
         "base_checkpoint_sha256": _compute_sha256(base_ckpt_path),
+        "base_foundation_type": (
+            "image_to_image_v1"
+            if is_image_foundation_checkpoint(base_ckpt_path)
+            else "sonna_editor_slider_regression"
+        ),
         "source_preset": str(preset_path),
         "source_survey": str(survey_path),
         "survey_version": survey.get("version"),

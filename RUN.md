@@ -44,6 +44,12 @@ The verifier checks Python, imports, and the best available PyTorch device:
 CUDA, Apple MPS, or CPU. Adobe DNG Converter is reported as optional unless you
 need RAW-to-DNG normalisation.
 
+It also bootstraps the repo-local runtime layout used by the app and scripts:
+`data/`, `data/training_sources/`, `data/raw/`, `data/raw/sonna_training/`,
+`data/datasets/`, `data/training_workspace/`, `data/foundation_repo/`,
+`v1_learning/`, and `.saha/`.
+A fresh clone no longer needs those gitignored folders created by hand.
+
 Current verified Windows workstation:
 
 ```text
@@ -102,6 +108,21 @@ for supervised training. Use one of these dataset sources:
 Preset + survey creates a Lite initial checkpoint from the configured foundation
 checkpoint, but it is not supervised training from photos.
 
+Foundation has two implemented CLI paths:
+
+- `scripts/train_foundation_model.py` currently trains the existing
+  slider-regression model from real Lightroom parameters, then promotes the
+  checkpoint into the hidden foundation repo.
+- MIT-Adobe FiveK-style training uses an image-to-image foundation trainer from
+  `RAW/DNG -> expert TIFF`. Do not turn FiveK TIFF outputs into fake XMP labels.
+
+Every foundation run is versioned. By default, it warm-starts from the active
+foundation checkpoint, trains on the new dataset, writes a new checkpoint under
+`data/foundation_repo/checkpoints/`, and makes that checkpoint active in
+`foundation_manifest.json`. Older checkpoints are kept. If a bad run is
+promoted, remove the bad new `.ckpt`; the resolver falls back to the newest
+remaining checkpoint. Use `--no-warm-start` only for a deliberate scratch run.
+
 Dataset preparation code paths:
 
 - `scripts/build_dataset.py` -> `src/sonna_editor/data/dataset.py` for RAW + XMP sidecar training.
@@ -124,16 +145,36 @@ Foundation model training is intentionally **not** exposed in the frontend. Trai
 
 ```powershell
 uv run python scripts\train_foundation_model.py `
-  --raw-xmp-dir D:\SonnaTraining\EditedRawWithXmp `
-  --workspace-dir D:\SonnaTraining\workspace `
-  --foundation-repo D:\SonnaFoundationModel `
-  --profile-name "Sonna Foundation" `
-  --version-stem foundation-current `
+  --raw-xmp-dir data\training_sources\sonna_personal_001\raw_xmp `
+  --workspace-dir data\training_workspace `
+  --foundation-repo data\foundation_repo `
+  --profile-name "Sonna Parameter Foundation" `
+  --version-stem foundation-sonna-parameter-001 `
   --max-epochs 100 `
   --batch-size 16 `
   --workers 4 `
   --init-git
 ```
+
+For TIFF/image foundation training, use paired folders matched by file stem:
+
+```powershell
+uv run python scripts\train_foundation_model.py `
+  --raw-image-dir data\training_sources\fivek_expert_c\raw_dng `
+  --target-tiff-dir data\training_sources\fivek_expert_c\expert_tiff `
+  --workspace-dir data\training_workspace `
+  --foundation-repo data\foundation_repo `
+  --profile-name "Sonna FiveK Image Foundation Expert C" `
+  --run-name foundation-fivek-image-expert-c-001 `
+  --version-stem foundation-fivek-image-expert-c-001 `
+  --image-resolution 512 `
+  --max-epochs 100 `
+  --batch-size 16 `
+  --workers 8
+```
+
+This produces an `image_to_image_v1` foundation checkpoint. Mode A still trains
+from RAW+XMP; the TIFF checkpoint only warm-starts the visual backbone.
 
 ### Lite profile flow
 
@@ -214,7 +255,7 @@ Use `process_shoot_preset.py` when you want quick preset-derived XMPs without cr
 
 ```powershell
 uv run python scripts\build_dataset.py `
-  --input-dir D:\SonnaTraining\EditedRawWithXmp `
+  --input-dir data\training_sources\sonna_personal_001\raw_xmp `
   --output-dir v1_learning\dataset `
   --profile-name "sonna_current" `
   --workers 4 `
