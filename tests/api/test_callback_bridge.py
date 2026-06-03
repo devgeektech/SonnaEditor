@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import json as _json
 import threading
 from pathlib import Path
 from unittest.mock import patch
 
 import pytest
 import torch
+from PIL import Image
 
 from sonna_editor import config
 from sonna_editor.api import callbacks, jobs
@@ -102,7 +104,6 @@ def test_pipeline_loop_calls_callback_and_honours_cancel(
         (folder / f"img_{i}.cr3").write_bytes(b"x")
 
     fake_preds = torch.zeros(3, len(config.SLIDER_FIELDS))
-    fake_meta = [{} for _ in range(3)]
 
     class FakeEngine:
         def __init__(self, *a, **kw):
@@ -355,3 +356,88 @@ def test_pipeline_preserve_wb_compat_shim_equivalent_to_skip_fields(tmp_path: Pa
     )
     assert "Temperature" not in via_shim
     assert "Tint" not in via_shim
+
+
+def test_mode_b_initial_uses_per_photo_preset_adjuster(tmp_path: Path) -> None:
+    """Initial Lite profiles should behave like adaptive preset profiles."""
+    from sonna_editor.inference import pipeline as pl
+    from sonna_editor.mode_b import survey as survey_mod
+
+    folder = tmp_path / "shoot"
+    folder.mkdir()
+    dark_raw = folder / "dark.cr3"
+    warm_bright_raw = folder / "warm_bright.cr3"
+    dark_raw.write_bytes(b"x")
+    warm_bright_raw.write_bytes(b"x")
+
+    preset_path = tmp_path / "lite-preset.xmp"
+    preset_path.write_text(
+        '<x:xmpmeta xmlns:x="adobe:ns:meta/" '
+        'xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#" '
+        'xmlns:crs="http://ns.adobe.com/camera-raw-settings/1.0/">'
+        "<rdf:RDF><rdf:Description "
+        'crs:Contrast2012="15" crs:Highlights2012="-20" '
+        'crs:Shadows2012="10" />'
+        "</rdf:RDF></x:xmpmeta>",
+        encoding="utf-8",
+    )
+    survey_path = tmp_path / "survey.json"
+    survey_mod.write_survey(
+        survey_mod.build_survey_payload({k: 0 for k in survey_mod.QUESTION_ORDER}),
+        survey_path,
+    )
+    model_path = tmp_path / "model-v0.1.0.ckpt"
+    model_path.write_bytes(b"unused by mode_b_initial")
+    model_path.with_suffix(".json").write_text(
+        _json.dumps({
+            "profile_type": "mode_b_initial",
+            "profile_id": "lite-test",
+            "base_checkpoint": "base.ckpt",
+            "source_preset": str(preset_path),
+            "source_survey": str(survey_path),
+            "slider_set_version": "v1",
+            "resolution": 64,
+        }),
+        encoding="utf-8",
+    )
+
+    def fake_extract(path: Path, _target_size: int):
+        if path.name.startswith("dark"):
+            img = Image.new("RGB", (64, 64), (35, 35, 35))
+        else:
+            img = Image.new("RGB", (64, 64), (230, 120, 60))
+        return img, {"as_shot_wb": (5200.0, 2.0)}
+
+    captured: dict[str, dict] = {}
+
+    def fake_write(xmp_path, settings, **_kw):
+        captured[Path(xmp_path).name] = dict(settings)
+
+    with patch.object(pl, "InferenceEngine", side_effect=AssertionError("Mode B should not load model engine")), \
+         patch.object(pl, "_extract_one", fake_extract), \
+         patch.object(pl, "write_xmp", fake_write):
+        result = pl.process_shoot_with_model(
+            input_dir=folder,
+            model_path=model_path,
+            output_dir=tmp_path / "out",
+            save_predictions=True,
+        )
+
+    assert result["processed"] == 2
+    dark = captured["dark.xmp"]
+    bright = captured["warm_bright.xmp"]
+    assert dark["Exposure2012"] > 0.0
+    assert bright["Exposure2012"] < 0.0
+    assert bright["Temperature"] != 5200.0 or bright["Tint"] != 2.0
+    assert dark["Contrast2012"] == pytest.approx(15.0)
+    assert bright["Contrast2012"] == pytest.approx(15.0)
+    assert dark["Shadows2012"] == pytest.approx(10.0)
+    assert bright["Shadows2012"] == pytest.approx(10.0)
+    assert dark["Highlights2012"] == pytest.approx(-20.0)
+    assert bright["Highlights2012"] == pytest.approx(-20.0)
+
+    sidecar = _json.loads((tmp_path / "out" / "sonna_predictions.json").read_text())
+    assert sidecar["profile_type"] == "mode_b_initial"
+    assert sidecar["photos"]["dark.cr3"]["Exposure2012"] == pytest.approx(
+        dark["Exposure2012"]
+    )

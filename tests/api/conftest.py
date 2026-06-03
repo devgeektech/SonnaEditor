@@ -11,7 +11,6 @@ from fastapi.testclient import TestClient
 from sonna_editor import config
 from sonna_editor.api import jobs as jobs_module
 from sonna_editor.api import server as server_module
-from sonna_editor.api.routes import captures as captures_route
 from sonna_editor.api.routes import finetune as finetune_route
 from sonna_editor.api.routes import folders as folders_route
 from sonna_editor.api.routes import profiles as profiles_route
@@ -25,14 +24,21 @@ def isolated_paths(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict[str,
     saha_dir = tmp_path / "saha"
     jobs_dir = saha_dir / "jobs"
     finetune_runs = saha_dir / "finetune_runs"
+    profile_training_runs = saha_dir / "profile_training_runs"
+    foundation_repo = tmp_path / "foundation_repo"
     checkpoints_dir.mkdir()
     captures_dir.mkdir()
     saha_dir.mkdir()
     jobs_dir.mkdir()
     finetune_runs.mkdir()
+    profile_training_runs.mkdir()
+    foundation_repo.mkdir()
 
     monkeypatch.setattr(config, "CHECKPOINTS_DIR", checkpoints_dir)
     monkeypatch.setattr(config, "CAPTURES_DIR", captures_dir)
+    monkeypatch.setattr(config, "FOUNDATION_REPO_DIR", foundation_repo)
+    monkeypatch.delenv(config.FOUNDATION_REPO_ENV_VAR, raising=False)
+    monkeypatch.delenv(config.FOUNDATION_CHECKPOINT_ENV_VAR, raising=False)
     monkeypatch.setattr(profiles_route, "_ACTIVE_PROFILE_FILE",
                         saha_dir / "active_profile.txt")
     monkeypatch.setattr(folders_route, "_RECENT_FOLDERS_FILE",
@@ -40,6 +46,7 @@ def isolated_paths(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict[str,
     monkeypatch.setattr(jobs_module, "JOBS_DIR", jobs_dir)
     monkeypatch.setattr(jobs_module, "PIDFILE", jobs_dir / ".serve.pid")
     monkeypatch.setattr(finetune_route, "_FINETUNE_RUNS_DIR", finetune_runs)
+    monkeypatch.setattr(profiles_route, "_PROFILE_TRAINING_RUNS_DIR", profile_training_runs)
 
     # Wipe the in-memory job registry between tests.
     jobs_module.reset_for_tests()
@@ -50,6 +57,8 @@ def isolated_paths(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict[str,
         "saha_dir": saha_dir,
         "jobs_dir": jobs_dir,
         "finetune_runs": finetune_runs,
+        "profile_training_runs": profile_training_runs,
+        "foundation_repo": foundation_repo,
     }
 
 

@@ -11,10 +11,8 @@ import pytest
 from sonna_editor import config
 from sonna_editor.mode_b.survey import (
     OFFSET_MAGNITUDES,
-    QUESTION_ORDER,
     QUESTION_SLIDER_MAP,
     SURVEY_SCHEMA_VERSION,
-    VALID_ANSWERS,
     build_survey_payload,
     compute_offset,
     load_survey,

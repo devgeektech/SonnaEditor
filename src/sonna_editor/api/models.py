@@ -120,22 +120,33 @@ class FinetuneRequest(BaseModel):
     weight_recent: float = 1.0
 
 
+# ── Personal AI profile creation ────────────────────────────────────────────
+
+class PersonalProfileRequest(BaseModel):
+    """Request body for POST /api/profiles/personal."""
+
+    profile_name: str
+    input_dir: str
+    max_epochs: int = 50
+    batch_size: int = 16
+    workers: int = 4
+
+
 # ── Lite profile creation ───────────────────────────────────────────────────
 
 class LiteProfileRequest(BaseModel):
-    """Request body for POST /api/profiles/lite (Mode B initial profile)."""
+    """Request body for POST /api/profiles/lite."""
 
     profile_name: str
     # Absolute path to the user's Lightroom preset .xmp. Electron's file
     # picker hands the renderer an absolute path, which is forwarded
     # verbatim. The route copies the file into CHECKPOINTS_DIR so the
-    # Mode B sidecar's source_preset reference stays stable if the user
+    # Lite sidecar's source_preset reference stays stable if the user
     # later moves or deletes the original.
     preset_path: str
-    # Answers keyed by survey question (exposure / temperature / tint /
-    # contrast / saturation / shadows). Each value is an int in -2..+2.
-    # Schema validation lives in the route so error messages can be
-    # specific about which question is missing or out of range.
+    # Answers keyed by survey question. Current UI asks exposure /
+    # temperature / tint and fills legacy look-slider answers with zero so
+    # older survey serialization remains compatible.
     survey_answers: dict[str, int] = Field(default_factory=dict)
 
 
@@ -193,6 +204,8 @@ class JobSnapshot(BaseModel):
     # finetune-only
     base_profile_id: Optional[str] = None
     captures_dir: Optional[str] = None
+    profile_name: Optional[str] = None
+    dataset_dir: Optional[str] = None
     epochs_total: Optional[int] = None
     epochs_completed: Optional[int] = 0
     current_epoch: Optional[int] = None

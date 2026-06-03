@@ -137,7 +137,7 @@ class TestSliderLossWeights:
         and the full-loss audit at /tmp/saha_full_loss_audit.md.
 
         Baseline retained:
-          Temperature=3.0, Tint=4.0, Composite/R/G/B tone curve Pt2-5_Y=3.0
+          Temperature=4.0, Tint=4.0, Composite/R/G/B tone curve Pt2-5_Y=3.0
           (Blue reduced to 2.0), HSL Hue/Sat/Lum=1.5, Camera Calibration
           Red/Green/BlueHue=2.0 (Blue/Green Hue then bumped to 3.0).
 
@@ -149,7 +149,8 @@ class TestSliderLossWeights:
           ToneCurveBlue Pt2-5 Y → 2.0 (was 3.0, REDUCED)
         """
         # Baseline retained
-        assert SLIDER_LOSS_WEIGHTS["Temperature"] == 3.0
+        assert SLIDER_LOSS_WEIGHTS["Exposure2012"] == 5.0
+        assert SLIDER_LOSS_WEIGHTS["Temperature"] == 4.0
         assert SLIDER_LOSS_WEIGHTS["Tint"] == 4.0
         assert SLIDER_LOSS_WEIGHTS["RedHue"] == 2.0
         # Composite + R/G tone curve Pt2-5_Y still at 3.0 (except R/G/B-specific bumps below)
@@ -181,10 +182,15 @@ class TestSliderLossWeights:
         assert SLIDER_LOSS_WEIGHTS["BlueHue"] == 3.0
         assert SLIDER_LOSS_WEIGHTS["GreenHue"] == 3.0
 
-        # Tone-panel scalar bumps
-        for f in ("Blacks2012", "Clarity2012", "Contrast2012", "Highlights2012",
-                  "Shadows2012", "Whites2012"):
-            assert SLIDER_LOSS_WEIGHTS[f] == 1.5
+        # Visual-priority tone-panel scalars are protected by minimum weights.
+        assert SLIDER_LOSS_WEIGHTS["Blacks2012"] == 2.0
+        assert SLIDER_LOSS_WEIGHTS["Clarity2012"] == 1.5
+        assert SLIDER_LOSS_WEIGHTS["Contrast2012"] == 3.0
+        assert SLIDER_LOSS_WEIGHTS["Highlights2012"] == 3.0
+        assert SLIDER_LOSS_WEIGHTS["Shadows2012"] == 3.0
+        assert SLIDER_LOSS_WEIGHTS["Whites2012"] == 2.0
+        assert SLIDER_LOSS_WEIGHTS["Saturation"] == 2.0
+        assert SLIDER_LOSS_WEIGHTS["Vibrance"] == 2.0
 
         # Color-grading bumps
         for f in ("ColorGradeHighlightLum", "ColorGradeMidtoneHue",
@@ -192,14 +198,14 @@ class TestSliderLossWeights:
                   "SplitToningHighlightHue", "SplitToningHighlightSaturation"):
             assert SLIDER_LOSS_WEIGHTS[f] == 1.5
 
-        # Direction-at-chance fields explicitly NOT bumped
-        assert SLIDER_LOSS_WEIGHTS["Saturation"] == 1.0
+        # Direction-at-chance fields explicitly NOT bumped beyond visual-priority floors.
+        assert SLIDER_LOSS_WEIGHTS["Saturation"] == 2.0
         assert SLIDER_LOSS_WEIGHTS["GrainFrequency"] == 1.0
         assert SLIDER_LOSS_WEIGHTS["ToneCurve_Pt4_Y"] == 3.0  # curve default, not bumped further
         assert SLIDER_LOSS_WEIGHTS["ToneCurve_Pt4_X"] == 1.0  # X default, not bumped
 
-        # Untouched non-flagged field
-        assert SLIDER_LOSS_WEIGHTS["Exposure2012"] == 1.0
+        # Visual-priority exposure floor.
+        assert SLIDER_LOSS_WEIGHTS["Exposure2012"] == 5.0
 
     def test_count_matches_slider_fields(self) -> None:
         assert len(SLIDER_LOSS_WEIGHTS) == len(SLIDER_FIELDS)

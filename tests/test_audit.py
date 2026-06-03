@@ -4,13 +4,10 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
-import pytest
 
 from sonna_editor.config import SLIDER_FIELDS
 from sonna_editor.data.xmp import LR_DEFAULTS
 from sonna_editor.data.audit import (
-    _SCALAR_SLIDER_FIELDS,
-    _UNEDITED_ZERO_THRESHOLD,
     _count_unedited,
     _decide_status,
     _estimate_training_time,

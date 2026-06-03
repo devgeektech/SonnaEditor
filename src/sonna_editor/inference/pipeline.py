@@ -15,9 +15,13 @@ from PIL import Image
 
 from sonna_editor import config
 from sonna_editor.data.extract import extract_metadata, extract_preview
-from sonna_editor.data.xmp import write_xmp
+from sonna_editor.data.xmp import LR_DEFAULTS, write_xmp
 from sonna_editor.inference.engine import InferenceEngine
 from sonna_editor.model.postprocess import predictions_to_dict
+from sonna_editor.mode_b.survey import load_survey
+from sonna_editor.preset.adjuster import apply_adjustment, compute_adjustment
+from sonna_editor.preset.parser import parse_preset
+from sonna_editor.slider_set import fields_for_version
 
 _logger = logging.getLogger(__name__)
 
@@ -170,11 +174,101 @@ def _apply_temperature_clamp(slider_dict: dict[str, float]) -> None:
 
 _PREDICTIONS_FILENAME = "sonna_predictions.json"
 
+_MODE_B_INITIAL_PROFILE_TYPE = "mode_b_initial"
+_MODE_B_SURVEY_FIELDS = {"Exposure2012", "Temperature", "Tint"}
+_MODE_B_ADJUSTMENT_OPTIONS: dict[str, bool] = {
+    "auto_exposure": True,
+    "auto_white_balance": True,
+    "auto_shadow_recovery": False,
+    "auto_highlight_recovery": False,
+}
+
 
 def _extract_one(raw_path: Path, target_size: int) -> tuple[Image.Image, dict]:
     preview = extract_preview(raw_path, target_size=target_size)
     meta = extract_metadata(raw_path)
     return preview, meta
+
+
+def _read_checkpoint_sidecar(model_path: Path) -> dict:
+    sidecar_path = model_path.with_suffix(".json")
+    if not sidecar_path.exists():
+        return {}
+    try:
+        return json.loads(sidecar_path.read_text())
+    except (json.JSONDecodeError, OSError):
+        return {}
+
+
+def _survey_adjusted_preset(ckpt_sidecar: dict) -> dict[str, float | None]:
+    """Load a Mode B source preset and apply survey offsets in native units."""
+    source_preset = ckpt_sidecar.get("source_preset")
+    if not source_preset:
+        raise ValueError("Mode B profile sidecar missing source_preset")
+    preset_path = Path(str(source_preset))
+    if not preset_path.exists():
+        raise FileNotFoundError(f"Mode B source preset not found: {preset_path}")
+
+    preset = parse_preset(preset_path)
+
+    source_survey = ckpt_sidecar.get("source_survey")
+    if not source_survey:
+        return preset
+    survey_path = Path(str(source_survey))
+    if not survey_path.exists():
+        raise FileNotFoundError(f"Mode B source survey not found: {survey_path}")
+
+    survey = load_survey(survey_path)
+    questions = survey.get("questions") or {}
+    for entry in questions.values():
+        field = entry.get("slider_field")
+        if field not in config.SLIDER_FIELDS:
+            continue
+        if field not in _MODE_B_SURVEY_FIELDS:
+            continue
+        offset = float(entry.get("offset") or 0.0)
+        if offset == 0.0:
+            continue
+
+        base = preset.get(field)
+        if base is None:
+            base = float(LR_DEFAULTS[field]) if field == "Temperature" else 0.0
+        target = float(base) + offset
+        lo, hi = config.SLIDER_RANGES[field]
+        preset[field] = max(lo, min(hi, target))
+
+    return preset
+
+
+def _mode_b_adjusted_values_for_photo(
+    image: Image.Image,
+    metadata: dict,
+    preset: dict[str, float | None],
+    slider_set_version: str,
+) -> dict[str, float | None]:
+    """Return the Lite per-photo preset + auto-adjusted values."""
+    photo_preset = dict(preset)
+    delta = compute_adjustment(
+        image,
+        metadata,
+        photo_preset,
+        _MODE_B_ADJUSTMENT_OPTIONS,
+    )
+    # The legacy preset adjuster returns WB deltas. If the preset omitted WB,
+    # apply those deltas to the photo's AsShot WB rather than to 0.
+    as_shot_wb = metadata.get("as_shot_wb")
+    if as_shot_wb is not None:
+        if "Temperature" in delta and photo_preset.get("Temperature") is None:
+            photo_preset["Temperature"] = float(as_shot_wb[0])
+        if "Tint" in delta and photo_preset.get("Tint") is None:
+            photo_preset["Tint"] = float(as_shot_wb[1])
+    if as_shot_wb is None and "Temperature" in delta and photo_preset.get("Temperature") is None:
+        photo_preset["Temperature"] = float(LR_DEFAULTS["Temperature"])
+    if as_shot_wb is None and "Tint" in delta and photo_preset.get("Tint") is None:
+        photo_preset["Tint"] = float(LR_DEFAULTS["Tint"])
+
+    adjusted = apply_adjustment(photo_preset, delta)
+    return {field: adjusted.get(field) for field in fields_for_version(slider_set_version)}
 
 
 def process_shoot_with_model(
@@ -260,13 +354,7 @@ def process_shoot_with_model(
     if output_dir is not None:
         output_dir.mkdir(parents=True, exist_ok=True)
 
-    # --- Load engine first so we know what resolution to extract previews at ---
-    # v1.0.x ckpts run at 384; v1.1.0+ at 512. The engine reads its own resolution
-    # from arch_config / state-dict shape, so we don't have to branch here.
     run_timestamp = datetime.now(timezone.utc).isoformat()
-    engine = InferenceEngine(model_path, device=device)
-    engine.warmup()
-    target_size = engine._image_resolution  # source of truth for this run
 
     # --- Read the ckpt's sidecar JSON for profile metadata ---
     # Same lookup pattern as engine.py:123. Propagates profile_type,
@@ -275,13 +363,31 @@ def process_shoot_with_model(
     # Mode A deltas (baseline = trained model output). For legacy ckpts
     # without these fields, the values stay None and Phase 5 treats them
     # as Mode A by default.
-    _ckpt_sidecar_path = model_path.with_suffix(".json")
-    _ckpt_sidecar: dict = {}
-    if _ckpt_sidecar_path.exists():
-        try:
-            _ckpt_sidecar = json.loads(_ckpt_sidecar_path.read_text())
-        except (json.JSONDecodeError, OSError):
-            _ckpt_sidecar = {}
+    _ckpt_sidecar = _read_checkpoint_sidecar(model_path)
+    is_mode_b_initial = (
+        _ckpt_sidecar.get("profile_type") == _MODE_B_INITIAL_PROFILE_TYPE
+    )
+
+    engine: InferenceEngine | None = None
+    mode_b_preset: dict[str, float | None] | None = None
+    slider_set_version = str(_ckpt_sidecar.get("slider_set_version") or "v1")
+    fields_for_version(slider_set_version)
+
+    if is_mode_b_initial:
+        mode_b_preset = _survey_adjusted_preset(_ckpt_sidecar)
+        target_size = int(_ckpt_sidecar.get("resolution") or config.IMAGE_RESOLUTION)
+    else:
+        # --- Load engine first so we know what resolution to extract previews at ---
+        # v1.0.x ckpts run at 384; v1.1.0+ at 512. The engine reads its own resolution
+        # from arch_config / state-dict shape, so we don't have to branch here.
+        engine = InferenceEngine(model_path, device=device)
+        engine.warmup()
+        target_size = engine._image_resolution  # source of truth for this run
+        engine_model = getattr(engine, "_model", None)
+        slider_set_version = str(
+            getattr(engine_model, "_slider_set_version", slider_set_version)
+        )
+        fields_for_version(slider_set_version)
 
     # --- Extract previews + metadata in parallel ---
     previews: list[Image.Image] = []
@@ -312,23 +418,28 @@ def process_shoot_with_model(
     combined = sorted(zip(good_raws, previews, metadatas), key=lambda t: t[0].name)
     good_raws, previews, metadatas = [list(x) for x in zip(*combined)]
 
-    # --- Inference (engine already loaded above so we knew the target_size) ---
+    # --- Inference / Lite adjustment ---
 
-    if uncertainty:
-        preds, std_preds = engine.predict_with_uncertainty(
-            previews, metadatas,
-            n_samples=n_uncertainty_samples,
-            batch_size=batch_size,
-        )
-    else:
-        preds = engine.predict(previews, metadatas, batch_size=batch_size)
+    if is_mode_b_initial:
+        preds = None
         std_preds = None
+    else:
+        assert engine is not None
+        if uncertainty:
+            preds, std_preds = engine.predict_with_uncertainty(
+                previews, metadatas,
+                n_samples=n_uncertainty_samples,
+                batch_size=batch_size,
+            )
+        else:
+            preds = engine.predict(previews, metadatas, batch_size=batch_size)
+            std_preds = None
 
     # --- Write XMPs ---
     output_paths: list[str] = []
     low_confidence: list[dict] = []
     # Full (unfiltered) predictions keyed by filename — for sonna_predictions.json
-    full_predictions_by_file: dict[str, dict[str, float]] = {}
+    full_predictions_by_file: dict[str, dict[str, float | None]] = {}
 
     xmp_dir = output_dir if output_dir is not None else input_dir
 
@@ -342,11 +453,21 @@ def process_shoot_with_model(
     cancelled = False
     for i, raw_path in enumerate(good_raws):
         photo_start = time.monotonic()
-        full_slider_dict = predictions_to_dict(preds, batch_idx=i)  # all 135 fields
-        # Epistemic clamp on Temperature — bounded to training data range.
-        # See TEMPERATURE_LOG_CLAMP definition above for rationale.
-        _apply_temperature_clamp(full_slider_dict)
-        _stabilise_rgb_tone_curve_endpoints(full_slider_dict)
+        if is_mode_b_initial:
+            assert mode_b_preset is not None
+            full_slider_dict = _mode_b_adjusted_values_for_photo(
+                previews[i],
+                metadatas[i],
+                mode_b_preset,
+                slider_set_version,
+            )
+        else:
+            assert preds is not None
+            full_slider_dict = predictions_to_dict(preds, batch_idx=i)  # all model fields
+            # Epistemic clamp on Temperature — bounded to training data range.
+            # See TEMPERATURE_LOG_CLAMP definition above for rationale.
+            _apply_temperature_clamp(full_slider_dict)
+            _stabilise_rgb_tone_curve_endpoints(full_slider_dict)
         full_predictions_by_file[raw_path.name] = full_slider_dict
 
         filtered_slider_dict = {
@@ -424,7 +545,7 @@ def process_shoot_with_model(
             "profile_type":       _ckpt_sidecar.get("profile_type"),
             "profile_id":         _ckpt_sidecar.get("profile_id"),
             "base_checkpoint":    _ckpt_sidecar.get("base_checkpoint"),
-            "slider_set_version": engine._model._slider_set_version,
+            "slider_set_version": slider_set_version,
             # v1_skip_fields includes both the static skip set and any
             # user-toggled extras for this run. The finetune capture
             # pipeline reads this to mark these fields as "model_filtered"

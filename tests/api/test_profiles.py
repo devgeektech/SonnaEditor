@@ -8,6 +8,7 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
+from sonna_editor.api import callbacks, jobs
 from sonna_editor.api.routes import profiles as profiles_route
 
 
@@ -312,10 +313,9 @@ def test_lite_create_happy_path(
     client: TestClient, isolated_paths: dict[str, Path],
     tmp_path: Path, fake_mode_b_builder,
 ) -> None:
-    """Active Mode A profile + valid preset + valid survey → new Mode B ckpt
-    appears in /api/profiles with the Lite badge fields."""
+    """Valid preset + survey uses the foundation checkpoint, not an active Personal AI profile."""
     ckpts = isolated_paths["checkpoints_dir"]
-    _make_ckpt(ckpts, "model-v1.2.3.ckpt")  # Mode A, auto-activated as only profile
+    foundation_ckpt = _make_ckpt(isolated_paths["foundation_repo"], "foundation.ckpt")
     preset = _make_preset(tmp_path / "wedding.xmp")
 
     resp = client.post("/api/profiles/lite", json={
@@ -334,7 +334,7 @@ def test_lite_create_happy_path(
     invocation = fake_mode_b_builder[0]
     assert invocation["preset_path"].parent == ckpts
     assert invocation["survey_path"].parent == ckpts
-    assert invocation["base_ckpt_path"].name == "model-v1.2.3.ckpt"
+    assert invocation["base_ckpt_path"] == foundation_ckpt
     assert invocation["profile_name"] == "Wedding Lite"
 
     # Survey + preset were persisted under CHECKPOINTS_DIR.
@@ -349,11 +349,11 @@ def test_lite_create_happy_path(
     assert by_id["mode-b-wedding-lite-test"]["display_name"] == "Wedding Lite"
 
 
-def test_lite_create_rejects_when_no_active_personal_ai(
+def test_lite_create_rejects_when_foundation_missing(
     client: TestClient, isolated_paths: dict[str, Path],
     tmp_path: Path, fake_mode_b_builder,
 ) -> None:
-    """No profiles at all → guard fires with a clear error message."""
+    """No foundation checkpoint configured -> clear error before builder runs."""
     preset = _make_preset(tmp_path / "any.xmp")
     resp = client.post("/api/profiles/lite", json={
         "profile_name": "X",
@@ -361,16 +361,17 @@ def test_lite_create_rejects_when_no_active_personal_ai(
         "survey_answers": _valid_survey_answers(),
     })
     assert resp.status_code == 400
-    assert "Personal AI profile" in resp.json()["detail"]
+    assert "Foundation checkpoint" in resp.json()["detail"]
     assert len(fake_mode_b_builder) == 0  # builder never invoked
 
 
-def test_lite_create_rejects_when_only_mode_b_active(
+def test_lite_create_ignores_active_lite_profile(
     client: TestClient, isolated_paths: dict[str, Path],
     tmp_path: Path, fake_mode_b_builder,
 ) -> None:
-    """Active profile is itself a Mode B initial → guard rejects."""
+    """Lite creation is based on foundation, even if the active frontend profile is Lite."""
     ckpts = isolated_paths["checkpoints_dir"]
+    foundation_ckpt = _make_ckpt(isolated_paths["foundation_repo"], "foundation.ckpt")
     _make_ckpt(ckpts, "model-v0.1.0.ckpt", sidecar={
         "profile_type": "mode_b_initial",
         "profile_id": "mode-b-existing",
@@ -383,9 +384,9 @@ def test_lite_create_rejects_when_only_mode_b_active(
         "preset_path": str(preset),
         "survey_answers": _valid_survey_answers(),
     })
-    assert resp.status_code == 400
-    assert "Personal AI profile" in resp.json()["detail"]
-    assert len(fake_mode_b_builder) == 0
+    assert resp.status_code == 200, resp.text
+    assert len(fake_mode_b_builder) == 1
+    assert fake_mode_b_builder[0]["base_ckpt_path"] == foundation_ckpt
 
 
 def test_lite_create_counter_increments_past_existing(
@@ -394,7 +395,7 @@ def test_lite_create_counter_increments_past_existing(
 ) -> None:
     """Existing v0.5.0 ckpt → next Lite create produces v0.6.0."""
     ckpts = isolated_paths["checkpoints_dir"]
-    _make_ckpt(ckpts, "model-v1.2.3.ckpt")  # Mode A active
+    _make_ckpt(isolated_paths["foundation_repo"], "foundation.ckpt")
     _make_ckpt(ckpts, "model-v0.2.0.ckpt", sidecar={
         "profile_type": "mode_b_initial",
         "profile_id": "mode-b-old-1",
@@ -405,12 +406,6 @@ def test_lite_create_counter_increments_past_existing(
         "profile_id": "mode-b-old-2",
         "display_name": "Old Lite 2",
     })
-
-    # Ensure Mode A v1.2.3 is the active one (it is by auto-pick since
-    # trained_at falls back to file mtime and the test created it most
-    # recently among Mode A ckpts — only Mode A is a candidate for active
-    # under the guard anyway).
-    client.post("/api/profiles/dp-event-v1.2.3/activate")
 
     preset = _make_preset(tmp_path / "next.xmp")
     resp = client.post("/api/profiles/lite", json={
@@ -427,8 +422,7 @@ def test_lite_create_rejects_invalid_survey(
     tmp_path: Path, fake_mode_b_builder,
 ) -> None:
     """Survey missing keys / out-of-range value → 400 before builder runs."""
-    ckpts = isolated_paths["checkpoints_dir"]
-    _make_ckpt(ckpts, "model-v1.2.3.ckpt")
+    _make_ckpt(isolated_paths["foundation_repo"], "foundation.ckpt")
     preset = _make_preset(tmp_path / "p.xmp")
 
     # Missing 'shadows'.
@@ -459,8 +453,7 @@ def test_lite_create_rejects_non_xmp_preset(
     tmp_path: Path, fake_mode_b_builder,
 ) -> None:
     """Preset must be .xmp; other extensions rejected at the route."""
-    ckpts = isolated_paths["checkpoints_dir"]
-    _make_ckpt(ckpts, "model-v1.2.3.ckpt")
+    _make_ckpt(isolated_paths["foundation_repo"], "foundation.ckpt")
     not_preset = tmp_path / "preset.txt"
     not_preset.write_text("nope")
 
@@ -472,3 +465,53 @@ def test_lite_create_rejects_non_xmp_preset(
     assert resp.status_code == 400
     assert ".xmp" in resp.json()["detail"]
     assert len(fake_mode_b_builder) == 0
+
+
+# ── /api/profiles/personal ─────────────────────────────────────────────────
+
+def test_personal_create_starts_train_job(
+    client: TestClient,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Personal AI profile creation is a frontend job, not a hidden CLI-only path."""
+    input_dir = tmp_path / "raw-xmp"
+    input_dir.mkdir()
+
+    async def _fake_run(record, req, name, input_dir):  # noqa: ANN001
+        with record.lock:
+            record.photos_total = 12
+            record.photos_processed = 12
+            record.epochs_completed = 1
+            record.new_checkpoint_path = "fake/model-v2.0.0.ckpt"
+        jobs.transition(record, "complete")
+        callbacks.broadcast_terminal(record, "job_complete")
+
+    monkeypatch.setattr(profiles_route, "_run_personal_profile_job", _fake_run)
+
+    resp = client.post("/api/profiles/personal", json={
+        "profile_name": "Sonna Weddings",
+        "input_dir": str(input_dir),
+        "max_epochs": 1,
+        "batch_size": 4,
+        "workers": 0,
+    })
+
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["state"] == "queued"
+
+    snap = client.get(f"/api/jobs/{body['job_id']}").json()
+    assert snap["kind"] == "train"
+    assert snap["profile_name"] == "Sonna Weddings"
+    assert snap["epochs_total"] == 1
+
+
+def test_personal_create_rejects_relative_input_dir(client: TestClient) -> None:
+    resp = client.post("/api/profiles/personal", json={
+        "profile_name": "Bad",
+        "input_dir": "relative/path",
+    })
+
+    assert resp.status_code == 400
+    assert "absolute" in resp.json()["detail"]

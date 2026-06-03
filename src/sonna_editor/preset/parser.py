@@ -6,7 +6,7 @@ from pathlib import Path
 
 from lxml import etree
 
-from sonna_editor.config import SLIDER_FIELDS, SLIDER_RANGES
+from sonna_editor.config import SLIDER_FIELDS
 from sonna_editor.data.xmp import (
     _CURVE_CHANNELS,
     _normalize_curve,

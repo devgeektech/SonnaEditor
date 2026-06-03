@@ -15,6 +15,8 @@ Prerequisites:
 """
 from __future__ import annotations
 
+# ruff: noqa: E402
+
 import argparse
 import json
 import logging

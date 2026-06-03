@@ -4,7 +4,6 @@ import logging
 from datetime import datetime
 from pathlib import Path
 
-import numpy as np
 import pandas as pd
 
 from sonna_editor.config import SLIDER_FIELDS
@@ -195,21 +194,21 @@ def _build_report(
 
     # --- Summary ---
     lines += [
-        f"# Sonna Editor — Dataset Audit Report",
-        f"",
+        "# Sonna Editor — Dataset Audit Report",
+        "",
         f"Generated: {now}",
-        f"",
-        f"## Summary",
-        f"",
-        f"| | |",
-        f"|---|---|",
+        "",
+        "## Summary",
+        "",
+        "| | |",
+        "|---|---|",
         f"| **Status** | {status_emoji} **{status}** |",
         f"| Photos | {n:,} |",
         f"| Shoots | {n_shoots} |",
         f"| Date range | {date_range} |",
         f"| Likely unedited | {n_unedited} ({unedited_pct:.1f}%) |",
         f"| Outlier photos | {sum(len(v) for v in outliers.values())} across {len(outliers)} sliders |",
-        f"",
+        "",
     ]
 
     # Recommendation text
@@ -223,21 +222,21 @@ def _build_report(
     # --- Hardware estimate ---
     lines += [
         "## Hardware Estimate (batch 16, 100 epochs)",
-        f"",
-        f"| | |",
-        f"|---|---|",
+        "",
+        "| | |",
+        "|---|---|",
         f"| Photos | {n:,} |",
         f"| Estimated training time | {training_label} |",
         f"| Peak memory estimate | ~{max(4, int(n / 250))} GB |",
-        f"",
+        "",
     ]
 
     # --- Data composition ---
     lines += [
-        f"## Data Composition",
-        f"",
-        f"### Camera Bodies",
-        f"",
+        "## Data Composition",
+        "",
+        "### Camera Bodies",
+        "",
     ]
     if camera_counts.empty:
         lines.append("_No camera body data._\n")
@@ -265,7 +264,7 @@ def _build_report(
 
     lines += ["### ISO Distribution", ""]
     if iso_plot:
-        lines.append(f"![ISO Distribution](plots/iso_distribution.png)\n")
+        lines.append("![ISO Distribution](plots/iso_distribution.png)\n")
     elif not iso_counts.empty:
         lines.append("| ISO | Count |")
         lines.append("|---|---|")
@@ -277,17 +276,17 @@ def _build_report(
 
     # --- Slider analysis ---
     lines += [
-        f"## Slider Analysis",
-        f"",
+        "## Slider Analysis",
+        "",
     ]
     if slider_plot:
-        lines.append(f"![Slider Distributions](plots/slider_distributions.png)\n")
+        lines.append("![Slider Distributions](plots/slider_distributions.png)\n")
 
     lines += [
-        f"### Slider Statistics",
-        f"",
-        f"| Slider | Mean | Std Dev | Min | Max |",
-        f"|---|---|---|---|---|",
+        "### Slider Statistics",
+        "",
+        "| Slider | Mean | Std Dev | Min | Max |",
+        "|---|---|---|---|---|",
     ]
     for field in SLIDER_FIELDS:
         row = stats.loc[field]
@@ -298,11 +297,11 @@ def _build_report(
 
     if high_variance:
         lines += [
-            f"### High-Variance Sliders",
-            f"",
+            "### High-Variance Sliders",
+            "",
             f"These sliders have std dev > {_HIGH_VARIANCE_STD:.0f}, indicating inconsistent editing "
             f"that may be hard for the model to learn:",
-            f"",
+            "",
         ]
         for field in high_variance:
             std = stats.loc[field, "std"]
@@ -310,15 +309,15 @@ def _build_report(
         lines.append("")
 
     # --- Quality flags ---
-    lines += [f"## Quality Flags", f""]
+    lines += ["## Quality Flags", ""]
 
     if n_unedited > 0:
         lines += [
             f"### Likely Unedited Photos ({n_unedited})",
-            f"",
-            f"Photos where 30+ of 37 sliders are exactly 0.0 — these may not have "
-            f"been edited in Lightroom and will dilute the training signal.",
-            f"",
+            "",
+            "Photos where 30+ of 37 sliders are exactly 0.0 — these may not have "
+            "been edited in Lightroom and will dilute the training signal.",
+            "",
         ]
         if len(unedited_ids) <= 20:
             for uid in unedited_ids:
@@ -338,10 +337,10 @@ def _build_report(
     if outliers:
         lines += [
             f"### Outlier Photos (>{_OUTLIER_STD:.0f} std devs from mean)",
-            f"",
-            f"Review these before training — they may represent intentional creative choices "
-            f"or extraction errors:",
-            f"",
+            "",
+            "Review these before training — they may represent intentional creative choices "
+            "or extraction errors:",
+            "",
         ]
         for field, ids in sorted(outliers.items()):
             lines.append(f"**{field}** — {len(ids)} photo(s):")
@@ -358,7 +357,7 @@ def _build_report(
         lines.append("No statistical outliers detected.\n")
 
     # --- Recommendations ---
-    lines += [f"## Recommendations", f""]
+    lines += ["## Recommendations", ""]
 
     recs: list[str] = []
     if n_photos := len(df):

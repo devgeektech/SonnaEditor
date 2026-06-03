@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import tempfile
 import unittest.mock as mock
 from pathlib import Path
 
@@ -20,6 +19,7 @@ from sonna_editor.finetune.retrain import (
     _write_version_sidecar,
 )
 from sonna_editor.model.architecture import EmbeddingRegistry, SonnaEditor
+from sonna_editor.slider_set import fields_for_version, v1_fields
 from sonna_editor.training.datamodule import SonnaDataModule
 
 
@@ -57,7 +57,6 @@ def _make_histogram_bytes() -> bytes:
 
 def _make_minimal_parquet(tmp_path: Path, n_rows: int = 4, name: str = "data.parquet") -> Path:
     """Write a minimal Parquet compatible with SonnaDataModule."""
-    import io, os
     from PIL import Image
 
     thumb_dir = tmp_path / "thumbs"
@@ -447,10 +446,6 @@ class TestFinetunModel:
 # config.SLIDER_FIELDS (147) and looked up d[field] from per_field_mae
 # dicts. For v1 inputs (135 keys) it produced 12 always-NaN entries for
 # v2-extension fields, polluting the validation report.
-
-import math
-from sonna_editor.slider_set import v1_fields, fields_for_version
-
 
 def test_aggregate_mae_v1_inputs_returns_135_keys() -> None:
     """v1 per_field_mae dicts → aggregated result has exactly 135 keys."""

@@ -76,7 +76,7 @@ def main() -> None:
         save_predictions=args.save_predictions,
     )
 
-    print(f"Done.")
+    print("Done.")
     print(f"  Processed: {summary['processed']}")
     print(f"  Failed:    {summary['failed']}")
 

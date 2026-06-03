@@ -1,7 +1,7 @@
 // Profile view — three-section screen surfaced by the Profile rail icon.
 //
 // Section 1 (top bar):    Create new profile — two cards (Personal AI
-//                         placeholder / Lite profile entry point)
+//                         RAW+XMP training / Lite preset+survey entry point)
 // Section 2 (left rail):  Your profiles — list of trained profiles, click
 //                         to activate. Each row carries a type badge derived
 //                         from profile_type ("Personal AI" / "Lite").
@@ -20,6 +20,7 @@ import SONNA from '../tokens.js';
 import { AppShell } from './shell.jsx';
 import { ErrorBanner } from './error-banner.jsx';
 import { LiteProfileWizard } from './lite-wizard.jsx';
+import { PersonalProfileWizard } from './personal-wizard.jsx';
 import { useJob, isTerminal } from '../hooks/useJob.js';
 import { useCaptures } from '../hooks/useCaptures.js';
 import { deleteProfile, startFineTune } from '../api/client.js';
@@ -150,7 +151,7 @@ function ProfileList({ profiles, onPick, onRevealDir, onDeleteProfile, activePro
                   type="button"
                   onClick={(e) => {
                     e.stopPropagation();
-                    onDeleteProfile(p.id);
+                    onDeleteProfile(p);
                   }}
                   title="Delete this generated profile"
                   style={{
@@ -591,7 +592,7 @@ function FinetuneComplete({ snapshot, onActivate, onReset }) {
 
 // ── ProfileView — top-level component ────────────────────
 // ── Section 1 — Create new profile (top bar) ─────────────
-function CreateProfileBar({ onCreateLite }) {
+function CreateProfileBar({ onCreatePersonal, onCreateLite }) {
   return (
     <div style={{
       padding: '16px 24px',
@@ -601,36 +602,30 @@ function CreateProfileBar({ onCreateLite }) {
     }}>
       <div style={{ ...Tlabel, marginBottom: 12 }}>Create new profile</div>
       <div style={{ display: 'flex', gap: 12 }}>
-        {/* Personal AI — placeholder card. CLI workflow remains available;
-            the in-app training flow is the deferred P6 work. */}
-        <div style={{
+        <button
+          type="button"
+          onClick={onCreatePersonal}
+          style={{
           flex: 1, padding: '14px 16px',
           background: SONNA.bgPanel,
-          border: `1px solid ${SONNA.lineSoft}`,
+          border: `1px solid ${SONNA.line}`,
           borderRadius: 4,
-          opacity: 0.6, cursor: 'not-allowed',
+          cursor: 'pointer',
+          textAlign: 'left',
+          fontFamily: F,
+          color: SONNA.fg,
           minWidth: 0,
         }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <span style={{ fontSize: 13, fontWeight: 600, color: SONNA.fg }}>
               Personal AI profile
             </span>
-            <span style={{
-              fontSize: 9, fontWeight: 600, color: SONNA.fgDim,
-              textTransform: 'uppercase', letterSpacing: 0.5,
-              padding: '2px 5px', border: `1px solid ${SONNA.lineSoft}`,
-              borderRadius: 2,
-            }}>Coming soon</span>
           </div>
-          <div style={{ marginTop: 5, fontSize: 11.5, color: SONNA.fgFaint, lineHeight: 1.5 }}>
-            Full training on your edited photos. CLI workflow available now;
-            in-app flow ships in a future update.
+          <div style={{ marginTop: 5, fontSize: 11.5, color: SONNA.fgMute, lineHeight: 1.5 }}>
+            Train from RAW files and matching Lightroom XMP sidecars.
           </div>
-        </div>
+        </button>
 
-        {/* Lite — active entry point. Click handler is a stub in 5a; the
-            multi-step creation flow (preset upload + survey + POST
-            /api/profiles/lite) lands in commit 5b. */}
         <button
           type="button"
           onClick={onCreateLite}
@@ -650,15 +645,9 @@ function CreateProfileBar({ onCreateLite }) {
             <span style={{ fontSize: 13, fontWeight: 600, color: SONNA.fg }}>
               Lite profile
             </span>
-            <span style={{
-              fontSize: 9, fontWeight: 600, color: SONNA.ochre,
-              textTransform: 'uppercase', letterSpacing: 0.5,
-              padding: '2px 5px', border: `1px solid ${SONNA.ochre}`,
-              borderRadius: 2,
-            }}>Available</span>
           </div>
           <div style={{ marginTop: 5, fontSize: 11.5, color: SONNA.fgMute, lineHeight: 1.5 }}>
-            Preset + 6-question style calibration. Ready in minutes — no training run.
+            Preset + 6-question style calibration. Ready in minutes.
           </div>
         </button>
       </div>
@@ -741,7 +730,8 @@ function FolderFinetunePlaceholder() {
 export function ProfileView({ profiles, activeProfile, onActivate, onProfilesChanged, onNavigate }) {
   const captures = useCaptures();
   const [error, setError] = useState(null);
-  const [wizardOpen, setWizardOpen] = useState(false);
+  const [liteWizardOpen, setLiteWizardOpen] = useState(false);
+  const [personalWizardOpen, setPersonalWizardOpen] = useState(false);
   const [appPaths, setAppPaths] = useState(null);
 
   useEffect(() => {
@@ -796,15 +786,29 @@ export function ProfileView({ profiles, activeProfile, onActivate, onProfilesCha
 
   const handleCreateLite = useCallback(() => {
     setError(null);
-    setWizardOpen(true);
+    setLiteWizardOpen(true);
   }, []);
 
-  const handleWizardClose = useCallback(() => {
-    setWizardOpen(false);
+  const handleCreatePersonal = useCallback(() => {
+    setError(null);
+    setPersonalWizardOpen(true);
   }, []);
 
-  const handleWizardCreated = useCallback(() => {
-    setWizardOpen(false);
+  const handleLiteWizardClose = useCallback(() => {
+    setLiteWizardOpen(false);
+  }, []);
+
+  const handleLiteWizardCreated = useCallback(() => {
+    setLiteWizardOpen(false);
+    onProfilesChanged?.();
+  }, [onProfilesChanged]);
+
+  const handlePersonalWizardClose = useCallback(() => {
+    setPersonalWizardOpen(false);
+  }, []);
+
+  const handlePersonalWizardCreated = useCallback(() => {
+    setPersonalWizardOpen(false);
     onProfilesChanged?.();
   }, [onProfilesChanged]);
 
@@ -823,10 +827,15 @@ export function ProfileView({ profiles, activeProfile, onActivate, onProfilesCha
     }
   }, [appPaths]);
 
-  const handleDeleteProfile = useCallback(async (profileId) => {
-    if (!profileId) return;
+  const handleDeleteProfile = useCallback(async (profile) => {
+    if (!profile?.id) return;
+    const label = profile.display_name || `${profile.name} ${profile.version}`;
+    const ok = window.confirm(
+      `Delete profile "${label}"? This removes its local checkpoint and sidecar files.`,
+    );
+    if (!ok) return;
     try {
-      await deleteProfile(profileId);
+      await deleteProfile(profile.id);
       onProfilesChanged?.();
       setError(null);
     } catch (e) {
@@ -839,7 +848,10 @@ export function ProfileView({ profiles, activeProfile, onActivate, onProfilesCha
       <div style={{
         flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0,
       }}>
-        <CreateProfileBar onCreateLite={handleCreateLite} />
+        <CreateProfileBar
+          onCreatePersonal={handleCreatePersonal}
+          onCreateLite={handleCreateLite}
+        />
         <div style={{ flex: 1, display: 'flex', minHeight: 0 }}>
           <ProfileList
             profiles={profiles}
@@ -865,10 +877,16 @@ export function ProfileView({ profiles, activeProfile, onActivate, onProfilesCha
           />
         </div>
       </div>
-      {wizardOpen && (
+      {personalWizardOpen && (
+        <PersonalProfileWizard
+          onClose={handlePersonalWizardClose}
+          onCreated={handlePersonalWizardCreated}
+        />
+      )}
+      {liteWizardOpen && (
         <LiteProfileWizard
-          onClose={handleWizardClose}
-          onCreated={handleWizardCreated}
+          onClose={handleLiteWizardClose}
+          onCreated={handleLiteWizardCreated}
         />
       )}
     </AppShell>

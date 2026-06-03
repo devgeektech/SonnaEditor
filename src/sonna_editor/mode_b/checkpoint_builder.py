@@ -7,35 +7,26 @@ produces a SonnaEditor checkpoint with:
 
 - Backbone (ConvNeXt-Tiny) + metadata encoder warm-loaded from a v1.2.3
   base checkpoint — byte-identical to the source weights.
-- Output-head final-layer WEIGHTS inherited from the base ckpt unchanged,
-  so each prediction is image-aware (deviates per photo based on its
-  features just like the base model would).
-- Output-head final-layer BIASES are SHIFTED by a calibration delta:
-  ``b_new = b_base + delta_preset + delta_survey`` in the model's
-  *prediction space* (log-Kelvin for Temperature, raw units elsewhere).
-  ``delta_preset = preset_value − LR_DEFAULTS[field]`` (in pred space),
-  ``delta_survey`` is the survey shift converted to pred space the same
-  way. For a preset matching LR defaults + neutral survey, both deltas
-  are zero and the model is byte-equivalent to the base ckpt — predictions
-  match v1.2.x exactly. For stylised presets and/or non-neutral survey,
-  the delta shifts EVERY photo's prediction by the same amount in pred
-  space, anchoring the model at the user's calibration without erasing
-  per-photo behaviour.
+- Output-head final-layer WEIGHTS are zeroed for the initial Mode B
+  checkpoint, so the profile carrier does not stack the trained base model's
+  existing look on top of the preset.
+- Output-head final-layer BIASES are set to the absolute preset + survey
+  targets in the model's prediction space (log-Kelvin for Temperature,
+  raw units elsewhere).
 
-Earlier revisions of this module had two bugs that interacted:
-1. (commit 526f5b7 fixed) Head weights were zeroed, collapsing every
-   prediction to the bias-only output.
-2. (this commit fixes) Even after weights were inherited, the bias was
-   REPLACED with ``preset + survey_offset`` in pred space rather than
-   added as a delta — for Temperature that put the bias at log(5500) ≈
-   8.6 atop a base bias of ~0.02, shifting every photo's predicted
-   Kelvin by exp(8.59) ≈ 5400×, all clipped to the postprocess upper
-   bound, producing the same flat output users were seeing.
+Why bias-only for the initial profile carrier: Mode B is the user's uploaded
+preset plus six survey choices. Preserving the base head weights made the
+active v2 base add its own predicted Exposure/colour corrections on top of the
+preset, which could push normal preset values into blown-out Lightroom output.
+The initial Lite processing path detects ``profile_type: "mode_b_initial"``
+and uses the copied preset/survey metadata plus per-photo preset adjustment.
+The base backbone, metadata encoder, and hidden head layers are still saved in
+the checkpoint so Phase 5 fine-tuning has useful pretrained features.
 
 The resulting checkpoint loads via SonnaEditor.from_checkpoint() identically
 to a Mode A checkpoint and is ready for Phase 5 fine-tuning. A sidecar
-JSON marks ``profile_type: "mode_b_initial"`` for Step 3 (inference path)
-to identify.
+JSON marks ``profile_type: "mode_b_initial"`` so the first processing run uses
+the adaptive Lite branch.
 
 Targets the base checkpoint's native slider set. v1 bases produce 135-output
 Lite checkpoints; v2 bases produce 147-output Lite checkpoints and preserve
@@ -45,8 +36,8 @@ Public surface:
 - HEAD_SLICES_BY_VERSION: slider_set_version -> head slices in output order.
 - PROFILE_TYPE: sidecar JSON marker constant.
 - INHERITED_SKIP_FIELDS: default_skip_fields inherited from v1.2.3.
-- compute_bias_vector(): preset + survey -> {slider_field: pred_space_DELTA}.
-- apply_biases_to_model(): ADD deltas to inherited biases (weights untouched).
+- compute_bias_vector(): preset + survey -> {slider_field: pred_space target}.
+- apply_biases_to_model(): zero final weights and set final biases to targets.
 - build_mode_b_checkpoint(): full orchestration (file in -> ckpt + sidecar out).
 """
 from __future__ import annotations
@@ -180,12 +171,16 @@ def compute_bias_vector(
     *,
     slider_set_version: str = "v1",
 ) -> dict[str, float]:
-    """Build the bias-DELTA vector in prediction space.
+    """Build the absolute final-bias vector in prediction space.
 
-    Returns the shift to ADD to each head's inherited bias — NOT the
-    absolute target value. ``apply_biases_to_model`` is the consumer; it
-    calls ``final_linear.bias.add_(...)`` so the output becomes
-    ``y = W_inherited · x + (b_base + delta)`` per slider.
+    Returns the value to COPY into each head's final bias after the final
+    linear weights are zeroed. ``apply_biases_to_model`` is the consumer;
+    after it runs, initial Mode B output is:
+
+    ``y = 0 · hidden_features + target_bias``
+
+    This keeps the first Lite profile output anchored to the uploaded preset
+    and survey instead of stacking a trained base profile's predictions on top.
 
     For each slider in the requested slider set:
     1. Pick the preset value (or LR_DEFAULTS if absent).
@@ -193,15 +188,7 @@ def compute_bias_vector(
        Survey offsets live in human units (Kelvin for Temperature, raw
        units elsewhere — see survey.OFFSET_MAGNITUDES).
     3. Clamp the resulting target to the slider's valid Lightroom range.
-    4. Compute the delta against LR_DEFAULTS, converting to prediction
-       space (only Temperature differs — ``log(target) − log(default)``).
-
-    For a preset that matches LR defaults with a neutral survey every
-    delta is exactly 0 and the resulting model is byte-equivalent to the
-    base ckpt. Earlier revisions returned absolute targets here and the
-    consumer overwrote ``final_linear.bias`` with them; that ignored the
-    base ckpt's trained bias and shifted every photo's prediction by a
-    huge constant in log space (see module docstring).
+    4. Convert to prediction space (only Temperature differs — ``log(target)``).
     """
     if not isinstance(preset, dict):
         raise TypeError(f"preset must be a dict, got {type(preset).__name__}")
@@ -209,7 +196,7 @@ def compute_bias_vector(
     survey_offsets = _extract_survey_offsets(survey)
 
     fields = fields_for_version(slider_set_version)
-    deltas: dict[str, float] = {}
+    targets: dict[str, float] = {}
     for field in fields:
         target = _preset_value(preset, field)
         if field in survey_offsets:
@@ -217,23 +204,18 @@ def compute_bias_vector(
 
         lo, hi = config.SLIDER_RANGES[field]
         target_clamped = max(lo, min(hi, target))
-        default = float(LR_DEFAULTS[field])
-        # LR_DEFAULTS are always inside SLIDER_RANGES, but clamp defensively
-        # in case a future field's default lands outside its declared range.
-        default_clamped = max(lo, min(hi, default))
 
         if field == "Temperature":
-            # Both endpoints in log-Kelvin. Range-clamping above guarantees
-            # target_clamped >= 2000 so log is safe.
-            deltas[field] = math.log(target_clamped) - math.log(default_clamped)
+            # Range-clamping above guarantees target_clamped >= 2000.
+            targets[field] = math.log(target_clamped)
         else:
-            deltas[field] = target_clamped - default_clamped
+            targets[field] = target_clamped
 
-    assert len(deltas) == len(fields), (
-        f"Delta vector length {len(deltas)} != {len(fields)} "
+    assert len(targets) == len(fields), (
+        f"Bias vector length {len(targets)} != {len(fields)} "
         f"for slider_set_version={slider_set_version!r}"
     )
-    return deltas
+    return targets
 
 
 # ---------------------------------------------------------------------------
@@ -244,18 +226,12 @@ def apply_biases_to_model(
     model: SonnaEditor,
     bias_vector: dict[str, float],
 ) -> None:
-    """Add the per-slider calibration delta to each output head's final bias.
+    """Set each output head's final layer to a preset-faithful bias-only head.
 
-    ``bias_vector`` is a delta vector (the return of compute_bias_vector
-    after the 2026-05 fix). Mutates ``model`` in place. After this call,
-    the model produces ``y = W_inherited · x + (b_base + delta)`` per
-    slider — i.e. the base ckpt's per-photo behaviour shifted by the
-    user's calibration in prediction space. Weights are NOT touched.
-
-    For a delta vector that's all zero (neutral preset + neutral survey),
-    the model is byte-equivalent to the base ckpt and predictions match
-    v1.2.x exactly. This is the property that makes Lite calibration
-    additive rather than destructive.
+    ``bias_vector`` is an absolute target vector in prediction space. Mutates
+    ``model`` in place. Final-linear weights are zeroed and final-linear
+    biases are copied from ``bias_vector`` so initial Mode B output matches
+    the uploaded preset + survey calibration on every photo.
     """
     slider_set_version = model._slider_set_version
     fields = fields_for_version(slider_set_version)
@@ -283,9 +259,22 @@ def apply_biases_to_model(
 
         deltas = [bias_vector[fields[i]] for i in range(start, end)]
         with torch.no_grad():
-            final_linear.bias.add_(
-                torch.tensor(deltas, dtype=final_linear.bias.dtype)
+            final_linear.weight.zero_()
+            final_linear.bias.copy_(
+                torch.tensor(
+                    deltas,
+                    dtype=final_linear.bias.dtype,
+                    device=final_linear.bias.device,
+                )
             )
+
+    # v2 bases can carry a direct AsShot WB skip route. If left intact it would
+    # add log(AsShot Temperature) and AsShot Tint on top of the preset target,
+    # which is exactly the kind of hidden stacking Mode B must avoid.
+    if getattr(model, "_use_wb_metadata_skip", False) and hasattr(model, "wb_metadata_skip"):
+        with torch.no_grad():
+            model.wb_metadata_skip.weight.zero_()
+            model.wb_metadata_skip.bias.zero_()
 
 
 # ---------------------------------------------------------------------------
@@ -327,14 +316,11 @@ def verify_checkpoint(
     *,
     abs_tol: float = 1e-4,
 ) -> None:
-    """Cross-check a Mode B ckpt against its base ckpt + the calibration deltas.
+    """Cross-check a Mode B ckpt against its preset/survey target biases.
 
-    After the 2026-05 delta-bias fix the new ckpt's final-linear bias
-    must equal ``base_bias + bias_vector[field]`` per slider, with the
-    final-linear *weights* byte-identical to the base. This function
-    loads both ckpts and asserts both invariants directly — no forward
-    pass, so the verification is deterministic and independent of
-    SonnaEditor's penultimate activations.
+    The new ckpt's final-linear weights must be zero and final-linear biases
+    must equal ``bias_vector[field]`` per slider. The base checkpoint is still
+    loaded so this function can verify slider-set compatibility.
 
     Raises RuntimeError with a descriptive message on first mismatch.
     """
@@ -353,30 +339,36 @@ def verify_checkpoint(
     fields = fields_for_version(slider_set_version)
     for head_name, start, end in HEAD_SLICES_BY_VERSION[slider_set_version]:
         new_lin = getattr(new_model, head_name)[-1]
-        base_lin = getattr(base_model, head_name)[-1]
 
-        if not torch.equal(new_lin.weight, base_lin.weight):
-            max_diff = (new_lin.weight - base_lin.weight).abs().max().item()
+        if not torch.equal(new_lin.weight, torch.zeros_like(new_lin.weight)):
+            max_diff = new_lin.weight.abs().max().item()
             raise RuntimeError(
-                f"Verification failed for {head_name}: final-linear weights "
-                f"diverged from base ckpt (max |diff| = {max_diff:.6f}). "
-                f"Mode B must inherit head weights byte-for-byte."
+                f"Verification failed for {head_name}: final-linear weights are "
+                f"not zero (max |weight| = {max_diff:.6f}). Initial Mode B "
+                f"must be preset-faithful."
             )
 
         for i in range(start, end):
             field = fields[i]
-            base_b = float(base_lin.bias[i - start].item())
-            delta = bias_vector[field]
-            expected = base_b + delta
+            expected = bias_vector[field]
             produced = float(new_lin.bias[i - start].item())
             err = abs(produced - expected)
             if err > abs_tol:
                 raise RuntimeError(
                     f"Verification failed for {field} ({head_name} bias[{i - start}]): "
                     f"produced={produced:.6f}, expected={expected:.6f} "
-                    f"(base={base_b:.6f} + delta={delta:.6f}), "
                     f"|err|={err:.6f} > tol={abs_tol:.6f}"
                 )
+
+    if getattr(new_model, "_use_wb_metadata_skip", False) and hasattr(new_model, "wb_metadata_skip"):
+        skip = new_model.wb_metadata_skip
+        max_w = float(skip.weight.abs().max().item())
+        max_b = float(skip.bias.abs().max().item())
+        if max(max_w, max_b) > abs_tol:
+            raise RuntimeError(
+                "Verification failed: wb_metadata_skip is non-zero "
+                f"(max weight={max_w:.6f}, max bias={max_b:.6f})."
+            )
 
 
 # ---------------------------------------------------------------------------
@@ -525,9 +517,10 @@ def build_mode_b_checkpoint(
         ).isoformat(),
         "notes": (
             "Initialised via Mode B preset-to-checkpoint converter (Step 2). "
-            "Backbone + metadata encoder warm-loaded from base checkpoint; "
-            "output-head final-layer weights inherited from base checkpoint; "
-            "biases shifted by preset+survey deltas in prediction space."
+            "Backbone + metadata encoder warm-loaded from base checkpoint for "
+            "future fine-tuning; output-head final-layer weights zeroed so "
+            "the initial adaptive Lite path uses preset+survey metadata "
+            "instead of stacking base predictions."
         ),
         "experimental": False,
     }

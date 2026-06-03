@@ -32,7 +32,6 @@ from __future__ import annotations
 import math
 from pathlib import Path
 
-import pytest
 import torch
 from PIL import Image
 
@@ -41,7 +40,7 @@ from sonna_editor.data.xmp import read_xmp, write_xmp
 from sonna_editor.inference.engine import InferenceEngine
 from sonna_editor.model.architecture import EmbeddingRegistry, SonnaEditor
 from sonna_editor.model.losses import WeightedSliderLoss
-from sonna_editor.model.postprocess import postprocess_predictions, predictions_to_dict
+from sonna_editor.model.postprocess import predictions_to_dict
 
 
 _TEMPERATURE_IDX: int = config.SLIDER_FIELDS.index("Temperature")

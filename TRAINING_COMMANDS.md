@@ -1,22 +1,32 @@
 # Sonna Editor Training Commands
 
-This is the practical runbook for preparing a dataset, training a model, and making the trained checkpoint visible in the Saha frontend.
+This is the practical runbook for preparing data, training Personal AI profiles,
+training the foundation model, and creating Lite profiles.
 
-## Current Local State (2026-06-01)
+## Current Local State (2026-06-02)
 
 - Python 3.11.15 via uv 0.11.17.
 - PyTorch is `2.11.0+cu128`; CUDA is verified on the local NVIDIA GeForce RTX 3050.
 - `uv sync --extra dev` now preserves CUDA PyTorch on Windows/Linux x86_64 through the pinned PyTorch CUDA 12.8 index in `pyproject.toml` / `uv.lock`.
-- Current local dataset: `v1_learning\dataset\dataset.parquet` has 189 rows.
-- Current stratified splits: train=132, val=27, test=30.
-- Split generation is shoot-grouped and now balances Temperature correction, Exposure2012, and Tint correction. The previous local split had train Exposure mean ~0.212 versus val/test ~0.480/~0.504, which could make brightness look poor even when training loss improved.
-- `v1_learning\model-v2.0.0.ckpt` and `v1_learning\model-v2.0.0.json` are currently present in this workspace, so the frontend can discover one local v2 profile.
-- `v1_learning\model-v2.0.0.ckpt` remains the active local frontend profile. A fresh scene-stats candidate was trained at `data\models\sonna-v2-scene-stats-run01`, but it failed collapse analysis and was not kept frontend-visible.
+- Training/profile caches were intentionally cleared so a fresh dataset can be added.
+- `v1_learning\dataset\`, `data\models\`, `data\parquet\`, `data\captures\`, `data\thumbnails\`, `data\audits\`, `data\dbg\`, `data\raw\sonna_training\`, `.pytest_cache`, `.ruff_cache`, and `~\.saha\active_profile.txt` were removed or emptied.
+- There is currently no guaranteed local frontend-visible checkpoint in `v1_learning\`. Add fresh RAW+XMP data and train a Personal AI profile from the UI, or train the foundation checkpoint with `scripts\train_foundation_model.py`.
+- Lite profile creation now uses the configured foundation checkpoint. It does not depend on whichever Personal AI profile is active in the frontend.
+- Raw training photos should live outside this app repo, for example `D:\SonnaTraining\EditedRawWithXmp\` on Windows or `~/SonnaEditorTraining/raw/` on Mac. Generated datasets and training runs can live in `SONNA_TRAINING_WORKSPACE`.
 - `scripts\train_profile.py` now logs default recipe values as `Training recipe ...`; only values explicitly supplied as CLI flags are logged as `Override ...`.
 - Fresh training now initialises output-head biases from the training-set target medians. With the current split those priors are Exposure2012=0.22, Temperature=5191K, Tint=5. WB residual heads start at zero when AsShot WB skip is enabled.
 - Default image augmentation is geometry-only. Photometric jitter is disabled by default because changing input brightness/colour without changing XMP labels adds noise to Exposure and white-balance learning.
-- Fresh v2 models now use `arch_version=2`, adding six preview-derived luminance scene stats to the metadata path. Existing checkpoints load with their saved architecture version.
+- Fresh current-recipe models use the scene-stat architecture, adding six preview-derived luminance scene stats to the metadata path. Existing legacy checkpoints still load with their saved architecture version.
 - Validation logs key-slider distribution ratios (`val_dist_*_std_ratio`) so prediction collapse is visible during training.
+
+## Training Paths: What Is The Difference?
+
+RAW+XMP data preparation and foundation training are not the same thing.
+
+- **RAW+XMP dataset build:** reads edited photos, extracts previews/metadata/slider labels, and writes Parquet splits. This is just data preparation.
+- **Personal AI profile training:** trains from those splits and publishes a frontend-visible profile into `v1_learning/`.
+- **Foundation training:** trains from the same kind of supervised RAW+XMP labels, but promotes the final checkpoint into a separate foundation repo. It does not publish to `v1_learning/`.
+- **Lite profile creation:** does not train from photos. It combines the configured foundation checkpoint with a preset and survey answers.
 
 ## Project Flow
 
@@ -24,7 +34,7 @@ This is the practical runbook for preparing a dataset, training a model, and mak
    - **RAW + XMP sidecars:** edited RAW files with matching Lightroom `.xmp` files.
    - **Lightroom catalog:** edited photos in a `.lrcat`; no exported XMP required because slider targets are read from the catalog.
    - **Fine-tune captures:** previous Saha predictions plus final user-edited XMPs.
-   - **Mode B preset:** a Lightroom preset + style survey can create an initial checkpoint, but this is not supervised model training from photos.
+   - **Lite preset:** a foundation checkpoint + Lightroom preset + style survey can create an initial checkpoint, but this is not supervised model training from photos.
 
 2. Build the training dataset.
    - RAW + XMP path: run `scripts/build_dataset.py`.
@@ -51,19 +61,26 @@ This is the practical runbook for preparing a dataset, training a model, and mak
    - Run `scripts/finetune_profile.py` or the frontend fine-tune route.
    - Fine-tuned checkpoints also save into `v1_learning/` so they become visible in the frontend.
 
+## Production Profile Paths
+
+- **Personal AI profile:** built from RAW files plus matching Lightroom XMP sidecars. This is the normal profile-training path for operators and is now started from the Saha frontend. The backend uses the same dataset builder and `sonna_editor.training.profile_runner.train_profile()` recipe as the CLI, then publishes a versioned profile into `v1_learning/`.
+- **Lite profile:** built from the configured foundation checkpoint plus a Lightroom preset and the Lite survey. It does not depend on an active Personal AI profile. The frontend asks only for Exposure, Temperature, and Tint preference because the preset owns the look sliders. Legacy survey fields are stored as zero for compatibility.
+- **Foundation model:** CLI-only. Use `scripts\train_foundation_model.py` to build the dataset/training run outside the app repo, then promote the final checkpoint into the separate foundation repo.
+
 ## Important Paths
 
 | Purpose | Path |
 |---|---|
-| Source training RAW + XMP folder | `data/raw/<training_set_name>/` or any absolute folder |
+| Source training RAW + XMP folder | Any absolute folder outside the app repo, for example `D:\SonnaTraining\EditedRawWithXmp\` or `~/SonnaEditorTraining/raw/` |
 | Source Lightroom catalog | Any `.lrcat` path, opened read-only |
-| Dataset output root | `v1_learning/dataset/` |
-| Full dataset Parquet | `v1_learning/dataset/dataset.parquet` |
-| Training thumbnails | `v1_learning/dataset/thumbnails/` |
-| Canonical train/val/test splits | `v1_learning/dataset/splits_v2_stratified/` |
-| Training run outputs | `data/models/<run_name>/` (use a consistent folder per run) |
-| Best native checkpoint for that run | `data/models/<run_name>/model.ckpt` |
-| Training summary | `data/models/<run_name>/training_summary.json` |
+| Personal AI dataset output root | `v1_learning/dataset/` or frontend job workspace |
+| Foundation training workspace | `SONNA_TRAINING_WORKSPACE` or `~/SonnaEditorTraining` |
+| Foundation repo | `SONNA_FOUNDATION_REPO` or sibling folder `SonnaEditorFoundation` |
+| Foundation manifest | `<foundation_repo>/foundation_manifest.json` |
+| Foundation checkpoint path | `<foundation_repo>/checkpoints/<version>.ckpt` |
+| Personal AI training run outputs | `data/models/<run_name>/` or frontend job workspace |
+| Best native checkpoint for a run | `<run_output>/model.ckpt` |
+| Training summary | `<run_output>/training_summary.json` |
 | Frontend-visible profile directory | `v1_learning/` |
 | Frontend-visible checkpoint pattern | `v1_learning/model-vX.Y.Z.ckpt` |
 | Frontend-visible sidecar pattern | `v1_learning/model-vX.Y.Z.json` |
@@ -79,8 +96,8 @@ This is the practical runbook for preparing a dataset, training a model, and mak
 | RAW files only, never edited | No | Nothing. RAW pixels/metadata are inputs only, not labels. | Not supported |
 | RAW files + matching `.xmp` sidecars | Yes | Lightroom sidecar slider values | `scripts/build_dataset.py` then `scripts/train_profile.py` |
 | Lightroom Classic catalog `.lrcat` + accessible RAW files | Yes | Catalog develop-settings blobs | `scripts/build_dataset_from_catalog.py` then `scripts/train_profile.py` |
-| Lightroom preset only | Not supervised training | Preset supplies fixed baseline values | `scripts/build_mode_b_checkpoint.py` |
-| Preset + style survey | Creates Mode B initial checkpoint | Preset + survey calibrate output-head biases | `scripts/build_mode_b_checkpoint.py` |
+| Lightroom preset only | Not supervised training | Preset supplies fixed baseline values | `scripts/process_shoot_preset.py` |
+| Foundation checkpoint + preset + style survey | Creates Lite initial profile | Foundation checkpoint supplies reusable model shell; preset + survey supply style baseline; initial processing adds per-photo auto corrections | `scripts/build_mode_b_checkpoint.py` |
 | New shoot processed by Saha, then user edits XMPs | Yes, fine-tuning only | Final user-edited XMP compared against `sonna_predictions.json` | `scripts/finetune_profile.py` |
 
 RAW-only training is not valid for the current model because this is supervised slider regression. The model learns `RAW preview + metadata -> Lightroom slider values`; without XMP, catalog develop settings, or captured final edits, there is no ground truth.
@@ -99,25 +116,25 @@ RAW-only training is not valid for the current model because this is supervised 
 
 So `catalog_dataset.py` is a dataset preparation file, but only for the catalog route. It is not the general RAW + XMP builder; that path lives in `dataset.py`.
 
-## Preset / Mode B Flow
+## Lite Profile Flow
 
-Preset-based profiles are called **Mode B** or **Lite** profiles in this project. This is not full supervised training from photos. It creates an initial checkpoint by taking an existing trained Mode A checkpoint and shifting its output-head biases from a Lightroom preset plus six survey answers.
+Preset-based profiles are called **Lite** profiles in the UI. This is not full supervised training from photos. It creates an initial checkpoint/sidecar package from the configured foundation checkpoint plus a Lightroom preset and Lite survey answers. During initial Lite processing, the pipeline detects `profile_type: mode_b_initial`, uses the preset as the fixed style baseline, and computes per-photo Exposure, Temperature, and Tint corrections before writing XMPs. Preset look sliders stay fixed. The foundation checkpoint's feature layers remain available for later fine-tuning.
 
 Two preset execution paths exist:
 
 | Path | What it does | Command |
 |---|---|---|
-| Mode B checkpoint flow | Builds a frontend-visible model checkpoint from preset + survey + base trained checkpoint. This uses the normal model inference path afterwards. | `run_style_survey.py` -> `build_mode_b_checkpoint.py` -> `process_shoot_model.py` |
-| Direct preset execution | Applies a preset with heuristic per-photo corrections and writes XMPs directly. No model checkpoint is created. | `process_shoot_preset.py` |
+| Lite checkpoint flow | Builds a frontend-visible Lite profile from foundation checkpoint + preset + survey. Initial processing uses fixed preset style plus per-photo Exposure/WB corrections, and later fine-tuned checkpoints use normal model inference. | `run_style_survey.py` -> `build_mode_b_checkpoint.py` -> `process_shoot_model.py` |
+| Direct preset execution | Applies a preset with the same heuristic per-photo corrections and writes XMPs directly. No selectable profile checkpoint is created. | `process_shoot_preset.py` |
 
-Recommended Mode B flow:
+Recommended Lite flow:
 
-1. Start from an active trained Mode A checkpoint in `v1_learning/`, for example `v1_learning/model-v1.2.3-prod256.ckpt` or a newer trained profile.
+1. Train or configure the foundation checkpoint in the separate foundation repo.
 2. Export or choose a Lightroom preset `.xmp`.
 3. Run the style survey to create a survey JSON.
-4. Build a Mode B checkpoint. If `--output` is omitted, the CLI now publishes to the next frontend-visible path: `v1_learning/model-v0.N.0.ckpt`.
+4. Build a Lite checkpoint. If `--output` is omitted, the CLI publishes to the next frontend-visible path: `v1_learning/model-v0.N.0.ckpt`.
 5. Refresh profiles in the frontend or call `/api/profiles`; the new `model-v0.N.0.ckpt` appears as `profile_type: mode_b_initial`.
-6. Execute it like any other model via the Electron UI or `scripts/process_shoot_model.py`.
+6. Execute it via the Electron UI or `scripts/process_shoot_model.py`; initial Lite profiles use the adaptive preset branch automatically.
 7. If the user edits the results in Lightroom, capture those edits and fine-tune later through the normal continuous-learning path.
 
 Create survey JSON interactively:
@@ -127,57 +144,70 @@ uv run python scripts\run_style_survey.py `
   --output v1_learning\wedding-lite-survey.json
 ```
 
-Create survey JSON non-interactively:
+Create survey JSON non-interactively. The CLI still accepts all six historical keys for compatibility; use zero for contrast/saturation/shadows when matching the current Lite UI:
 
 ```powershell
 uv run python scripts\run_style_survey.py `
   --output v1_learning\wedding-lite-survey.json `
   --non-interactive `
-  --answers exposure=0,temperature=1,tint=0,contrast=1,saturation=-1,shadows=1
+  --answers exposure=0,temperature=1,tint=0,contrast=0,saturation=0,shadows=0
 ```
 
-Build and publish a Mode B checkpoint to the frontend-visible folder:
+Build and publish a Lite checkpoint to the frontend-visible folder. By default
+this reads the configured foundation checkpoint from `SONNA_FOUNDATION_CHECKPOINT`,
+`SONNA_FOUNDATION_REPO/foundation_manifest.json`, or
+`SONNA_FOUNDATION_REPO/foundation.ckpt`:
 
 ```powershell
 uv run python scripts\build_mode_b_checkpoint.py `
   --preset "D:\Lightroom\Presets\Sonna Wedding.xmp" `
   --survey v1_learning\wedding-lite-survey.json `
-  --base-ckpt v1_learning\model-v1.2.3-prod256.ckpt `
   --profile-name "Wedding Lite"
 ```
 
 Expected outputs:
 
 ```text
-v1_learning\model-v0.1.0.ckpt
-v1_learning\model-v0.1.0.json
+v1_learning\model-v0.2.0.ckpt
+v1_learning\model-v0.2.0.json
 ```
 
-If `model-v0.1.0.ckpt` already exists, the CLI picks the next open version, for example `model-v0.2.0.ckpt`. It refuses to overwrite an existing output.
+If the first Lite version already exists, the CLI picks the next open version, for example `model-v0.2.0.ckpt`. It refuses to overwrite an existing output.
 
-Run the Mode B checkpoint on a shoot:
+Important: Lite profiles created before the 2026-06-02 Mode B fixes can over-apply the preset because they added the base model's predicted Exposure/colour values on top. Rebuild those old `v1_learning\model-v0.*.ckpt` Lite profiles from the UI or CLI before judging current Mode B output.
+
+After updating code, restart the backend/Electron app before processing from the
+UI. A live backend process will otherwise keep the old Mode B processing code in
+memory. In the current Windows workspace, stale `model-v0.1.0` artifacts were
+removed and `model-v0.2.0` is the corrected Lite profile built from the same
+preset/survey.
+
+Run the Lite checkpoint on a shoot:
 
 ```powershell
 uv run python scripts\process_shoot_model.py `
   --input-dir D:\Shoots\ClientShoot01 `
-  --model-path v1_learning\model-v0.1.0.ckpt `
+  --model-path v1_learning\model-v0.2.0.ckpt `
   --output-dir D:\Shoots\ClientShoot01\SahaOutput
 ```
 
-Direct preset-to-XMP execution, without model checkpoint creation:
+Lite checkpoints are visible in the UI when they are published into
+`v1_learning/`. The foundation checkpoint stays in the separate foundation repo
+and is not listed as a frontend profile.
 
-```powershell
-uv run python scripts\process_shoot_preset.py `
-  --input-dir D:\Shoots\ClientShoot01 `
-  --preset "D:\Lightroom\Presets\Sonna Wedding.xmp" `
-  --output-dir D:\Shoots\ClientShoot01\PresetOutput `
-  --auto-exposure `
-  --no-auto-white-balance `
-  --auto-shadow-recovery `
-  --auto-highlight-recovery
-```
+`process_shoot_preset.py` is the direct preset-only path. It does not build a
+profile checkpoint and does not publish anything to the UI. Instead it:
 
-Use direct preset execution only when you want quick preset-derived XMPs. Use Mode B checkpoint flow when you want the preset to become a selectable frontend profile and later fine-tune from corrections.
+- parses a Lightroom preset
+- applies content-aware per-photo adjustments
+- writes XMP sidecars directly next to the source RAWs (or into `--output-dir`)
+- supports per-photo auto exposure, auto white balance, shadow recovery, and
+  highlight recovery options
+
+Use `process_shoot_preset.py` when you want quick preset-derived XMPs without
+creating a selectable profile. Use the Lite checkpoint flow when you want the
+preset to become a frontend profile that can later be fine-tuned from Lightroom
+corrections.
 
 ## 1. Install And Verify
 
@@ -205,23 +235,23 @@ In Lightroom Classic:
 3. Confirm every RAW has a matching `.xmp` sidecar next to it.
 4. Place or point to that folder as the dataset input.
 
-Recommended local folder:
-
-```powershell
-data\raw\sonna_training\
-```
-
-The folder can be external too, for example:
+Recommended local folders outside the app repo:
 
 ```powershell
 D:\SonnaTraining\EditedRawWithXmp\
+```
+
+Mac example:
+
+```bash
+~/SonnaEditorTraining/raw/edited-with-xmp/
 ```
 
 ## 3A. Build Dataset And Splits From RAW + XMP Sidecars
 
 ```powershell
 uv run python scripts\build_dataset.py `
-  --input-dir data\raw\sonna_training `
+  --input-dir D:\SonnaTraining\EditedRawWithXmp `
   --output-dir v1_learning\dataset `
   --profile-name "sonna_v2" `
   --workers 4 `
@@ -278,15 +308,15 @@ AsShot WB is still extracted from the RAW metadata for Temperature/Tint learning
 
 ## 4. Train With Current Recipe
 
-This is the recommended command for the next v2 training run:
+This is the recommended command for a Personal AI training run from prepared splits:
 
 ```powershell
 uv run python scripts\train_profile.py `
   --train-parquet v1_learning\dataset\splits_v2_stratified\train.parquet `
   --val-parquet v1_learning\dataset\splits_v2_stratified\val.parquet `
   --test-parquet v1_learning\dataset\splits_v2_stratified\test.parquet `
-  --output-dir data\models\sonna-v2-run01 `
-  --profile-name "Sonna v2 Run 01" `
+  --output-dir data\models\sonna-personal-run01 `
+  --profile-name "Sonna Personal Run 01" `
   --max-epochs 50 `
   --batch-size 16 `
   --num-workers 4
@@ -295,7 +325,7 @@ uv run python scripts\train_profile.py `
 To resume an interrupted training run, add `--resume-from-checkpoint` and point it at one of the Lightning checkpoints under the run's `checkpoints\` directory:
 
 ```powershell
-  --resume-from-checkpoint "data\models\sonna-v2-run01\checkpoints\epoch=...-val_loss=....ckpt" `
+  --resume-from-checkpoint "data\models\sonna-personal-run01\checkpoints\epoch=...-val_loss=....ckpt" `
 ```
 
 Omit `--resume-from-checkpoint` for a fresh model.
@@ -313,7 +343,7 @@ image_resolution=512
 lr=1e-4
 max_epochs=50
 freeze_backbone_epochs=3
-arch_version=2 for fresh models
+current scene-stat architecture for fresh models
 Exposure loss weight=5.0
 Temperature loss weight=4.0
 Tint loss weight=4.0
@@ -331,18 +361,18 @@ Use `--no-target-prior-init` only for an ablation. For the next quality evaluati
 
 Important small-data caution:
 
-- On the current 189-photo dataset, `data\models\sonna-v2-scene-stats-run01` reached low MAE but collapsed harder than the existing `model-v2.0.0` (`29` collapsed sliders versus `14` on the same 27-photo validation split).
+- On the earlier 189-photo diagnostic dataset, the scene-stat experiment reached low MAE but collapsed harder than the previous published profile (`29` collapsed sliders versus `14` on the same 27-photo validation split).
 - Treat collapse analysis as a promotion gate, not just validation loss or MAE.
-- Do not promote `data\models\sonna-v2-scene-stats-run01`; keep it as a diagnostic run.
+- Do not promote old rejected diagnostic runs; keep them as diagnostics only.
 
 What this saves:
 
 ```text
-data\models\sonna-v2-run01\model.ckpt
-data\models\sonna-v2-run01\model.json
-data\models\sonna-v2-run01\training_summary.json
-data\models\sonna-v2-run01\checkpoints\
-data\models\sonna-v2-run01\tensorboard\
+data\models\sonna-personal-run01\model.ckpt
+data\models\sonna-personal-run01\model.json
+data\models\sonna-personal-run01\training_summary.json
+data\models\sonna-personal-run01\checkpoints\
+data\models\sonna-personal-run01\tensorboard\
 ```
 
 What gets published for the frontend:
@@ -352,7 +382,7 @@ v1_learning\model-v2.0.0.ckpt
 v1_learning\model-v2.0.0.json
 ```
 
-If `model-v2.0.0.ckpt` already exists, the next run publishes as `model-v2.0.1.ckpt`, then `model-v2.0.2.ckpt`, and so on.
+If `model-v2.0.0.ckpt` already exists, the next run publishes as the next available version. Treat this as an internal file version, not a model-family decision.
 
 ### Diagnostics: quick checks and audits
 
@@ -394,34 +424,74 @@ Notes:
 - `audit_all_sliders_v1.2.3.py` now discovers published checkpoints under `v1_learning/model-v*.ckpt` and will prompt you to choose one if multiple are found.
 - Audit scripts (like `audit_all_sliders_v1.2.3.py`) are read-only analyses that load a published checkpoint and a test split; they may take longer and require the test parquet to exist. Output goes to `scripts/output/` — keep those reports under version control only when intended.
 
-### Creating a foundation (base) model
+### Creating the foundation model
 
-When we say "foundation model" here we mean a stable, broadly-trained base checkpoint that you will later fine-tune for specific clients or Mode B presets. To create one:
+The foundation model is the stable base checkpoint used by Lite profile creation.
+It is trained from supervised RAW+XMP labels, but it is promoted into a separate
+foundation repo instead of `v1_learning/`.
 
-1. Prepare a large, diverse dataset (see steps in Section 2/3) and ensure train/val/test splits are representative.
-2. Run `scripts/train_profile.py` on that dataset to train a production-quality checkpoint. Example (same as above):
+The one-command RAW+XMP path builds the dataset in `SONNA_TRAINING_WORKSPACE`,
+trains the current recipe, copies the final checkpoint to the foundation repo,
+and updates `foundation_manifest.json`:
 
 ```powershell
-uv run python scripts\train_profile.py `
-  --train-parquet v1_learning\dataset\splits_v2_stratified\train.parquet `
-  --val-parquet v1_learning\dataset\splits_v2_stratified\val.parquet `
-  --test-parquet v1_learning\dataset\splits_v2_stratified\test.parquet `
-  --output-dir data\models\sonna-v2-foundation `
-  --profile-name "Sonna v2 Foundation" `
+uv run python scripts\train_foundation_model.py `
+  --raw-xmp-dir D:\SonnaTraining\EditedRawWithXmp `
+  --workspace-dir D:\SonnaTraining\workspace `
+  --foundation-repo D:\SonnaFoundationModel `
+  --profile-name "Sonna Foundation" `
+  --version-stem foundation-current `
   --max-epochs 100 `
-  --batch-size 16
+  --batch-size 16 `
+  --workers 4 `
+  --init-git
 ```
 
-3. Verify training summary (`data/models/sonna-v2-foundation/training_summary.json`) and run `quick_diagnostic.py` or targeted audits.
-4. Publish to the frontend-visible folder (the training CLI does this by default unless `--no-publish` is supplied). The published path under `v1_learning/` is then the base checkpoint you can pass to `scripts/finetune_profile.py --base-model v1_learning/model-vX.Y.Z.ckpt`.
+If you already have prepared splits, skip dataset rebuilding:
+
+```powershell
+uv run python scripts\train_foundation_model.py `
+  --splits-dir D:\SonnaTraining\workspace\foundation_runs\run01\dataset\splits_v2_stratified `
+  --workspace-dir D:\SonnaTraining\workspace `
+  --foundation-repo D:\SonnaFoundationModel `
+  --profile-name "Sonna Foundation" `
+  --version-stem foundation-current `
+  --max-epochs 100 `
+  --batch-size 16 `
+  --workers 4
+```
+
+The foundation repo contains:
+
+```text
+D:\SonnaFoundationModel\foundation_manifest.json
+D:\SonnaFoundationModel\checkpoints\foundation-current.ckpt
+D:\SonnaFoundationModel\checkpoints\foundation-current.json
+```
+
+The helper writes `.gitattributes` for Git LFS. For GitHub, install and enable
+Git LFS before pushing large `.ckpt` files:
+
+```powershell
+git lfs install
+cd D:\SonnaFoundationModel
+git add .
+git commit -m "Add foundation checkpoint"
+```
+
+Point the app at this repo if it is not beside the main checkout:
+
+```powershell
+$env:SONNA_FOUNDATION_REPO = "D:\SonnaFoundationModel"
+```
 
 Alternatives:
-- To create a Mode B (preset-derived) initial checkpoint, use `scripts/build_mode_b_checkpoint.py --preset <preset.xmp> --survey <survey.json> --base-ckpt <published_base.ckpt>` — this preserves the base backbone and shifts output-head biases and is not a supervised photo-training run.
+- To create a Lite initial checkpoint, use `scripts/build_mode_b_checkpoint.py --preset <preset.xmp> --survey <survey.json> --profile-name <name>`. It reads the configured foundation checkpoint by default.
 
 Summary guidance:
 - Use `--resume-from-checkpoint` to recover interrupted training runs (same run continuation).
 - Use `scripts/finetune_profile.py --base-model <ckpt>` for deliberate fine-tuning on captured edits.
-- Use `scripts/train_profile.py` on a large dataset to create your foundation/base model, then promote/publish and use that published ckpt as the `--base-model` for fine-tuning.
+- Use `scripts/train_foundation_model.py` on a large dataset to create or replace the active foundation checkpoint used by Lite creation.
 
 ## 5. Train With Explicit Published Version
 
@@ -432,8 +502,8 @@ uv run python scripts\train_profile.py `
   --train-parquet v1_learning\dataset\splits_v2_stratified\train.parquet `
   --val-parquet v1_learning\dataset\splits_v2_stratified\val.parquet `
   --test-parquet v1_learning\dataset\splits_v2_stratified\test.parquet `
-  --output-dir data\models\sonna-v2-run02 `
-  --profile-name "Sonna v2 Candidate 02" `
+  --output-dir data\models\sonna-personal-run02 `
+  --profile-name "Sonna Personal Candidate 02" `
   --publish-version v2.0.2 `
   --max-epochs 50 `
   --batch-size 16
@@ -451,7 +521,6 @@ uv run python scripts\train_profile.py `
   --val-parquet v1_learning\dataset\splits_v2_stratified\val.parquet `
   --test-parquet v1_learning\dataset\splits_v2_stratified\test.parquet `
   --output-dir data\models\scratch-run `
-  --slider-set-version v2 `
   --image-resolution 512 `
   --no-publish
 ```

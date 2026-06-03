@@ -47,6 +47,8 @@ export const activateProfile = (id) =>
   request(`/api/profiles/${encodeURIComponent(id)}/activate`, { method: 'POST' });
 export const deleteProfile = (id) =>
   request(`/api/profiles/${encodeURIComponent(id)}`, { method: 'DELETE' });
+export const createPersonalProfile = (req) =>
+  request('/api/profiles/personal', { method: 'POST', body: JSON.stringify(req) });
 export const createLiteProfile = (req) =>
   request('/api/profiles/lite', { method: 'POST', body: JSON.stringify(req) });
 

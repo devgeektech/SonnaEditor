@@ -104,82 +104,72 @@ def _write_survey(tmp_path: Path, payload: dict) -> Path:
 # compute_bias_vector
 # ---------------------------------------------------------------------------
 
-def test_compute_bias_vector_returns_deltas_not_absolutes() -> None:
-    """Spot-check the delta semantic: bias[field] = target − LR_DEFAULTS[field]."""
+def test_compute_bias_vector_returns_absolute_targets() -> None:
+    """Spot-check the target semantic: bias[field] = preset + survey target."""
     preset = {f: None for f in config.SLIDER_FIELDS}
-    preset["Exposure2012"] = 0.35  # LR default 0.0 → delta +0.35
-    deltas = compute_bias_vector(preset, _balanced_survey())
-    assert deltas["Exposure2012"] == pytest.approx(0.35)
+    preset["Exposure2012"] = 0.35
+    targets = compute_bias_vector(preset, _balanced_survey())
+    assert targets["Exposure2012"] == pytest.approx(0.35)
 
 
-def test_compute_bias_vector_zero_delta_when_preset_matches_defaults() -> None:
+def test_compute_bias_vector_uses_lr_defaults_when_preset_absent() -> None:
     """Preset absent (falls back to LR_DEFAULTS) + neutral survey → all
-    deltas are exactly 0. This is the property that makes a neutral
-    Lite ckpt byte-equivalent to the base ckpt."""
+    targets land at Lightroom defaults in prediction space."""
     preset = {f: None for f in config.SLIDER_FIELDS}
-    deltas = compute_bias_vector(preset, _balanced_survey())
-    # Sliders whose LR default is non-zero would have surfaced the old
-    # absolute-target behaviour. Pin them at delta = 0.
-    assert deltas["Sharpness"] == pytest.approx(0.0)
-    assert deltas["ColorGradeBlending"] == pytest.approx(0.0)
-    assert deltas["ParametricMidtoneSplit"] == pytest.approx(0.0)
-    assert deltas["Temperature"] == pytest.approx(0.0)
-    # And every other field too.
-    for f, d in deltas.items():
-        assert d == pytest.approx(0.0), f"{f} delta={d} (expected 0)"
+    targets = compute_bias_vector(preset, _balanced_survey())
+    assert targets["Exposure2012"] == pytest.approx(0.0)
+    assert targets["Sharpness"] == pytest.approx(25.0)
+    assert targets["ColorGradeBlending"] == pytest.approx(50.0)
+    assert targets["ParametricMidtoneSplit"] == pytest.approx(50.0)
+    assert targets["Temperature"] == pytest.approx(math.log(5500.0))
 
 
 def test_compute_bias_vector_applies_survey_offset() -> None:
-    """Survey offsets contribute to the delta in their native units."""
+    """Survey offsets contribute to the target in their native units."""
     preset = {f: None for f in config.SLIDER_FIELDS}
-    preset["Exposure2012"] = 0.3  # delta +0.3 from LR default 0.0
-    # survey exposure answer = 2 → offset = +1.0 stops → total delta +1.3
+    preset["Exposure2012"] = 0.3
+    # survey exposure answer = 2 -> offset = +1.0 stops -> target +1.3
     survey = _balanced_survey(exposure=2)
-    deltas = compute_bias_vector(preset, survey)
-    assert deltas["Exposure2012"] == pytest.approx(1.3)
+    targets = compute_bias_vector(preset, survey)
+    assert targets["Exposure2012"] == pytest.approx(1.3)
 
 
-def test_compute_bias_vector_clamps_to_range_before_delta() -> None:
-    """Clamp the (preset + survey) target to slider range BEFORE differencing."""
+def test_compute_bias_vector_clamps_to_range() -> None:
+    """Clamp the (preset + survey) target to slider range."""
     preset = {f: None for f in config.SLIDER_FIELDS}
     preset["Exposure2012"] = 10.0  # outside [-5, 5]; clamps to 5
     survey = _balanced_survey(exposure=2)  # would push to 11; still clamps to 5
-    deltas = compute_bias_vector(preset, survey)
-    # target clamped to 5.0; LR default 0.0; delta = 5.0
-    assert deltas["Exposure2012"] == pytest.approx(5.0)
+    targets = compute_bias_vector(preset, survey)
+    assert targets["Exposure2012"] == pytest.approx(5.0)
 
 
-def test_compute_bias_vector_temperature_log_space_delta() -> None:
-    """Temperature delta is in log-Kelvin: log(target) − log(LR_default)."""
+def test_compute_bias_vector_temperature_log_space_target() -> None:
+    """Temperature target is in log-Kelvin."""
     preset = {f: None for f in config.SLIDER_FIELDS}
     preset["Temperature"] = 4500.0
     # survey temperature answer = -1 → offset = -500 K → target 4000 K
     survey = _balanced_survey(temperature=-1)
-    deltas = compute_bias_vector(preset, survey)
-    assert deltas["Temperature"] == pytest.approx(
-        math.log(4000.0) - math.log(5500.0)
-    )
+    targets = compute_bias_vector(preset, survey)
+    assert targets["Temperature"] == pytest.approx(math.log(4000.0))
 
 
 def test_compute_bias_vector_temperature_clamped_before_log() -> None:
     """Raw Kelvin clamping must happen before log() so log can't NaN."""
     preset = {f: None for f in config.SLIDER_FIELDS}
     preset["Temperature"] = 500.0  # below range floor 2000 → clamps to 2000
-    deltas = compute_bias_vector(preset, _balanced_survey())
-    # target clamped to log(2000); LR default log(5500); delta is the diff.
-    assert deltas["Temperature"] == pytest.approx(
-        math.log(2000.0) - math.log(5500.0)
-    )
+    targets = compute_bias_vector(preset, _balanced_survey())
+    assert targets["Temperature"] == pytest.approx(math.log(2000.0))
 
 
-def test_compute_bias_vector_tone_curve_zero_delta_when_absent() -> None:
+def test_compute_bias_vector_tone_curve_identity_when_absent() -> None:
     """Tone-curve LR defaults are the identity points (51/102/...); a preset
-    that omits them falls back to those, so the delta is exactly 0."""
+    that omits them falls back to those."""
     preset = {f: None for f in config.SLIDER_FIELDS}
-    deltas = compute_bias_vector(preset, _balanced_survey())
+    targets = compute_bias_vector(preset, _balanced_survey())
+    expected = [0, 51, 102, 153, 204, 255]
     for n in range(1, 7):
-        assert deltas[f"ToneCurve_Pt{n}_X"] == pytest.approx(0.0)
-        assert deltas[f"ToneCurve_Pt{n}_Y"] == pytest.approx(0.0)
+        assert targets[f"ToneCurve_Pt{n}_X"] == pytest.approx(expected[n - 1])
+        assert targets[f"ToneCurve_Pt{n}_Y"] == pytest.approx(expected[n - 1])
 
 
 def test_compute_bias_vector_returns_exactly_135_fields() -> None:
@@ -202,31 +192,21 @@ def test_compute_bias_vector_returns_v2_fields_when_requested() -> None:
 
 def test_compute_bias_vector_string_preset_value_falls_back_to_default() -> None:
     """Non-numeric preset values (e.g. WhiteBalance='Custom') must not crash.
-    Falling back to LR_DEFAULTS means the delta lands at 0."""
+    Falling back to LR_DEFAULTS means the target lands at the default."""
     preset = {f: None for f in config.SLIDER_FIELDS}
     preset["Exposure2012"] = "not a number"  # type: ignore[assignment]
-    deltas = compute_bias_vector(preset, _balanced_survey())
-    assert deltas["Exposure2012"] == pytest.approx(0.0)
+    targets = compute_bias_vector(preset, _balanced_survey())
+    assert targets["Exposure2012"] == pytest.approx(0.0)
 
 
 # ---------------------------------------------------------------------------
 # apply_biases_to_model
 # ---------------------------------------------------------------------------
 
-def test_apply_biases_preserves_inherited_head_weights(tmp_path: Path) -> None:
-    """Head WEIGHTS are inherited from the base ckpt byte-for-byte.
-
-    The 2026-05 fix stopped zeroing head weights — Lite profiles were
-    producing identical XMP values across every photo because the model
-    output was bias-only. Mode B now inherits the base ckpt's heads so the
-    image-aware deviation is preserved on top of the calibration bias.
-    """
+def test_apply_biases_zeroes_final_head_weights(tmp_path: Path) -> None:
+    """Initial Mode B heads are bias-only so preset output is not stacked."""
     ckpt = _make_v1_base_ckpt(tmp_path)
     model = SonnaEditor.from_checkpoint(ckpt, target_slider_set_version="v1")
-    pre = {
-        head_name: getattr(model, head_name)[-1].weight.detach().clone()
-        for head_name, _, _ in HEAD_SLICES
-    }
     biases = compute_bias_vector(
         {f: None for f in config.SLIDER_FIELDS},
         _balanced_survey(),
@@ -234,28 +214,21 @@ def test_apply_biases_preserves_inherited_head_weights(tmp_path: Path) -> None:
     apply_biases_to_model(model, biases)
     for head_name, _, _ in HEAD_SLICES:
         post = getattr(model, head_name)[-1].weight
-        assert torch.equal(post, pre[head_name]), (
-            f"{head_name} final-linear weight changed; should be inherited byte-for-byte"
+        assert torch.equal(post, torch.zeros_like(post)), (
+            f"{head_name} final-linear weight should be zero for initial Mode B"
         )
 
 
-def test_apply_biases_retains_per_photo_variation(tmp_path: Path) -> None:
-    """Forwarding two distinct inputs produces distinct outputs.
-
-    The earlier zero-weights formulation collapsed every prediction onto
-    the bias vector regardless of input. This test pins the invariant
-    that an actual image branch contributes to the output. The base ckpt
-    used here is randomly-initialised by ``_make_v1_base_ckpt`` (no
-    pretrained backbone weights) but its final-linear weights are still
-    non-zero, so two different inputs should produce a non-trivial output
-    difference.
-    """
+def test_apply_biases_initial_output_is_preset_faithful(tmp_path: Path) -> None:
+    """Forwarding distinct inputs produces the same calibrated initial output."""
     from sonna_editor.mode_b.checkpoint_builder import _neutral_metadata_for
 
     ckpt = _make_v1_base_ckpt(tmp_path)
     model = SonnaEditor.from_checkpoint(ckpt, target_slider_set_version="v1")
+    preset = {f: None for f in config.SLIDER_FIELDS}
+    preset["Exposure2012"] = 0.7
     biases = compute_bias_vector(
-        {f: None for f in config.SLIDER_FIELDS},
+        preset,
         _balanced_survey(),
     )
     apply_biases_to_model(model, biases)
@@ -269,46 +242,32 @@ def test_apply_biases_retains_per_photo_variation(tmp_path: Path) -> None:
         y_a = model(img_a, metadata)
         y_b = model(img_b, metadata)
 
-    max_diff = (y_a - y_b).abs().max().item()
-    assert max_diff > 1e-3, (
-        f"Mode B forward output is identical for distinct images "
-        f"(max |y_a - y_b| = {max_diff}). Head weights have likely been "
-        f"zeroed — re-check apply_biases_to_model."
-    )
+    assert torch.equal(y_a, y_b)
+    assert float(y_a[0, 0].item()) == pytest.approx(0.7, abs=1e-6)
 
 
-def test_apply_biases_adds_delta_to_inherited_bias(tmp_path: Path) -> None:
-    """Each head's final-linear bias becomes ``base_bias + delta`` per slot.
-
-    The 2026-05 delta-bias fix changed this from a replacement
-    (final.bias.copy_(delta)) to an addition (final.bias.add_(delta)).
-    For a non-zero delta vector the new bias must equal the snapshotted
-    base bias plus the delta — anything else means the previous
-    replace-semantic regressed."""
+def test_apply_biases_sets_absolute_target_bias(tmp_path: Path) -> None:
+    """Each head's final-linear bias becomes the preset/survey target."""
     ckpt = _make_v1_base_ckpt(tmp_path)
     model = SonnaEditor.from_checkpoint(ckpt, target_slider_set_version="v1")
-    base_biases = {
-        head_name: getattr(model, head_name)[-1].bias.detach().clone()
-        for head_name, _, _ in HEAD_SLICES
-    }
     preset = {f: None for f in config.SLIDER_FIELDS}
-    preset["Exposure2012"] = 0.7  # non-zero delta so the additive vs
-    preset["Sharpness"]    = 40.0  # replacement distinction is visible
-    deltas = compute_bias_vector(preset, _balanced_survey(exposure=1))
-    apply_biases_to_model(model, deltas)
+    preset["Exposure2012"] = 0.7
+    preset["Sharpness"] = 40.0
+    targets = compute_bias_vector(preset, _balanced_survey(exposure=1))
+    apply_biases_to_model(model, targets)
     v1_fields = config.SLIDER_FIELDS[:V1_OUTPUT_COUNT]
     for head_name, start, end in HEAD_SLICES:
         head = getattr(model, head_name)
         for i in range(start, end):
-            expected = float(base_biases[head_name][i - start].item()) + deltas[v1_fields[i]]
+            expected = targets[v1_fields[i]]
             got = float(head[-1].bias[i - start].item())
             assert got == pytest.approx(expected, abs=1e-6), (
                 f"{head_name}[{i - start}] field={v1_fields[i]} "
-                f"got={got} expected={expected} (base={base_biases[head_name][i - start].item()} + delta={deltas[v1_fields[i]]})"
+                f"got={got} expected={expected}"
             )
 
 
-def test_apply_biases_supports_v2_model_and_preserves_extension_weights() -> None:
+def test_apply_biases_supports_v2_model_and_zeroes_wb_skip() -> None:
     reg = EmbeddingRegistry()
     model = SonnaEditor(
         registry=reg,
@@ -317,20 +276,23 @@ def test_apply_biases_supports_v2_model_and_preserves_extension_weights() -> Non
         _pretrained_backbone=False,
         slider_set_version="v2",
     )
-    extension_weights = {
-        head_name: getattr(model, head_name)[-1].weight.detach().clone()
-        for head_name, _, _ in HEAD_SLICES_BY_VERSION["v2"]
-        if head_name not in {name for name, _, _ in HEAD_SLICES}
-    }
     biases = compute_bias_vector(
         {f: None for f in config.SLIDER_FIELDS},
         _balanced_survey(),
         slider_set_version="v2",
     )
     apply_biases_to_model(model, biases)
-    for head_name, before in extension_weights.items():
+    for head_name, _, _ in HEAD_SLICES_BY_VERSION["v2"]:
         after = getattr(model, head_name)[-1].weight
-        assert torch.equal(after, before)
+        assert torch.equal(after, torch.zeros_like(after))
+    assert torch.equal(
+        model.wb_metadata_skip.weight,
+        torch.zeros_like(model.wb_metadata_skip.weight),
+    )
+    assert torch.equal(
+        model.wb_metadata_skip.bias,
+        torch.zeros_like(model.wb_metadata_skip.bias),
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -417,8 +379,7 @@ def test_build_mode_b_checkpoint_base_ckpt_not_modified(tmp_path: Path) -> None:
 
 
 def test_build_mode_b_checkpoint_verification_passes(tmp_path: Path) -> None:
-    """The saved ckpt's biases equal base_bias + delta per slider and the
-    weights are byte-identical to the base ckpt."""
+    """The saved ckpt's final layer is zero-weight, target-bias Mode B."""
     base = _make_v1_base_ckpt(tmp_path)
     survey = _write_survey(tmp_path, _balanced_survey(exposure=2, temperature=1))
     output = tmp_path / "mode_b.ckpt"
@@ -434,8 +395,8 @@ def test_build_mode_b_checkpoint_verification_passes(tmp_path: Path) -> None:
     )
 
     from sonna_editor.data.xmp import read_xmp
-    deltas = compute_bias_vector(read_xmp(FIXTURE_PRESET), survey_mod.load_survey(survey))
-    verify_checkpoint(output, deltas, base)
+    targets = compute_bias_vector(read_xmp(FIXTURE_PRESET), survey_mod.load_survey(survey))
+    verify_checkpoint(output, targets, base)
 
 
 def test_build_mode_b_checkpoint_subtracts_survey_from_skip_fields(
@@ -576,8 +537,8 @@ def test_build_mode_b_checkpoint_missing_base_ckpt_raises(tmp_path: Path) -> Non
         )
 
 
-def test_build_mode_b_checkpoint_empty_preset_raises(tmp_path: Path) -> None:
-    """A preset that parses but contains no slider values should fail clearly."""
+def test_build_mode_b_checkpoint_empty_preset_uses_defaults(tmp_path: Path) -> None:
+    """A minimal XMP with no scalar sliders falls back to Lightroom defaults."""
     empty_preset = tmp_path / "empty.xmp"
     empty_preset.write_text(
         '<x:xmpmeta xmlns:x="adobe:ns:meta/" '
@@ -605,8 +566,8 @@ def test_build_mode_b_checkpoint_empty_preset_raises(tmp_path: Path) -> None:
     assert output.exists()
 
 
-def test_build_mode_b_checkpoint_preserves_v2_base_ckpt(tmp_path: Path) -> None:
-    """Lite creation from a v2 base must not down-convert or drop extension heads."""
+def test_build_mode_b_checkpoint_preserves_v2_slider_set(tmp_path: Path) -> None:
+    """Lite creation from a v2 base must not down-convert the checkpoint."""
     v2_ckpt = _make_v2_base_ckpt(tmp_path)
     survey = _write_survey(tmp_path, _balanced_survey())
     output = tmp_path / "out.ckpt"
@@ -625,11 +586,14 @@ def test_build_mode_b_checkpoint_preserves_v2_base_ckpt(tmp_path: Path) -> None:
 
     base_model = SonnaEditor.from_checkpoint(v2_ckpt)
     out_model = SonnaEditor.from_checkpoint(output)
+    assert out_model._arch_version == base_model._arch_version
     for head_name, _, _ in HEAD_SLICES_BY_VERSION["v2"]:
-        assert torch.equal(
-            getattr(out_model, head_name)[-1].weight,
-            getattr(base_model, head_name)[-1].weight,
-        )
+        weight = getattr(out_model, head_name)[-1].weight
+        assert torch.equal(weight, torch.zeros_like(weight))
+    assert torch.equal(
+        out_model.wb_metadata_skip.weight,
+        torch.zeros_like(out_model.wb_metadata_skip.weight),
+    )
 
 
 # ---------------------------------------------------------------------------

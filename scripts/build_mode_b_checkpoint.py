@@ -1,4 +1,4 @@
-"""CLI wrapper for the Mode B preset-to-checkpoint converter.
+"""CLI wrapper for the Lite preset-to-checkpoint converter.
 
 Step 2 of the Mode B rebuild track (HANDOVER Part 6 item 17).
 
@@ -7,13 +7,13 @@ Usage:
     uv run python scripts/build_mode_b_checkpoint.py \\
         --preset path/to/preset.xmp \\
         --survey path/to/survey.json \\
-        --base-ckpt v1_learning/model-v2.0.0.ckpt \\
-        --profile-name "Mode B - Wedding Lite" \\
+        --profile-name "Wedding Lite" \\
         [--profile-id custom-slug]
 
-The base checkpoint is loaded read-only; the output is written to a new
-path. If --output is omitted, a frontend-visible checkpoint is published as
-v1_learning/model-v0.N.0.ckpt. See
+By default the base checkpoint is read from the configured foundation repo. Use
+--base-ckpt only for deliberate experiments. The base checkpoint is loaded
+read-only; the output is written to a new path. If --output is omitted, a
+frontend-visible checkpoint is published as v1_learning/model-v0.N.0.ckpt. See
 src/sonna_editor/mode_b/checkpoint_builder.py for the underlying logic.
 """
 from __future__ import annotations
@@ -23,11 +23,12 @@ import sys
 from pathlib import Path
 
 from sonna_editor import config
+from sonna_editor.foundation import resolve_foundation_checkpoint
 from sonna_editor.mode_b.checkpoint_builder import build_mode_b_checkpoint
 
 
 def _next_mode_b_output(publish_dir: Path) -> Path:
-    """Return the next frontend-visible Mode B checkpoint path."""
+    """Return the next frontend-visible Lite checkpoint path."""
     publish_dir.mkdir(parents=True, exist_ok=True)
     seq = 1
     while True:
@@ -41,19 +42,22 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         prog="build_mode_b_checkpoint",
         description=(
-            "Build an initial Mode B SonnaEditor checkpoint from a "
-            "Lightroom preset .xmp and a Step 1 style-survey JSON."
+            "Build an initial Lite SonnaEditor checkpoint from the configured "
+            "foundation checkpoint, a Lightroom preset .xmp, and a style-survey JSON."
         ),
     )
     parser.add_argument("--preset", type=Path, required=True,
                         help="Lightroom preset .xmp")
     parser.add_argument("--survey", type=Path, required=True,
                         help="Style-survey JSON from Step 1")
-    parser.add_argument("--base-ckpt", type=Path, required=True,
-                        help="Base SonnaEditor checkpoint")
+    parser.add_argument("--base-ckpt", type=Path, default=None,
+                        help=(
+                            "Optional base SonnaEditor checkpoint. Defaults to "
+                            "the configured foundation checkpoint."
+                        ))
     parser.add_argument("--output", type=Path, default=None,
                         help=(
-                            "Path for the new Mode B checkpoint. If omitted, "
+                            "Path for the new Lite checkpoint. If omitted, "
                             "publishes to v1_learning/model-v0.N.0.ckpt."
                         ))
     parser.add_argument("--publish-dir", type=Path, default=config.CHECKPOINTS_DIR,
@@ -62,7 +66,7 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
                             f"(default: {config.CHECKPOINTS_DIR})."
                         ))
     parser.add_argument("--profile-name", type=str, required=True,
-                        help='Display name, e.g. "Mode B - Wedding Lite"')
+                        help='Display name, e.g. "Wedding Lite"')
     parser.add_argument("--profile-id", type=str, default=None,
                         help="Optional profile ID slug; auto-generated if omitted")
     return parser.parse_args(argv)
@@ -79,10 +83,11 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     try:
+        base_ckpt = args.base_ckpt or resolve_foundation_checkpoint()
         sidecar = build_mode_b_checkpoint(
             preset_path=args.preset,
             survey_path=args.survey,
-            base_ckpt_path=args.base_ckpt,
+            base_ckpt_path=base_ckpt,
             output_ckpt_path=output_path,
             profile_name=args.profile_name,
             profile_id=args.profile_id,
@@ -91,7 +96,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"error: {exc}", file=sys.stderr)
         return 1
 
-    print(f"Mode B checkpoint written: {output_path}")
+    print(f"Lite checkpoint written:   {output_path}")
     print(f"Sidecar JSON:              {sidecar}")
     return 0
 

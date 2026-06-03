@@ -15,10 +15,29 @@ THUMBNAIL_DIR = DATA_DIR / "thumbnails"
 CAPTURES_DIR = DATA_DIR / "captures"
 AUDITS_DIR = DATA_DIR / "audits"
 
+# External local training workspace. Source RAW files should live outside this
+# repo; this directory is for generated datasets/splits/thumbnails when running
+# long-lived local training workflows.
+TRAINING_WORKSPACE_DIR = Path(
+    os.environ.get("SONNA_TRAINING_WORKSPACE", Path.home() / "SonnaEditorTraining")
+).expanduser()
+
 # Trained checkpoints directory — scanned by the API's /api/profiles endpoint.
 # v1 checkpoints live under v1_learning/ at project root; future Phase 6 profile
 # registry will replace this with a manifest-based discovery layer.
 CHECKPOINTS_DIR = PROJECT_ROOT / "v1_learning"
+
+# Foundation/base model repository. This is intentionally outside the app repo
+# so the base checkpoint can be versioned in its own private Git repo while
+# user profiles and generated app artifacts stay local.
+FOUNDATION_REPO_ENV_VAR = "SONNA_FOUNDATION_REPO"
+FOUNDATION_CHECKPOINT_ENV_VAR = "SONNA_FOUNDATION_CHECKPOINT"
+FOUNDATION_REPO_DIR = Path(
+    os.environ.get(FOUNDATION_REPO_ENV_VAR, PROJECT_ROOT.parent / "SonnaEditorFoundation")
+).expanduser()
+FOUNDATION_MANIFEST_PATH = FOUNDATION_REPO_DIR / "foundation_manifest.json"
+FOUNDATION_CHECKPOINT_FALLBACK_PATH = FOUNDATION_REPO_DIR / "foundation.ckpt"
+CURRENT_SLIDER_SET_VERSION = "v2"
 
 # Adobe DNG Converter binary.
 # `SONNA_DNG_CONVERTER` always wins so packaged installs and unusual local

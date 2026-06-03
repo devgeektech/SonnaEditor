@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import tempfile
 from pathlib import Path
 
 import numpy as np
@@ -18,6 +17,7 @@ from sonna_editor.finetune.capture import (
     _histogram_to_bytes,
 )
 from sonna_editor.finetune.delta import analyse_deltas, prepare_finetune_dataset
+from sonna_editor.slider_set import v1_fields
 
 
 # ---------------------------------------------------------------------------
@@ -350,9 +350,6 @@ class TestPrepareFinetune:
 # config.SLIDER_FIELDS (147) for all four aggregation loops, producing
 # 12 always-empty v2-extension entries in per_field/correlations/
 # filtered_field_deltas when the input captures were v1-shaped.
-
-from sonna_editor.slider_set import v1_fields
-
 
 def _make_v1_only_deltas_json(
     field_entries: dict[str, tuple[float | None, str]],

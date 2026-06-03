@@ -20,7 +20,6 @@ from typing import Any
 from sonna_editor.config import SLIDER_FIELDS
 from sonna_editor.data import xmp
 from sonna_editor.data.xmp import (
-    _CURVE_CHANNELS,
     _IDENTITY_CURVE_POINTS,
     _normalize_curve,
     _parse_xmp_bytes,

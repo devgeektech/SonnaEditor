@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import io
 import json
-import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -20,6 +19,7 @@ from sonna_editor.finetune.capture import (
     _compute_edit_lag,
     _histogram_to_bytes,
 )
+from sonna_editor.slider_set import fields_for_version, v1_fields
 
 
 # ---------------------------------------------------------------------------
@@ -306,9 +306,6 @@ def _make_fake_meta() -> dict:
 # KeyError catch and got marked source="lr_default", silently mis-attributing
 # every captured edit for v1 profiles. These tests pin the fixed behaviour:
 # the result dict's field set matches the predicted dict's field set exactly.
-
-from sonna_editor.slider_set import v1_fields, fields_for_version
-
 
 class TestBuildDeltasJsonVersionAware:
     def test_v1_predicted_returns_135_keys_no_v2_extensions(self) -> None:

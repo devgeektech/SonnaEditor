@@ -28,10 +28,13 @@ _HIGHLIGHT_BUMP = -10.0
 
 def _luminance(image: Image.Image) -> float:
     """Mean perceptual luminance of image (0-255)."""
+    return float(_luminance_values(image).mean())
+
+
+def _luminance_values(image: Image.Image) -> np.ndarray:
+    """Per-pixel Rec. 709 luminance values in the 0-255 range."""
     arr = np.asarray(image.convert("RGB"), dtype=np.float32)
-    # Rec. 709 coefficients
-    lum = 0.2126 * arr[:, :, 0] + 0.7152 * arr[:, :, 1] + 0.0722 * arr[:, :, 2]
-    return float(lum.mean())
+    return 0.2126 * arr[:, :, 0] + 0.7152 * arr[:, :, 1] + 0.0722 * arr[:, :, 2]
 
 
 def _stops_to_hit_target(current_luma: float) -> float:
@@ -40,6 +43,31 @@ def _stops_to_hit_target(current_luma: float) -> float:
         return 5.0
     ratio = _TARGET_LUMINANCE / current_luma
     return float(np.log2(ratio))
+
+
+def _exposure_delta(image: Image.Image) -> float:
+    """Exposure correction that protects already-bright upper tones.
+
+    A mean-only target badly over-brightens event photos with black suits,
+    dark rooms, or stage backgrounds because shadows dominate the average.
+    Lite mode should lift genuinely dark photos, but not push faces/signage
+    into clipping when the upper tonal range is already bright.
+    """
+    lum = _luminance_values(image)
+    if lum.size == 0:
+        return 0.0
+
+    mean_delta = _stops_to_hit_target(float(lum.mean()))
+    p85 = float(np.percentile(lum, 85))
+    p95 = float(np.percentile(lum, 95))
+
+    candidates = [mean_delta]
+    if p85 > 0:
+        candidates.append(float(np.log2(150.0 / p85)))
+    if p95 > 0:
+        candidates.append(float(np.log2(205.0 / p95)))
+
+    return min(candidates)
 
 
 def _grey_world_wb(image: Image.Image) -> tuple[float, float]:
@@ -108,8 +136,7 @@ def compute_adjustment(
     auto_highlight = options.get("auto_highlight_recovery", True)
 
     if auto_exposure:
-        luma = _luminance(image)
-        raw_delta = _stops_to_hit_target(luma)
+        raw_delta = _exposure_delta(image)
         if abs(raw_delta) > 0.01:
             delta["Exposure2012"] = raw_delta
 

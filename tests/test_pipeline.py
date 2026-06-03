@@ -76,7 +76,7 @@ def test_process_shoot_processes_all_photos(tmp_path: Path) -> None:
 def test_process_shoot_writes_xmps_next_to_raws(tmp_path: Path) -> None:
     raws = _make_raw_files(tmp_path, n=2)
     with patch("sonna_editor.preset.pipeline.extract_all", side_effect=_fake_extract):
-        summary = process_shoot(tmp_path, None, FIXTURE_PRESET, {}, max_workers=1)
+        process_shoot(tmp_path, None, FIXTURE_PRESET, {}, max_workers=1)
     for raw in raws:
         xmp = raw.with_suffix(".xmp")
         assert xmp.exists(), f"Expected XMP at {xmp}"
@@ -88,7 +88,7 @@ def test_process_shoot_writes_xmps_to_output_dir(tmp_path: Path) -> None:
     output_dir = tmp_path / "xmps"
     _make_raw_files(input_dir, n=2)
     with patch("sonna_editor.preset.pipeline.extract_all", side_effect=_fake_extract):
-        summary = process_shoot(input_dir, output_dir, FIXTURE_PRESET, {}, max_workers=1)
+        process_shoot(input_dir, output_dir, FIXTURE_PRESET, {}, max_workers=1)
     assert output_dir.exists()
     assert len(list(output_dir.glob("*.xmp"))) == 2
 

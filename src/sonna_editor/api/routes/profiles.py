@@ -6,7 +6,10 @@ with a proper registry while keeping the response shape stable.
 
 from __future__ import annotations
 
+import argparse
+import asyncio
 import json
+import logging
 import re
 import shutil
 from datetime import datetime, timezone
@@ -16,12 +19,16 @@ from typing import Final, Optional
 from fastapi import APIRouter, HTTPException
 
 from sonna_editor import config
+from sonna_editor.api import callbacks, jobs
 from sonna_editor.api.models import (
     DeleteProfileResponse,
+    JobAck,
     LiteProfileCreated,
     LiteProfileRequest,
+    PersonalProfileRequest,
     Profile,
 )
+from sonna_editor.foundation import resolve_foundation_checkpoint
 from sonna_editor.mode_b import checkpoint_builder as mode_b_builder
 from sonna_editor.mode_b.survey import (
     QUESTION_ORDER,
@@ -31,6 +38,7 @@ from sonna_editor.mode_b.survey import (
 )
 
 router = APIRouter()
+_logger = logging.getLogger(__name__)
 
 # Matches "model-v1.0.1.ckpt" → ("1", "0", "1"). Lightning intermediates from
 # v1_learning/checkpoints/ (e.g. "epoch=017-val_loss=0.0010.ckpt") deliberately
@@ -38,6 +46,7 @@ router = APIRouter()
 _VERSION_RE = re.compile(r"^model-v(\d+)\.(\d+)\.(\d+)(?:-(\w+))?\.ckpt$")
 
 _ACTIVE_PROFILE_FILE = Path.home() / ".saha" / "active_profile.txt"
+_PROFILE_TRAINING_RUNS_DIR = Path.home() / ".saha" / "profile_training_runs"
 
 # Used as Profile.name when a ckpt's sidecar lacks display_name — covers the
 # v1.x Mode A production ckpts whose sidecars predate the field. Mode B and
@@ -226,9 +235,9 @@ def delete_profile(profile_id: str) -> DeleteProfileResponse:
     return DeleteProfileResponse(profile_id=profile_id, deleted_paths=deleted_paths)
 
 
-# ── Lite profile creation (Mode B) ──────────────────────────────────────────
+# ── Lite profile creation ───────────────────────────────────────────────────
 
-# Matches the Mode B output ckpt naming scheme committed in B1:
+# Matches the Lite output ckpt naming scheme:
 # model-v0.<seq>.0.ckpt where <seq> is a monotonic counter. The v0.x range
 # carves out a clean separation from v1.x trained profiles.
 _LITE_VERSION_RE = re.compile(r"^model-v0\.(\d+)\.0\.ckpt$")
@@ -268,22 +277,158 @@ def _validate_survey_answers(answers: dict[str, int]) -> None:
             )
 
 
-def _find_active_mode_a(profiles: list[Profile]) -> Optional[Profile]:
-    """Return the active profile if it's a Mode A (Personal AI) ckpt, else None."""
-    for p in profiles:
-        if p.is_active and p.profile_type != "mode_b_initial":
-            return p
-    return None
+# ── Personal AI profile creation ────────────────────────────────────────────
+
+def _validate_personal_profile_request(req: PersonalProfileRequest) -> tuple[str, Path]:
+    name = req.profile_name.strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="profile_name must be non-empty")
+    input_dir = Path(req.input_dir)
+    if not input_dir.is_absolute():
+        raise HTTPException(status_code=400, detail="input_dir must be absolute")
+    if not input_dir.exists():
+        raise HTTPException(status_code=400, detail=f"Input folder not found: {input_dir}")
+    if not input_dir.is_dir():
+        raise HTTPException(status_code=400, detail="input_dir is not a folder")
+    if req.max_epochs < 1:
+        raise HTTPException(status_code=400, detail="max_epochs must be >= 1")
+    if req.batch_size < 1:
+        raise HTTPException(status_code=400, detail="batch_size must be >= 1")
+    if req.workers < 0:
+        raise HTTPException(status_code=400, detail="workers must be >= 0")
+    return name, input_dir
+
+
+def _train_personal_profile_sync(
+    *,
+    record: jobs.JobRecord,
+    req: PersonalProfileRequest,
+    name: str,
+    input_dir: Path,
+) -> dict:
+    """Build RAW+XMP dataset, train a Personal AI profile, and publish it."""
+    from sonna_editor.data.dataset import build_dataset, save_split, split_dataset
+    from sonna_editor.training.profile_runner import train_profile
+
+    run_dir = _PROFILE_TRAINING_RUNS_DIR / record.job_id
+    dataset_dir = run_dir / "dataset"
+    training_dir = run_dir / "training"
+    parquet_path = dataset_dir / "dataset.parquet"
+    thumbnail_dir = dataset_dir / "thumbnails"
+    splits_dir = dataset_dir / "splits"
+    dataset_dir.mkdir(parents=True, exist_ok=True)
+    training_dir.mkdir(parents=True, exist_ok=True)
+
+    with record.lock:
+        record.dataset_dir = str(dataset_dir)
+        record.epochs_total = req.max_epochs
+    jobs.persist(record)
+
+    df = build_dataset(
+        input_dir=input_dir,
+        output_path=parquet_path,
+        profile_name=name,
+        thumbnail_dir=thumbnail_dir,
+        max_workers=req.workers,
+    )
+    train, val, test = split_dataset(df)
+    save_split(train, val, test, splits_dir)
+
+    train_args = argparse.Namespace(
+        train_parquet=splits_dir / "train.parquet",
+        val_parquet=splits_dir / "val.parquet",
+        test_parquet=splits_dir / "test.parquet",
+        output_dir=training_dir,
+        max_epochs=req.max_epochs,
+        batch_size=req.batch_size,
+        lr=1e-4,
+        weight_decay=1e-4,
+        freeze_backbone_epochs=3,
+        num_workers=req.workers,
+        resume_from_checkpoint=None,
+        slider_set_version=config.CURRENT_SLIDER_SET_VERSION,
+        no_wb_metadata_skip=False,
+        no_target_prior_init=False,
+        image_resolution=512,
+        temperature_weight=4.0,
+        tint_weight=4.0,
+        exposure_weight=5.0,
+        temperature_bucket_loss_weight=0.15,
+        tint_bucket_loss_weight=2.0,
+        spread_loss_weight=None,
+        exposure_scene_loss_weight=4.0,
+        sign_wrong_penalty_weight=0.2,
+        profile_name=name,
+        publish_dir=config.CHECKPOINTS_DIR,
+        publish_version=None,
+        no_publish=False,
+        enable_progress_bar=False,
+        on_epoch_complete=callbacks.make_epoch_callback(record),
+        cancel_event=record.cancel_event,
+    )
+    summary = train_profile(train_args)
+    published = summary.get("published_model")
+    final_model = summary.get("final_model")
+    with record.lock:
+        record.photos_total = int(len(df))
+        record.photos_processed = int(len(df))
+        record.epochs_completed = int(summary.get("epochs_trained") or 0)
+        record.new_checkpoint_path = str(published or final_model) if (published or final_model) else None
+        record.val_loss = float(summary.get("best_val_loss") or 0.0)
+    jobs.persist(record)
+    return summary
+
+
+async def _run_personal_profile_job(
+    record: jobs.JobRecord,
+    req: PersonalProfileRequest,
+    name: str,
+    input_dir: Path,
+) -> None:
+    jobs.transition(record, "running")
+    try:
+        await asyncio.to_thread(
+            _train_personal_profile_sync,
+            record=record,
+            req=req,
+            name=name,
+            input_dir=input_dir,
+        )
+    except Exception as exc:
+        _logger.exception("personal profile training job %s failed", record.job_id)
+        jobs.transition(record, "failed", error=str(exc))
+        callbacks.broadcast_terminal(record, "job_failed")
+        return
+    if record.cancel_event.is_set():
+        jobs.transition(record, "cancelled")
+        callbacks.broadcast_terminal(record, "job_cancelled")
+    else:
+        jobs.transition(record, "complete")
+        callbacks.broadcast_terminal(record, "job_complete")
+
+
+@router.post("/profiles/personal", response_model=JobAck)
+async def create_personal_profile(req: PersonalProfileRequest) -> JobAck:
+    """Train a frontend-visible Personal AI profile from a RAW+XMP folder."""
+    name, input_dir = _validate_personal_profile_request(req)
+    record = jobs.create(
+        kind="train",
+        profile_name=name,
+        folder_path=str(input_dir),
+        epochs_total=req.max_epochs,
+    )
+    record.loop = asyncio.get_running_loop()
+    asyncio.create_task(_run_personal_profile_job(record, req, name, input_dir))
+    return JobAck(job_id=record.job_id, state=record.state)
 
 
 @router.post("/profiles/lite", response_model=LiteProfileCreated)
 def create_lite_profile(req: LiteProfileRequest) -> LiteProfileCreated:
     """Build a Mode B initial checkpoint from a preset + style survey.
 
-    Wraps mode_b.checkpoint_builder.build_mode_b_checkpoint(). Base ckpt is
-    sourced from the currently-active Personal AI profile (Decision C1
-    from the P5 design). The user's preset file is copied into
-    CHECKPOINTS_DIR so the sidecar's source_preset path stays stable if
+    Lite profiles use the configured foundation checkpoint as their base, not
+    the currently active Personal AI profile. The user's preset file is copied
+    into CHECKPOINTS_DIR so the sidecar's source_preset path stays stable if
     the original is moved or deleted; the same is done for the survey JSON.
     """
     name = req.profile_name.strip()
@@ -302,20 +447,13 @@ def create_lite_profile(req: LiteProfileRequest) -> LiteProfileCreated:
 
     _validate_survey_answers(req.survey_answers)
 
-    profiles = _discover_profiles()
-    active = _find_active_mode_a(profiles)
-    if active is None:
+    try:
+        base_ckpt_path = resolve_foundation_checkpoint()
+    except (FileNotFoundError, ValueError) as exc:
         raise HTTPException(
             status_code=400,
-            detail="Activate a Personal AI profile first — Lite profiles are derived from a trained base checkpoint.",
-        )
-
-    base_ckpt_path = Path(active.checkpoint_path)
-    if not base_ckpt_path.exists():
-        raise HTTPException(
-            status_code=500,
-            detail=f"Active profile's checkpoint missing on disk: {base_ckpt_path}",
-        )
+            detail=f"Foundation checkpoint is not configured: {exc}",
+        ) from exc
 
     if not config.CHECKPOINTS_DIR.is_dir():
         config.CHECKPOINTS_DIR.mkdir(parents=True, exist_ok=True)

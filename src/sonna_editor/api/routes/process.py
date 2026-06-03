@@ -15,7 +15,6 @@ from pathlib import Path
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
-from fastapi.responses import JSONResponse
 
 from sonna_editor import config
 from sonna_editor.api import callbacks, jobs

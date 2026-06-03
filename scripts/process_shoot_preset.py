@@ -59,7 +59,7 @@ def main() -> None:
         dry_run=args.dry_run,
     )
 
-    print(f"\nDone.")
+    print("\nDone.")
     print(f"  Processed: {summary['processed']}")
     print(f"  Failed:    {summary['failed']}")
     if summary["failures"]:

@@ -102,7 +102,6 @@ def _print_finetune_report(metrics: dict) -> None:
     fv = metrics["ft_version"]
     n_cap = metrics["n_capture_rows"]
     n_orig = metrics["n_original_rows"]
-    weight_str = "(weighted sampling)" if metrics.get("n_capture_rows", 0) > 0 else ""
     improved = metrics["improved"]
 
     _print_rule("=")
@@ -150,7 +149,7 @@ def _print_finetune_report(metrics: dict) -> None:
         print(f"  CANDIDATE CHECKPOINT: {ckpt_path}")
     print()
     print(f"  To use:      process_shoot_model.py --model-checkpoint {ckpt_path}")
-    print(f"  To roll back: use any .ckpt in the output dir with --model-checkpoint")
+    print("  To roll back: use any .ckpt in the output dir with --model-checkpoint")
     _print_rule("=")
 
 
@@ -276,7 +275,7 @@ def main() -> None:
         else:
             ans = input(f"Promote {ft_label}? [y/N]: ").strip().lower()
             if ans != "y":
-                print(f"Not promoted. To use anyway:")
+                print("Not promoted. To use anyway:")
                 print(f"  process_shoot_model.py --model-checkpoint {metrics['checkpoint_path']}")
                 print(f"To roll back completely, continue using: {args.base_model}")
     else:

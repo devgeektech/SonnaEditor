@@ -5,24 +5,28 @@
 **Platforms:** macOS, Windows, and Linux
 **Reference hardware:** M1 Pro MacBook Pro, 32GB RAM
 **Status:** v1.2.0 production shipped; v2 training prep active on the current Windows CUDA workstation; Phase 8 (team distribution) deferred
-**Last updated:** 2026-06-01
+**Last updated:** 2026-06-02
 
 ---
 
-## Current workspace state (2026-06-01)
+## Current workspace state (2026-06-02)
 
 This checkout is a Windows development/training workspace at `C:\Users\vikas.DESKTOP-61LEE8B\Projects\SonnaEditor`.
 
 - **Environment:** Python 3.11.15 via uv 0.11.17. PyTorch is installed as `2.11.0+cu128`; `sonna_editor.runtime.preferred_torch_device()` returns `cuda` on the local NVIDIA GeForce RTX 3050. `scripts/verify_environment.py` passes 11/11 checks.
 - **CUDA packaging:** `pyproject.toml` and `uv.lock` now pin `torch` and `torchvision` to the PyTorch CUDA 12.8 wheel index on Windows/Linux x86_64 so `uv sync --extra dev` does not fall back to CPU-only wheels.
-- **Local dataset:** `v1_learning/dataset/dataset.parquet` exists with 189 rows. Balanced by-shoot splits exist at `v1_learning/dataset/splits_v2_stratified/`: train=132, val=27, test=30. The splitter now balances Temperature correction, Exposure2012, and Tint correction, with tail coverage for rare edit styles.
-- **Local checkpoints:** `v1_learning/model-v2.0.0.ckpt` and `v1_learning/model-v2.0.0.json` are present in this workspace right now, and `~/.saha/active_profile.txt` is set to `sonna-v2-run-01-v2.0.0`. A scene-stats candidate was trained at `data/models/sonna-v2-scene-stats-run01/` but rejected after collapse analysis; its temporary frontend-visible `v1_learning/model-v2.0.1.*` copies were removed.
-- **Lite profile creation:** fixed on 2026-06-01 for the active v2 profile. `mode_b/checkpoint_builder.py` now inherits the base checkpoint's native `slider_set_version` instead of forcing v1, so Lite profiles built from `model-v2.0.0` preserve the 12 v2 extension-head tensors and write `slider_set_version: "v2"` in the sidecar.
+- **Local dataset/checkpoints:** training/profile caches were intentionally cleared for a fresh dataset reset. `v1_learning\dataset`, `data\models`, `data\parquet`, `data\captures`, `data\thumbnails`, `data\audits`, `data\dbg`, `data\raw\sonna_training`, `.pytest_cache`, `.ruff_cache`, and `~\.saha\active_profile.txt` were removed or emptied. `v1_learning\` is currently empty; train a fresh Personal AI profile from the frontend or intentionally publish a checkpoint before expecting profiles in the UI.
+- **Production profile UX boundary:** the frontend now exposes two profile creation paths: Personal AI from RAW+XMP and Lite from preset+Exposure/WB/tint survey. Foundation model training is CLI-only with `scripts/train_foundation_model.py`.
+- **Foundation/Lite boundary:** Lite profile creation no longer depends on the currently active Personal AI profile. It resolves the active foundation checkpoint from `SONNA_FOUNDATION_CHECKPOINT`, `SONNA_FOUNDATION_REPO/foundation_manifest.json`, or `SONNA_FOUNDATION_REPO/foundation.ckpt`; the default foundation repo is the sibling folder `SonnaEditorFoundation`. Use `scripts/train_foundation_model.py` to train from RAW+XMP or prepared splits, then promote the final checkpoint into that separate Git/LFS-ready foundation repo.
+- **Training data location:** source RAW+XMP folders should live outside the app repo, for example `D:\SonnaTraining\EditedRawWithXmp\` or `~/SonnaEditorTraining/raw/`. The repo-local `data/` folder remains gitignored and should be treated as generated/local artifacts only.
+- **Training runner structure:** the production training callable lives in `src/sonna_editor/training/profile_runner.py`; `scripts/train_profile.py` is a thin CLI wrapper. The API uses the packaged runner for frontend Personal AI training jobs, with epoch progress, cancellation, and no publish on cancel.
+- **Frontend profile deletion:** deleting a profile from the UI now asks for confirmation before removing local checkpoint/sidecar files. Active profile deletion remains blocked server-side.
+- **Lite profile creation and processing:** fixed on 2026-06-02 for Imagen-aligned Lite output from the UI/CLI. `mode_b/checkpoint_builder.py` inherits the base checkpoint's native `slider_set_version` and writes a `mode_b_initial` sidecar. `inference/pipeline.py` now detects that sidecar for initial Lite runs, reloads the copied preset+survey, keeps preset look sliders fixed, applies per-photo Exposure/WB corrections only, and records those adjusted values in `sonna_predictions.json`. This prevents the active v2 base model's own Exposure/colour predictions from stacking on top of the uploaded preset while avoiding a constant bias-only preset clone.
 - **Training script state:** `scripts/train_profile.py` uses the v2 recipe defaults (512px, fresh `arch_version=2`, WB metadata skip enabled, visual-priority weights: Exposure 5.0, Temperature/Tint 4.0, Contrast/Highlights/Shadows 3.0, Whites/Blacks/Saturation/Vibrance 2.0). Fresh models initialise output-head biases from training target medians, WB residual heads start at zero when AsShot WB skip is enabled, and default augmentation is geometry-only to avoid corrupting Exposure/WB labels. Fresh `arch_version=2` models consume six preview-derived luminance scene stats; older checkpoints load with their saved architecture version. Default recipe values log as `Training recipe ...`; only explicitly supplied CLI flags log as `Override ...`.
 - **Anti-collapse diagnostics:** `scripts/analyse_prediction_collapse.py` reports per-slider prediction/target spread and collapsed sliders. On the local 27-photo validation split, existing `model-v2.0.0` showed 14 collapsed sliders and Exposure2012 std_ratio ~0.115; the rejected scene-stats candidate showed 29 collapsed sliders and near-zero Exposure spread despite lower test MAE. `scripts/audit_dataset_diversity.py` reports scene/edit diversity buckets; current local data is only 189 photos / 35 shoots, with 16 bright scenes and 9 cool-WB scenes.
 - **Dark low-light exposure failure:** Diagnosis on `0H5A4599` shows the expected/training XMP has `Exposure2012=+1.11`, while active `model-v2.0.0` writes about `+0.105`. Other key tone/WB sliders and curves are close, so the root cause is not XMP writing or tone-curve endpoints; it is Exposure2012 prediction collapse. Across the 189-row dataset, target Exposure std is ~0.454 but model output std is ~0.061, and the darkest luminance quartile needs ~`+0.695` while the model predicts ~`+0.090`.
 - **Inference colour-cast fix:** `src/sonna_editor/inference/pipeline.py` now stabilises RGB tone-curve endpoints before writing XMP. Diagnosis from `0H5A3190A-2.xmp`: WB/Tint were close to the expected output, but Green/Blue tone-curve white endpoints below `255/255` made neutral whites render pink/red in Lightroom. The pipeline preserves RGB black endpoints at `0/0` and white endpoints at `255/255` while leaving middle curve points model-driven.
-- **Verified this pass:** changed-code ruff checks pass; script py_compile passes; focused tests (`tests/test_training.py`, `tests/test_dataset.py`, `tests/test_catalog_dataset.py`, `tests/test_architecture.py`, and the new scene-stat extract tests) pass. Earlier targeted backend tests and `saha-app` Vite production build also passed. Full `uv run pytest tests` is not clean in this workspace because gitignored fixture files are missing (`tests/fixtures/sample_edit.xmp`, `sample.xmp`, `sample.cr3`) and two extract tests require symlink privileges on Windows.
+- **Verified this pass:** `uv run ruff check .`, targeted py_compile, `npm run build:vite`, and focused profile/Mode B/training tests pass. Full `uv run pytest tests -q` is not clean in this workspace: 705 passed, 12 skipped, 28 failed due to missing/unreadable local RAW/XMP fixtures (`tests/fixtures/sample_edit.xmp`, `sample.cr3`) and Windows symlink privileges.
 
 ---
 
@@ -141,7 +145,7 @@ Editing volume is meaningful enough that AI-assisted editing has clear value. Th
 A local desktop application that:
 
 1. **Trains a personalised AI editing profile from historical photos (Mode A)** on Sonna's existing edited photos (~3,000+ photos from Lightroom catalog) — produces a `SonnaEditor` checkpoint trained from scratch (or warm-started from a prior version)
-2. **Initialises an alternative profile from a preset + style survey (Mode B)** when historical training photos aren't available — preset and survey values seed the output-head biases of a `SonnaEditor` checkpoint, with backbone weights warm-loaded from the active Mode A/Personal AI base checkpoint. After initialisation, Mode B *is* a model — same architecture, same slider-set version as its base checkpoint, same inference path as Mode A
+2. **Initialises an alternative profile from a preset + style survey (Mode B)** when historical training photos aren't available — preset and survey values seed a `mode_b_initial` profile package, with backbone weights warm-loaded from the active Mode A/Personal AI base checkpoint for later fine-tuning. Before fine-tuning, initial Lite processing uses preset+survey style plus adaptive per-photo Exposure/WB/tone corrections; after fine-tuning, Mode B uses the same model architecture and slider-set version as its base checkpoint.
 3. **Applies either profile to new shoots** by predicting Lightroom slider values from image content + metadata, outputting XMP sidecars that Lightroom Classic auto-detects
 4. **Improves continuously** via the same Phase 5 fine-tuning loop for both modes — Mode A and Mode B share architecture and capture/retrain pipeline; the only difference between profile types is the starting checkpoint
 
@@ -198,7 +202,7 @@ The only reason to revisit this is if the team scales significantly or starts ru
 
 **Decision 4: Two modes, both model-based (Mode A trained, Mode B preset/survey-initialised) — revised 2026-05-14**
 
-Both Mode A and Mode B produce a `SonnaEditor` checkpoint and run the same inference pipeline. The only difference is how the checkpoint is *initialised*.
+Both Mode A and Mode B produce a `SonnaEditor` checkpoint/profile package and are launched through the same processing entry point. The difference is how the first output is produced.
 
 **Mode A — trained from historical photos**
 - Backbone (ConvNeXt-Tiny) and 13 output heads trained from scratch (or warm-started from prior `SonnaEditor` ckpt) on Sonna's existing Lightroom-edited photos
@@ -208,16 +212,17 @@ Both Mode A and Mode B produce a `SonnaEditor` checkpoint and run the same infer
 **Mode B — initialised from preset + style survey**
 - *Initial state* = a Lightroom preset (baseline slider values) + a style survey (user preferences over the shared v1 slider subset; v2 extension fields are inherited/calibrated from preset defaults when the base is v2)
 - A **preset-to-checkpoint converter** (new build piece — Mode B rebuild step b) ingests the preset + survey and produces a `SonnaEditor` ckpt:
-  - Output-head biases set to the preset/survey values for each slider
-  - Backbone warm-loaded from the active Mode A/Personal AI checkpoint so image features are useful from epoch zero
-  - Result is a runnable `SonnaEditor` ckpt that predicts the preset values plus content-driven deltas the backbone happens to encode
-- After initialisation, Mode B *is* a model — same architecture, same native slider-set version as the base checkpoint, same `inference/engine.py` and `inference/pipeline.py` as Mode A
+  - Output-head final weights zeroed and final biases set to the preset/survey values for each slider, so the checkpoint carries the uploaded calibration
+  - Backbone, metadata encoder, and hidden head layers warm-loaded from the active Mode A/Personal AI checkpoint so future fine-tuning starts from useful features
+  - Result is a UI-selectable `mode_b_initial` profile with copied preset/survey metadata
+- Before the first fine-tune, Mode B initial processing uses the adaptive preset branch in `inference/pipeline.py`: preset controls the look, while per-photo automation adjusts only Exposure, Temperature, and Tint.
+- After fine-tuning, Mode B *is* a model — same architecture, same native slider-set version as the base checkpoint, same `inference/engine.py` prediction path as Mode A
 - Mode B fine-tunes via the **same Phase 5 mechanism** as Mode A: capture user tweaks → compute deltas → retrain → new versioned ckpt
 
 **No graduation mechanism.** Mode B does not "become" Mode A. They are two profile types with different initialisation strategies, both improving over time through the same Phase 5 loop. A Mode B profile after 6 months of Phase 5 retrains is still a Mode B profile; it just happens to have a much better checkpoint than its initial state.
 
 **Why this matters for the build plan:**
-- Phase 2's rule-based preset pipeline (parser + adjuster + end-to-end CLI) remains in the repo as a legacy / fallback CLI tool but is **not the production direction**. The production Mode B is the model-based path described above.
+- Phase 2's preset parser/adjuster remains in the repo and is now reused by the initial Mode B Lite processing branch. The standalone preset CLI is still a fallback/diagnostic tool; the production UI flow is the `mode_b_initial` profile package described above.
 - The Mode B rebuild track (style survey → preset-to-checkpoint converter → Mode B inference path) is sequenced **before Phase 5 redesign** so the capture/finetune mechanism can be validated against both profile types from the start.
 - The Saha app's profile registry already supports multiple profiles by sidecar — Mode B profiles will appear in the same ProfileSelect dropdown as Mode A profiles. No UI restructure needed.
 
@@ -1012,10 +1017,11 @@ These are decisions explicitly kicked to later phases. Don't try to solve them n
 17. **Mode B rebuild track — COMPLETE 2026-05-14 (supersedes Phase 2's rule-based Mode B as the production direction):** Mode B is now a model-based profile type that shares the `SonnaEditor` architecture and Phase 5 fine-tuning pipeline with Mode A — only the initial checkpoint differs (see Decision 4 for full rationale). All three substeps shipped:
 
     - **Step 1: Style survey. DONE 2026-05-14 (`71fcf2b`).** CLI questionnaire in `scripts/run_style_survey.py` that maps user preferences onto six high-variation sliders (Exposure, Temperature, Tint, Contrast, Saturation, Shadows) via 5-point answers. Output: JSON payload `{questions: {key: {slider_field, answer, offset}}, summary}` consumed by Step 2. Module logic in `src/sonna_editor/mode_b/survey.py`. 48 parametrised test cases in `tests/test_style_survey.py`. The "survey UI in Saha app" question is still open — the CLI is the power-user surface; UI integration is deferred to a future Saha-app track.
-    - **Step 2: Preset-to-checkpoint converter. DONE 2026-05-14 (`a8d7c04`), v2-base compatibility fixed 2026-06-01.** `scripts/build_mode_b_checkpoint.py` ingests `(preset.xmp + survey.json)` and produces a `SonnaEditor` ckpt. Implementation in `src/sonna_editor/mode_b/checkpoint_builder.py`: loads the base checkpoint at its native slider set, preserves backbone + metadata encoder + output-head weights, computes per-slider bias deltas in prediction space (log-K for Temperature, raw units elsewhere; preset value + survey offset, clamped to LR range), adds those deltas to each head's final-layer biases, and saves a Mode B ckpt with sidecar JSON marking `profile_type: "mode_b_initial"` plus the inherited `slider_set_version`. v1 bases produce v1 Mode B ckpts; v2 bases produce v2 Mode B ckpts and preserve the extension heads instead of forcing a v1 load. Includes built-in verification that output-head weights stay byte-identical and biases equal `base_bias + delta`. Focused tests live in `tests/test_checkpoint_builder.py`.
-    - **Step 3: Mode B inference path. DONE 2026-05-14.** Validation run on `test_data/mode_b_test/` (19 RAW files; `DP Event.xmp` preset + all-zero survey) confirmed 16/16 photos processed end-to-end through `inference/engine.py` + `inference/pipeline.py` with zero failures and output XMP values matching preset baseline within tolerance for every non-skipped scalar across every photo. The inference path required no architectural change — Mode B ckpts use `SonnaEditor.from_checkpoint` and `engine.predict` identically to Mode A. Two small fixes landed during validation:
+    - **Step 2: Preset-to-checkpoint converter. DONE 2026-05-14 (`a8d7c04`), v2-base compatibility fixed 2026-06-01, adaptive Lite output fixed 2026-06-02.** `scripts/build_mode_b_checkpoint.py` ingests `(preset.xmp + survey.json)` and produces a `SonnaEditor` ckpt. Implementation in `src/sonna_editor/mode_b/checkpoint_builder.py`: loads the base checkpoint at its native slider set, preserves the base feature layers for future fine-tuning, zeroes each output head's final linear weights, sets final biases to absolute preset+survey targets in prediction space (log-K for Temperature, raw units elsewhere), zeroes v2 `wb_metadata_skip`, and saves a Mode B ckpt with sidecar JSON marking `profile_type: "mode_b_initial"` plus the inherited `slider_set_version`. v1 bases produce v1 Mode B ckpts; v2 bases produce v2 Mode B ckpts without down-converting. Built-in verification confirms final weights are zero and biases equal the preset+survey target; initial processing then uses sidecar preset/survey metadata for adaptive per-photo output. Focused tests live in `tests/test_checkpoint_builder.py`.
+    - **Step 3: Mode B inference path. DONE 2026-05-14, revised 2026-06-02.** Initial validation run on `test_data/mode_b_test/` (19 RAW files; `DP Event.xmp` preset + all-zero survey) confirmed 16/16 photos processed end-to-end. On 2026-06-02, the first-pass Mode B path was corrected to match the expected Lite behavior: `process_shoot_with_model()` detects `profile_type: "mode_b_initial"`, bypasses `InferenceEngine`, reloads the copied preset and survey, computes per-photo auto Exposure/WB only through `preset.adjuster`, writes those adjusted values to XMP, and records them in `sonna_predictions.json`; all non-Exposure/WB look sliders stay preset-fixed. The exposure adjuster now protects upper tones using 85th/95th percentile luminance checks after real-folder testing showed mean-only exposure could over-lift shadow-heavy event frames. After a Mode B profile is fine-tuned, normal model inference remains the path. Two small fixes landed during the original validation:
         - `b6b2d1e` `feat(inference): record profile_type and slider_set_version in predictions sidecar` — extends `sonna_predictions.json` with `profile_type`, `profile_id`, `base_checkpoint`, `slider_set_version` propagated from the ckpt's sidecar JSON. Phase 5 capture branches on these fields to pick the right delta baseline (Mode A trained vs Mode B preset-derived). Closes item 19.
-        - `7c93906` `fix(mode-b): Mode B ckpt sidecar inherits base ckpt's resolution` — bug surfaced during validation where Mode B sidecars recorded `config.IMAGE_RESOLUTION` (the global default, 512) instead of the base ckpt's actual resolution (v1.2.3 = 256). Benign for Mode B initial output (head weights zeroed → output bias-only), but matters for Phase 5 fine-tuning once heads become non-zero.
+        - `7c93906` `fix(mode-b): Mode B ckpt sidecar inherits base ckpt's resolution` — bug surfaced during validation where Mode B sidecars recorded `config.IMAGE_RESOLUTION` (the global default, 512) instead of the base ckpt's actual resolution (v1.2.3 = 256). The resolution now also controls preview extraction for the initial adaptive Lite branch.
+        - 2026-06-02 adaptive Lite fix — active v2-base Lite profiles were stacking base model output on top of preset/survey targets, then the first attempted fix made output too constant. Initial Mode B processing now uses preset+survey as the style baseline plus per-photo auto corrections, so Lite is image-adaptive before fine-tuning.
 
     Operational commands for producing a Mode B profile end-to-end live in Part 7 "Mode B usage". The integration test `tests/test_inference_pipeline_integration.py::test_mode_b_end_to_end_sidecar_propagation` covers the full path from base ckpt through Mode B ckpt build to predictions-sidecar contents.
 
@@ -1092,7 +1098,7 @@ Future-Claude: these are the source-of-truth for the audit findings cited throug
 
 ### Mode B usage (operational commands)
 
-Mode B profiles are model-based ckpts produced from a Lightroom preset + style-survey JSON, warm-loaded from a Mode A/Personal AI base checkpoint. The Lite builder inherits the base checkpoint's `slider_set_version`: v1 bases produce v1 Lite checkpoints, v2 bases produce v2 Lite checkpoints. The inference and Phase 5 fine-tuning paths are shared with Mode A — there's no separate "Mode B engine". See Decision 4 + Part 6 item 17 for the architectural reasoning.
+Mode B profiles are Lite profile packages produced from a Lightroom preset + style-survey JSON, warm-loaded from a Mode A/Personal AI base checkpoint. The Lite builder inherits the base checkpoint's `slider_set_version`: v1 bases produce v1 Lite checkpoints, v2 bases produce v2 Lite checkpoints. Before fine-tuning, `process_shoot_model.py` detects `profile_type: "mode_b_initial"` and uses the adaptive preset branch. After fine-tuning, the profile uses normal model inference. See Decision 4 + Part 6 item 17 for the architectural reasoning.
 
 **Three-step workflow:**
 
@@ -1110,7 +1116,7 @@ Mode B profiles are model-based ckpts produced from a Lightroom preset + style-s
        --answers exposure=0,temperature=0,tint=0,contrast=0,saturation=0,shadows=0
    ```
 
-   Neutral baseline = all answers 0 (preset values pass through unchanged). Each non-zero answer applies a slider-specific offset (see `src/sonna_editor/mode_b/survey.py:OFFSET_MAGNITUDES`).
+   Neutral baseline = all answers 0 (preset values pass through unchanged). The frontend Lite wizard currently asks only Exposure, Temperature, and Tint; CLI survey compatibility still accepts the historical contrast/saturation/shadows keys, which should be zero for the current Imagen-like Lite flow. Each non-zero answer applies a slider-specific offset (see `src/sonna_editor/mode_b/survey.py:OFFSET_MAGNITUDES`).
 
 2. **Build the Mode B initial checkpoint** from a Lightroom preset + the survey:
 
@@ -1123,9 +1129,9 @@ Mode B profiles are model-based ckpts produced from a Lightroom preset + style-s
        --profile-name "Mode B - Wedding Lite"
    ```
 
-   Produces `mode_b.ckpt` (the model, size depends on base architecture) + `mode_b.json` (sidecar with `profile_type: "mode_b_initial"`, `profile_id`, `base_checkpoint`, inherited `slider_set_version`, `default_skip_fields`, and `resolution` inherited from the base ckpt). Built-in verification confirms the saved ckpt preserves output-head weights and applies preset+survey deltas as `base_bias + delta`.
+   Produces `mode_b.ckpt` (the profile carrier, size depends on base architecture) + `mode_b.json` (sidecar with `profile_type: "mode_b_initial"`, `profile_id`, `base_checkpoint`, inherited `slider_set_version`, `default_skip_fields`, and `resolution` inherited from the base ckpt). Built-in verification confirms the saved ckpt's final output weights are zero and biases match the preset+survey targets; the sidecar/copy metadata drives the initial adaptive Lite output.
 
-3. **Run inference on a shoot** using the same CLI as Mode A — Mode B uses the existing production inference path:
+3. **Run the Lite profile on a shoot** using the same CLI entry point as Mode A:
 
    ```bash
    uv run python scripts/process_shoot_model.py \
@@ -1134,7 +1140,7 @@ Mode B profiles are model-based ckpts produced from a Lightroom preset + style-s
        --output-dir path/to/output/
    ```
 
-   The Saha app's API route (`src/sonna_editor/api/routes/process.py`) routes through the same `process_shoot_with_model` function. `sonna_predictions.json` will carry the Mode B identity fields (`profile_type`, `profile_id`, `base_checkpoint`, `slider_set_version`) so Phase 5 capture can attribute deltas correctly.
+   The Saha app's API route (`src/sonna_editor/api/routes/process.py`) routes through the same `process_shoot_with_model` function. For initial Lite profiles, that function keeps preset look sliders fixed, applies per-photo Exposure/WB corrections only, and writes those adjusted values into `sonna_predictions.json` with the Mode B identity fields (`profile_type`, `profile_id`, `base_checkpoint`, `slider_set_version`) so Phase 5 capture can attribute deltas correctly.
 
 **Phase 5 (continuous learning) is Mode-agnostic.** Once a user has edited the Mode B output XMPs in Lightroom, the same `scripts/finetune_profile.py` flow that handles Mode A will capture deltas and produce a fine-tuned ckpt. The fine-tuned profile is structurally identical to a Mode A trained profile (Decision 4 — Mode A and Mode B converge after first fine-tune).
 

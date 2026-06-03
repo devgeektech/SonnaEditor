@@ -110,6 +110,14 @@ def test_very_dark_image_gets_large_exposure_delta() -> None:
     assert delta.get("Exposure2012", 0.0) > 0.7
 
 
+def test_shadow_heavy_image_with_bright_upper_tones_does_not_over_lift() -> None:
+    arr = np.full((64, 64, 3), 24, dtype=np.uint8)
+    arr[:, 44:, :] = 190
+    img = Image.fromarray(arr, "RGB")
+    delta = compute_adjustment(img, {}, _base_preset(), _opts())
+    assert delta.get("Exposure2012", 0.0) <= 0.0
+
+
 def test_no_exposure_when_disabled() -> None:
     img = _grey(20)
     delta = compute_adjustment(img, {}, _base_preset(), _opts(auto_exposure=False))

@@ -6,7 +6,6 @@ from pathlib import Path
 from unittest.mock import patch
 
 import pandas as pd
-import pytest
 from fastapi.testclient import TestClient
 
 

@@ -8,22 +8,25 @@ sidecars for new shoots.
 
 - Backend: Python 3.11, uv, FastAPI, PyTorch, pytest.
 - Frontend: Electron + React in `saha-app/`.
-- Production profile lineage: v1.2.x Mode A checkpoints under `v1_learning/`.
-- Mode B preset/survey checkpoints use the same inference path as Mode A.
+- Production profile lineage: frontend-visible profiles live under `v1_learning/`.
+- Personal AI profiles train from RAW+XMP through the frontend. Lite profiles
+  use the separate foundation checkpoint plus preset/survey style with adaptive
+  per-photo Exposure/WB corrections before fine-tuning.
 - Platform target: macOS, Windows, and Linux. CUDA and Apple MPS are used when
   available; CPU fallback is supported for development and small runs.
 - Current Windows training workspace: PyTorch `2.11.0+cu128` is pinned through
   `pyproject.toml` / `uv.lock` and verified on an NVIDIA GeForce RTX 3050.
-- The local dataset currently has 189 rows with shoot-grouped balanced splits:
-  train=132, val=27, test=30.
-- Current v2 training defaults use geometry-only augmentation, Exposure loss
+- Training/profile caches were cleared on 2026-06-02 so a fresh dataset can be
+  added. There is currently no guaranteed local dataset or visible checkpoint.
+- Current training defaults use geometry-only augmentation, Exposure loss
   weight 4.0, and fresh output-head target-prior initialisation from the
   training split to reduce brightness/WB drift on small datasets.
-- Mode A inference stabilises RGB tone-curve endpoints before XMP write so
+- Inference stabilises RGB tone-curve endpoints before XMP write so
   neutral white highlights do not shift pink/red from channel-curve endpoint
   drift.
-- This checkout currently has `v1_learning/model-v2.0.0.ckpt` with matching
-  sidecar JSON, so the frontend can discover one local v2 profile.
+- Foundation model training is CLI-only through `scripts/train_foundation_model.py`.
+  The promoted checkpoint lives in a separate private foundation repo and is
+  used as the base for Lite profiles.
 
 ## Quick Start
 
@@ -31,6 +34,9 @@ sidecars for new shoots.
 uv sync --extra dev
 uv run python scripts/verify_environment.py
 ```
+
+For Mac setup from a clean machine through frontend/CLI operation, see
+`MAC_SETUP.md`.
 
 On Windows/Linux x86_64, `uv sync --extra dev` installs CUDA-enabled PyTorch
 from the pinned PyTorch CUDA 12.8 index. If no NVIDIA GPU is available, the app
@@ -73,16 +79,31 @@ enough. Training requires target Lightroom slider values from one of:
 - A Lightroom Classic `.lrcat` opened read-only, with accessible RAW files.
 - Fine-tune captures from previous Saha runs.
 
-Preset + survey creates a Mode B initial checkpoint, but it is not supervised
-training from photos. See `TRAINING_COMMANDS.md` for the full runbook.
+Preset + survey creates a Lite profile, but it is not supervised training from
+photos. See `TRAINING_COMMANDS.md` for the full runbook.
 
-## Preset / Mode B Profiles
+## Lite Profiles
 
-Mode B/Lite starts from a trained Mode A checkpoint, a Lightroom preset, and a
-six-question style survey. The checkpoint builder publishes `model-v0.N.0.ckpt`
-under `v1_learning/` when no explicit `--output` is provided, so the frontend
-can discover it like any trained profile.
+Lite starts from the configured foundation checkpoint, a Lightroom preset, and
+the Lite survey. It does not depend on the currently active Personal AI profile.
+The current UI asks Exposure, Temperature, and Tint because the preset owns the
+look sliders. The checkpoint builder publishes `model-v0.N.0.ckpt` under
+`v1_learning/` when no explicit `--output` is provided, so the frontend can
+discover it like any trained profile. Initial Lite processing detects
+`profile_type: mode_b_initial`, applies the preset as the style baseline, then
+computes per-photo Exposure, Temperature, and Tint corrections before writing
+XMPs. Preset look sliders such as Contrast, Shadows, Highlights, Whites,
+Blacks, Saturation, and Vibrance stay preset-fixed.
+
+Lite profiles are visible in the UI when published into `v1_learning/`. If you
+created a Lite profile before the 2026-06-02 Mode B fixes, rebuild it so the
+sidecar and copied preset/survey metadata match the current flow.
+
+Only profiles placed in `v1_learning/` are scanned by the UI. The foundation
+checkpoint lives in the separate foundation repo configured by
+`SONNA_FOUNDATION_REPO` or the default sibling folder `SonnaEditorFoundation`.
 
 Direct preset execution is also available through `scripts/process_shoot_preset.py`
 when you only want preset-derived XMP files and do not need a selectable model
-profile.
+profile. This preset-only path uses the same content-aware adjustment logic, but
+does not create a profile that the UI can select or later fine-tune.

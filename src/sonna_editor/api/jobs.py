@@ -22,7 +22,6 @@ import json
 import logging
 import os
 import threading
-import time
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -47,7 +46,7 @@ SUBSCRIBER_QUEUE_MAXSIZE = 100
 # ── Types ──────────────────────────────────────────────────────────────────
 
 JobState = Literal["queued", "running", "complete", "cancelled", "failed"]
-JobKind = Literal["process", "finetune"]
+JobKind = Literal["process", "finetune", "train"]
 
 
 def _now_iso() -> str:
@@ -81,6 +80,8 @@ class JobRecord:
     # finetune-only
     base_profile_id: Optional[str] = None
     captures_dir: Optional[str] = None
+    profile_name: Optional[str] = None
+    dataset_dir: Optional[str] = None
     epochs_total: Optional[int] = None
     epochs_completed: int = 0
     current_epoch: Optional[int] = None
@@ -129,8 +130,11 @@ class JobRecord:
             })
         else:
             common.update({
+                "folder_path": self.folder_path,
                 "base_profile_id": self.base_profile_id,
                 "captures_dir": self.captures_dir,
+                "profile_name": self.profile_name,
+                "dataset_dir": self.dataset_dir,
                 "epochs_total": self.epochs_total,
                 "epochs_completed": self.epochs_completed,
                 "current_epoch": self.current_epoch,
