@@ -33,7 +33,7 @@ The earlier `GPU available: False` training issue was caused by a CPU-only PyTor
 - Temperature labels in the current dataset mostly cool relative to AsShot WB, so a warmer model output points to training flow/initialisation/split issues rather than warmer target labels.
 - Tint labels are consistently positive/magenta relative to AsShot, so some magenta tendency is present in the labels.
 - No `v1_learning/model-v*.ckpt` profile is present after the reset.
-- Lite profile creation now supports using this active v2 checkpoint as its base; the builder preserves `slider_set_version="v2"` and writes a profile sidecar that lets initial Mode B processing use preset+survey style plus adaptive per-photo Exposure/WB/tone recovery.
+- Lite profile creation now uses the configured foundation checkpoint as its base; the builder preserves the foundation checkpoint's native slider set and writes a profile sidecar that lets initial Mode B processing use preset+survey style plus adaptive per-photo Exposure/WB correction.
 - A fresh scene-stats candidate was trained at `data/models/sonna-v2-scene-stats-run01/`, but it was rejected for frontend use. It briefly published as `v1_learning/model-v2.0.1.*`, then those frontend-visible copies were removed after collapse analysis showed worse prediction spread than v2.0.0.
 
 ## What Changed This Session
@@ -59,7 +59,7 @@ The earlier `GPU available: False` training issue was caused by a CPU-only PyTor
 - Added fresh-model target-prior initialisation in `SonnaEditor.initialise_output_priors()` and wired it into `scripts/train_profile.py`. Fresh output heads now start at training-set slider medians, while WB residual heads start at zero when AsShot WB skip is enabled.
 - Raised the default v2 Exposure2012 loss weight to 4.0. The current training-set priors are Exposure2012=0.22, Temperature=5191K, Tint=5.
 - Fixed the pink/red Lightroom output issue in `src/sonna_editor/inference/pipeline.py`. Diagnosis on `0H5A3190A-2.xmp`: Temperature/Tint were close to the expected XMP, but the model-written RGB tone-curve highlight endpoints were not neutral (`Green Pt6=240/221`, `Blue Pt6=213/234`). Those endpoints colour-cast white highlights pink/red. The inference pipeline now forces RGB tone-curve black endpoints to `0/0` and white endpoints to `255/255`, while leaving mid-curve shape predictions intact.
-- Added preview-derived luminance scene statistics (`mean_luminance`, `median_luminance`, `luminance_std`, `highlight_clip_pct`, `shadow_clip_pct`, `dynamic_range`) to extraction, RAW/XMP datasets, catalog datasets, fine-tune captures, training dataloaders, inference batches, and a new `arch_version=2` metadata encoder path.
+- Added preview-derived luminance scene statistics (`mean_luminance`, `median_luminance`, `luminance_std`, `highlight_clip_pct`, `shadow_clip_pct`, `dynamic_range`) to extraction, RAW/XMP datasets, catalog datasets, fine-tune captures, training dataloaders, inference batches, and the scene-stat metadata encoder path.
 - Updated default visual-priority loss weights to match the improvement plan: Exposure=5.0, Temperature/Tint=4.0, Contrast/Highlights/Shadows=3.0, Whites/Blacks/Saturation/Vibrance=2.0 minimums, while preserving existing targeted timid-field bumps above those floors.
 - Added validation distribution logging for Exposure, Contrast, Highlights, Shadows, Temperature, and Tint (`val_dist_*_std_ratio`) so future training runs surface collapse during training.
 - Added `scripts/analyse_prediction_collapse.py` and `scripts/audit_dataset_diversity.py`.
@@ -74,18 +74,33 @@ The earlier `GPU available: False` training issue was caused by a CPU-only PyTor
 - Published a corrected Lite profile at `v1_learning/model-v0.2.0.ckpt` / `.json` from the same preset and survey as stale `model-v0.1.0`. Its profile id is `k-fixed-lite-20260602-2120`. Copied support files to `model-v0.2.0-preset.xmp` and `model-v0.2.0-survey.json`, updated the v0.2 sidecar to point to them, and removed stale `model-v0.1.0.*` artifacts.
 - Updated Mode B tests to pin both the checkpoint builder behavior and the adaptive initial processing path. Removed stale assertions/comments that expected inherited final-layer head weights and an unused test local.
 - Added frontend Personal AI profile creation: the profile page now opens a RAW+XMP training wizard, starts `POST /api/profiles/personal`, streams epoch progress through the existing job hook, supports cancel, and refreshes profiles after completion.
-- Lite profile creation now presents the Imagen-like Exposure/Temperature/Tint survey in the UI. Contrast/saturation/shadows compatibility answers are sent as zero so older survey serialization and CLI tooling remain intact.
+- Lite profile creation now presents the six-question style survey in the UI. All six answers are stored in the survey JSON and profile package; initial Lite processing still dynamically adjusts only Exposure, Temperature, and Tint so preset look sliders stay fixed until fine-tuning.
+- Added a fresh-model staged-head learning path. `SonnaEditor` now defaults to `arch_version=3`, where WB/presence heads condition on the tone block output and later heads condition on tone + presence + WB outputs. Existing `arch_version=1`/`2` checkpoints load unchanged.
 - Added profile-delete confirmation in the frontend before removing any local checkpoint/sidecar files. Active profile deletion remains blocked by the backend.
 - Moved the training callable into `src/sonna_editor/training/profile_runner.py`; `scripts/train_profile.py` is now a thin CLI wrapper. The API imports the packaged runner rather than a script module.
 - Added cancellation handling to frontend Personal AI training so cancelled runs do not test/save/publish a new checkpoint.
 - Updated docs so Personal AI and Lite training/execution are frontend flows, while foundation training is CLI-only through `scripts/train_foundation_model.py`.
+- Renamed `TRAINING_COMMANDS.md` to `CLI_COMMANDS.md` and created `FOUNDATION_TRAINING.md` for foundation train, resume, retrain, promotion, and FiveK guidance.
+- Updated frontend Personal AI backend flow so RAW+XMP profile training resolves the configured hidden foundation checkpoint and warm-starts model weights from it before publishing a user-facing checkpoint into `v1_learning/`. Warm-start now uses `base_model_checkpoint` rather than Lightning resume state, keeps the new training registry, and skips categorical embedding-table copies.
+- Verified MIT-Adobe FiveK is suitable foundation material, with the caveat that it is 5,000 DNG inputs plus five expert renditions/catalog edits, not 25,000 independent RAW inputs. Use one expert target style first.
+- Guarded Lightning metric logging in `src/sonna_editor/training/module.py` so standalone `training_step()` unit tests no longer emit `self.log()` warnings without a Trainer.
 
 ## Verification
 
 - `uv run ruff check src\sonna_editor\foundation.py src\sonna_editor\api\routes\profiles.py src\sonna_editor\api\models.py scripts\train_foundation_model.py scripts\build_mode_b_checkpoint.py tests\test_foundation.py tests\api\test_profiles.py tests\api\conftest.py` passed.
 - `uv run python -m py_compile src\sonna_editor\foundation.py src\sonna_editor\api\routes\profiles.py scripts\train_foundation_model.py scripts\build_mode_b_checkpoint.py` passed.
 - `uv run pytest tests\test_foundation.py tests\api\test_profiles.py -q` passed: 22 passed.
-- Reviewed existing `HANDOVER.md`, `SESSION_STATE.md`, `project_knowledge.md`, `SONNA_EDITOR_BUILD_SPEC.md`, `TRAINING_COMMANDS.md`, `RUN.md`, `README.md`, `pyproject.toml`, and `saha-app/package.json` before writing the Mac guide.
+- `uv run ruff check src\sonna_editor\mode_b\survey.py src\sonna_editor\mode_b\checkpoint_builder.py src\sonna_editor\api\routes\profiles.py tests\test_style_survey.py tests\test_checkpoint_builder.py tests\api\test_profiles.py tests\api\test_callback_bridge.py tests\test_inference_pipeline_integration.py` passed.
+- `uv run python -m py_compile src\sonna_editor\mode_b\survey.py src\sonna_editor\mode_b\checkpoint_builder.py src\sonna_editor\api\routes\profiles.py` passed.
+- `uv run pytest tests\test_style_survey.py tests\test_checkpoint_builder.py tests\api\test_profiles.py tests\test_architecture.py tests\api\test_callback_bridge.py::test_mode_b_initial_uses_per_photo_preset_adjuster tests\test_inference_pipeline_integration.py::test_mode_b_end_to_end_sidecar_propagation -q` passed: 143 passed, 6 skipped.
+- `npm run build:vite` passed in `saha-app/`.
+- Cleanup verification after foundation/Mode A/Mode B updates:
+  - `uv run ruff check .` passed.
+  - `uv run python -m py_compile src\sonna_editor\model\architecture.py src\sonna_editor\mode_b\survey.py src\sonna_editor\mode_b\checkpoint_builder.py src\sonna_editor\api\routes\profiles.py src\sonna_editor\training\module.py scripts\train_foundation_model.py` passed.
+  - `npm run build:vite` passed in `saha-app/`.
+  - `uv run pytest tests\test_style_survey.py tests\test_checkpoint_builder.py tests\api\test_profiles.py tests\test_architecture.py tests\api\test_callback_bridge.py::test_mode_b_initial_uses_per_photo_preset_adjuster tests\test_inference_pipeline_integration.py::test_mode_b_end_to_end_sidecar_propagation tests\test_training.py::test_foundation_warm_start_keeps_training_registry tests\test_training.py::test_training_step_returns_scalar tests\test_training.py::test_training_step_loss_is_non_negative tests\test_training.py::test_loss_gradient_flow_to_predictions tests\test_training.py::test_output_prior_initialisation_sets_exposure_and_zero_wb_residual -q` passed: 148 passed, 6 skipped, no warnings.
+  - `uv run mypy src scripts` is still not clean in this workspace; it reports broad pre-existing strict-typing debt and missing third-party stubs across many files. Treat that as a dedicated type-hardening task, separate from lint/compile/test cleanup.
+- Reviewed existing `HANDOVER.md`, `SESSION_STATE.md`, `project_knowledge.md`, `SONNA_EDITOR_BUILD_SPEC.md`, `CLI_COMMANDS.md`, `RUN.md`, `README.md`, `pyproject.toml`, and `saha-app/package.json` before writing the Mac guide.
 - `uv run python -c "import torch; ..."` confirmed:
   - `torch 2.11.0+cu128`
   - `torch.cuda.is_available() == True`
@@ -151,7 +166,7 @@ The earlier `GPU available: False` training issue was caused by a CPU-only PyTor
   - `lr=1e-4`
   - `max_epochs=50`
   - `freeze_backbone_epochs=3`
-  - `arch_version=2` for fresh models, adding six luminance scene-stat metadata inputs
+  - `arch_version=3` for fresh models, adding staged output-head conditioning on top of the six luminance scene-stat metadata inputs
   - Temperature loss weight=4.0
   - Tint loss weight=4.0
   - Exposure2012 loss weight=5.0
@@ -164,11 +179,11 @@ The earlier `GPU available: False` training issue was caused by a CPU-only PyTor
 - Default training augmentation is now geometry-only; photometric jitter remains configurable but disabled by default.
 - Training on tiny splits now logs once that it adjusted `log_every_n_steps` instead of letting Lightning warn. This is expected for the current 132-row train split, which has 9 batches at batch size 16.
 - `Profile.profile_type` is already implemented in backend profile responses and frontend profile classification. `None` means a legacy trained profile; `"mode_b_initial"` means a Lite preset-derived profile.
-- Mode B/Lite checkpoints now inherit the active base checkpoint's slider set. v1 bases produce v1 Lite checkpoints; v2 bases produce v2 Lite checkpoints with v2 field count retained. Before fine-tuning, the UI/CLI processing path treats `mode_b_initial` as an Imagen-aligned Lite profile: preset look fixed, per-photo Exposure/WB corrections only. After fine-tuning, the same profile can move back to normal model inference.
+- Mode B/Lite checkpoints now inherit the configured foundation checkpoint's native slider set and field count. Before fine-tuning, the UI/CLI processing path treats `mode_b_initial` as an Imagen-aligned Lite profile: preset look fixed, per-photo Exposure/WB corrections only. After fine-tuning, the same profile can move back to normal model inference.
 
 ## Next Suggested Step
 
-Add the fresh RAW+XMP dataset, start the backend/Electron app, and create a Personal AI profile from the frontend. Use Lite profile creation from the frontend only after a Personal AI profile is active.
+Add the fresh RAW+XMP dataset, start the backend/Electron app, and create a Personal AI profile from the frontend. Use Lite profile creation from the frontend after a foundation checkpoint is configured in `SONNA_FOUNDATION_CHECKPOINT`, `SONNA_FOUNDATION_REPO/foundation_manifest.json`, or `SONNA_FOUNDATION_REPO/foundation.ckpt`.
 
 For foundation model work, use `scripts\train_foundation_model.py` so the checkpoint is promoted to the separate foundation repo and stays out of the frontend profile list.
 

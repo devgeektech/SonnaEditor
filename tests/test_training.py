@@ -23,6 +23,7 @@ from sonna_editor.training.datamodule import (
     build_registry,
 )
 from sonna_editor.training.module import SonnaLightningModule
+from sonna_editor.training.profile_runner import _warm_start_model_from_checkpoint
 
 
 # ---------------------------------------------------------------------------
@@ -168,6 +169,44 @@ def test_registry_ids_are_unique(sample_df: pd.DataFrame) -> None:
     for mapping in (reg.camera_bodies, reg.lenses, reg.camera_profiles, reg.wb_presets):
         ids = list(mapping.values())
         assert len(ids) == len(set(ids)), "Registry IDs must be unique"
+
+
+def test_foundation_warm_start_keeps_training_registry(tmp_path: Path) -> None:
+    base_reg = EmbeddingRegistry()
+    base_reg.camera_makes = {"unknown": 0, "BaseMake": 1}
+    base_reg.camera_models = {"unknown": 0, "BaseModel": 1}
+    base_reg.camera_bodies = {"unknown": 0, "Base Body": 1}
+    base_reg.lenses = {"unknown": 0, "Base Lens": 1}
+    base_reg.camera_profiles = {"unknown": 0, "Base Profile": 1}
+    base_reg.wb_presets = {"unknown": 0, "Base WB": 1}
+
+    train_reg = EmbeddingRegistry()
+    train_reg.camera_makes = {"unknown": 0, "TrainMake": 1}
+    train_reg.camera_models = {"unknown": 0, "TrainModel": 1}
+    train_reg.camera_bodies = {"unknown": 0, "Train Body": 1}
+    train_reg.lenses = {"unknown": 0, "Train Lens": 1}
+    train_reg.camera_profiles = {"unknown": 0, "Train Profile": 1}
+    train_reg.wb_presets = {"unknown": 0, "Train WB": 1}
+    base = SonnaEditor(registry=base_reg, freeze_backbone=True, _pretrained_backbone=False)
+    with torch.no_grad():
+        base.tone_head[-1].bias.fill_(0.123)
+        base.metadata_encoder.make_emb.weight.fill_(9.0)
+    ckpt = tmp_path / "foundation.ckpt"
+    base.save_checkpoint(ckpt)
+
+    warm = _warm_start_model_from_checkpoint(
+        model_cls=SonnaEditor,
+        checkpoint_path=ckpt,
+        registry=train_reg,
+        slider_set_version="v2",
+    )
+
+    assert warm.registry.camera_makes == train_reg.camera_makes
+    assert torch.allclose(warm.tone_head[-1].bias, torch.full_like(warm.tone_head[-1].bias, 0.123))
+    assert not torch.allclose(
+        warm.metadata_encoder.make_emb.weight,
+        torch.full_like(warm.metadata_encoder.make_emb.weight, 9.0),
+    )
 
 
 # ---------------------------------------------------------------------------

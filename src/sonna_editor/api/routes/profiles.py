@@ -31,9 +31,8 @@ from sonna_editor.api.models import (
 from sonna_editor.foundation import resolve_foundation_checkpoint
 from sonna_editor.mode_b import checkpoint_builder as mode_b_builder
 from sonna_editor.mode_b.survey import (
-    QUESTION_ORDER,
-    VALID_ANSWERS,
     build_survey_payload,
+    normalise_lite_answers,
     write_survey,
 )
 
@@ -255,26 +254,12 @@ def _next_lite_seq() -> int:
     return (max(seen) + 1) if seen else 1
 
 
-def _validate_survey_answers(answers: dict[str, int]) -> None:
+def _validate_survey_answers(answers: dict[str, int]) -> dict[str, int]:
     """Raise HTTPException(400) if the survey payload is incomplete/invalid."""
-    missing = set(QUESTION_ORDER) - set(answers.keys())
-    if missing:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Survey answers missing for: {sorted(missing)}",
-        )
-    extra = set(answers.keys()) - set(QUESTION_ORDER)
-    if extra:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Unknown survey keys: {sorted(extra)}",
-        )
-    for key, value in answers.items():
-        if value not in VALID_ANSWERS:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Survey answer for {key!r} must be one of {list(VALID_ANSWERS)}, got {value}",
-            )
+    try:
+        return normalise_lite_answers(answers)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 # ── Personal AI profile creation ────────────────────────────────────────────
@@ -334,6 +319,8 @@ def _train_personal_profile_sync(
     train, val, test = split_dataset(df)
     save_split(train, val, test, splits_dir)
 
+    foundation_ckpt_path = resolve_foundation_checkpoint()
+
     train_args = argparse.Namespace(
         train_parquet=splits_dir / "train.parquet",
         val_parquet=splits_dir / "val.parquet",
@@ -346,6 +333,7 @@ def _train_personal_profile_sync(
         freeze_backbone_epochs=3,
         num_workers=req.workers,
         resume_from_checkpoint=None,
+        base_model_checkpoint=foundation_ckpt_path,
         slider_set_version=config.CURRENT_SLIDER_SET_VERSION,
         no_wb_metadata_skip=False,
         no_target_prior_init=False,
@@ -445,7 +433,7 @@ def create_lite_profile(req: LiteProfileRequest) -> LiteProfileCreated:
     if preset_path.suffix.lower() != ".xmp":
         raise HTTPException(status_code=400, detail="Preset must be a .xmp file")
 
-    _validate_survey_answers(req.survey_answers)
+    survey_answers = _validate_survey_answers(req.survey_answers)
 
     try:
         base_ckpt_path = resolve_foundation_checkpoint()
@@ -467,7 +455,7 @@ def create_lite_profile(req: LiteProfileRequest) -> LiteProfileCreated:
     # Persist survey + preset alongside the new ckpt before invoking the
     # builder. Both paths get recorded in the Mode B sidecar's
     # source_survey / source_preset fields.
-    survey_payload = build_survey_payload(req.survey_answers)
+    survey_payload = build_survey_payload(survey_answers)
     write_survey(survey_payload, survey_dest)
     shutil.copyfile(preset_path, preset_dest)
 

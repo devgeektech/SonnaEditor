@@ -134,6 +134,18 @@ def test_compute_bias_vector_applies_survey_offset() -> None:
     assert targets["Exposure2012"] == pytest.approx(1.3)
 
 
+def test_compute_bias_vector_applies_all_six_survey_offsets() -> None:
+    preset = {f: None for f in config.SLIDER_FIELDS}
+    preset["Contrast2012"] = 12.0
+    survey = _balanced_survey(contrast=2, saturation=-1, shadows=1)
+
+    targets = compute_bias_vector(preset, survey)
+
+    assert targets["Contrast2012"] == pytest.approx(42.0)
+    assert targets["Saturation"] == pytest.approx(-10.0)
+    assert targets["Shadows2012"] == pytest.approx(20.0)
+
+
 def test_compute_bias_vector_clamps_to_range() -> None:
     """Clamp the (preset + survey) target to slider range."""
     preset = {f: None for f in config.SLIDER_FIELDS}
@@ -405,7 +417,7 @@ def test_build_mode_b_checkpoint_subtracts_survey_from_skip_fields(
     """Survey-covered sliders must be removed from the inherited skip list.
 
     INHERITED_SKIP_FIELDS captures the base ckpt's architecturally-broken
-    sliders. Tint is in that list AND is one of the six survey questions.
+    sliders. Tint is in that list AND is one of the Lite survey questions.
     Without the subtraction the user's Tint calibration would set the
     Mode B bias correctly but then get stripped at XMP-write time —
     making the survey question functionally meaningless. This test pins

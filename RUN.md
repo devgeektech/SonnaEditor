@@ -115,8 +115,8 @@ So `catalog_dataset.py` is the catalog-based dataset preparation module. It can 
 
 The Saha frontend has two profile creation paths:
 
-- **Personal AI profile:** choose a folder containing RAW files and matching Lightroom `.xmp` sidecars. The backend builds the dataset, trains with the current recipe, publishes a versioned checkpoint into `v1_learning/`, and streams progress through the normal job API.
-- **Lite profile:** choose a Lightroom preset and answer the Exposure, Temperature, and Tint survey. The backend derives a `mode_b_initial` checkpoint from the configured foundation checkpoint and the preset.
+- **Personal AI profile:** choose a folder containing RAW files and matching Lightroom `.xmp` sidecars. The backend resolves the hidden foundation checkpoint, builds the dataset, warm-starts training from that foundation, publishes a versioned checkpoint into `v1_learning/`, and streams progress through the normal job API.
+- **Lite profile:** choose a Lightroom preset and answer the six-question style survey. The backend derives a `mode_b_initial` checkpoint from the configured foundation checkpoint, the preset, and all six survey answers. The initial Lite run dynamically adjusts Exposure, Temperature, and Tint while preset look sliders stay fixed.
 
 Profile deletion from the frontend asks for confirmation before removing the local checkpoint and sidecar files. Active profiles still cannot be deleted until another profile is activated.
 
@@ -183,7 +183,7 @@ uv run python scripts\process_shoot_model.py `
 
 If you create the Lite profile in the UI, the backend uses the same Lite logic as the CLI. The UI calls:
 
-- `POST /api/profiles/lite` to build the Lite checkpoint from the configured foundation checkpoint, selected preset, and Exposure/WB/tint survey answers.
+- `POST /api/profiles/lite` to build the Lite checkpoint from the configured foundation checkpoint, selected preset, and six-question survey answers.
 - `POST /api/process` to run a profile on a folder of RAWs and write XMPs.
 
 The backend workflow is:
@@ -243,7 +243,7 @@ uv run python scripts\build_dataset_from_catalog.py `
 
 ### Train from prepared splits
 
-Use the stratified by-shoot splits and train a fresh Personal AI profile. The current default recipe uses 512px input, direct AsShot WB metadata skip, stronger Temperature/Tint/Exposure loss weights, and frontend publishing into `v1_learning/`.
+Use the stratified by-shoot splits and train a fresh Personal AI profile. The current frontend Personal AI path warm-starts from the configured foundation checkpoint. The direct CLI command below starts from scratch unless you pass `--base-model-checkpoint` for a warm start or `--resume-from-checkpoint` for an interrupted-run resume. The current default recipe uses 512px input, direct AsShot WB metadata skip, stronger Temperature/Tint/Exposure loss weights, and frontend publishing into `v1_learning/`.
 
 ```bash
 uv run python scripts/train_profile.py \
@@ -276,6 +276,7 @@ It also publishes a versioned UI-visible copy such as
 `v1_learning/model-v2.0.0.ckpt` plus `v1_learning/model-v2.0.0.json`.
 Treat this as an internal file version, not a model-family choice.
 Use `--resume-from-checkpoint <path>` to continue from a saved training checkpoint when resuming a run, or omit it to start fresh. Use `--output-dir` for run-specific artifacts, and allow the script to publish the visible checkpoint into `v1_learning/` for frontend discovery.
+Use `--base-model-checkpoint <path>` when you want to initialise from the hidden foundation checkpoint without carrying over optimizer or epoch state.
 
 The current small local dataset contains:
 

@@ -67,7 +67,7 @@ const SURVEY_QUESTIONS = [
   {
     key: 'contrast', title: 'Contrast',
     prompt: 'Contrast feel?',
-    description: 'Distance between shadows and highlights. Affects Contrast2012.',
+    description: 'Captured as a Lite style preference; the preset still owns the initial look sliders.',
     options: [
       [-2, 'Flat / soft (low contrast, film-like)'],
       [-1, 'Slightly flat'],
@@ -79,7 +79,7 @@ const SURVEY_QUESTIONS = [
   {
     key: 'saturation', title: 'Saturation',
     prompt: 'Colour saturation feel?',
-    description: 'Global colour intensity. Affects Saturation.',
+    description: 'Captured as a Lite style preference; the preset still owns the initial look sliders.',
     options: [
       [-2, 'Muted / desaturated (editorial)'],
       [-1, 'Slightly muted'],
@@ -91,7 +91,7 @@ const SURVEY_QUESTIONS = [
   {
     key: 'shadows', title: 'Shadows',
     prompt: 'Shadow handling?',
-    description: 'Detail recovery in dark areas. Affects Shadows2012.',
+    description: 'Captured as a Lite style preference; the preset still owns the initial look sliders.',
     options: [
       [-2, 'Deep / crushed (dramatic, detail loss in shadows)'],
       [-1, 'Slightly deep'],

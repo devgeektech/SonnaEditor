@@ -9,9 +9,10 @@ sidecars for new shoots.
 - Backend: Python 3.11, uv, FastAPI, PyTorch, pytest.
 - Frontend: Electron + React in `saha-app/`.
 - Production profile lineage: frontend-visible profiles live under `v1_learning/`.
-- Personal AI profiles train from RAW+XMP through the frontend. Lite profiles
-  use the separate foundation checkpoint plus preset/survey style with adaptive
-  per-photo Exposure/WB corrections before fine-tuning.
+- Personal AI profiles train from RAW+XMP through the frontend and warm-start
+  from the hidden foundation checkpoint. Lite profiles use the same separate
+  foundation checkpoint plus preset/survey style with adaptive per-photo
+  Exposure/WB corrections before fine-tuning.
 - Platform target: macOS, Windows, and Linux. CUDA and Apple MPS are used when
   available; CPU fallback is supported for development and small runs.
 - Current Windows training workspace: PyTorch `2.11.0+cu128` is pinned through
@@ -19,14 +20,14 @@ sidecars for new shoots.
 - Training/profile caches were cleared on 2026-06-02 so a fresh dataset can be
   added. There is currently no guaranteed local dataset or visible checkpoint.
 - Current training defaults use geometry-only augmentation, Exposure loss
-  weight 4.0, and fresh output-head target-prior initialisation from the
+  weight 5.0, and fresh output-head target-prior initialisation from the
   training split to reduce brightness/WB drift on small datasets.
 - Inference stabilises RGB tone-curve endpoints before XMP write so
   neutral white highlights do not shift pink/red from channel-curve endpoint
   drift.
 - Foundation model training is CLI-only through `scripts/train_foundation_model.py`.
   The promoted checkpoint lives in a separate private foundation repo and is
-  used as the base for Lite profiles.
+  used as the base for Personal AI and Lite profiles.
 
 ## Quick Start
 
@@ -80,20 +81,23 @@ enough. Training requires target Lightroom slider values from one of:
 - Fine-tune captures from previous Saha runs.
 
 Preset + survey creates a Lite profile, but it is not supervised training from
-photos. See `TRAINING_COMMANDS.md` for the full runbook.
+photos. See `CLI_COMMANDS.md` for operator commands and
+`FOUNDATION_TRAINING.md` for hidden foundation-model training.
 
 ## Lite Profiles
 
 Lite starts from the configured foundation checkpoint, a Lightroom preset, and
 the Lite survey. It does not depend on the currently active Personal AI profile.
-The current UI asks Exposure, Temperature, and Tint because the preset owns the
-look sliders. The checkpoint builder publishes `model-v0.N.0.ckpt` under
+The current UI asks six survey questions. The first Lite processing pass uses
+the survey and preset metadata while dynamically adjusting only Exposure,
+Temperature, and Tint because the preset owns the look sliders. The checkpoint
+builder publishes `model-v0.N.0.ckpt` under
 `v1_learning/` when no explicit `--output` is provided, so the frontend can
 discover it like any trained profile. Initial Lite processing detects
 `profile_type: mode_b_initial`, applies the preset as the style baseline, then
 computes per-photo Exposure, Temperature, and Tint corrections before writing
 XMPs. Preset look sliders such as Contrast, Shadows, Highlights, Whites,
-Blacks, Saturation, and Vibrance stay preset-fixed.
+Blacks, Saturation, and Vibrance stay preset-fixed until later fine-tuning.
 
 Lite profiles are visible in the UI when published into `v1_learning/`. If you
 created a Lite profile before the 2026-06-02 Mode B fixes, rebuild it so the

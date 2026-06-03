@@ -90,6 +90,16 @@ def _parse_args() -> argparse.Namespace:
                    help="Number of epochs to keep backbone frozen (default: 3)")
     p.add_argument("--num-workers",   type=int,   default=4)
     p.add_argument("--resume-from-checkpoint", type=Path, default=None, metavar="CKPT")
+    p.add_argument(
+        "--base-model-checkpoint",
+        type=Path,
+        default=None,
+        metavar="CKPT",
+        help=(
+            "Initialise model weights from a native SonnaEditor checkpoint "
+            "without resuming optimizer/epoch state."
+        ),
+    )
     p.add_argument("--slider-set-version", choices=("v1", "v2"),
                    default=config.CURRENT_SLIDER_SET_VERSION,
                    help=argparse.SUPPRESS)
@@ -342,6 +352,72 @@ def _trainer_log_every_n_steps(num_train_batches: int, preferred: int = 10) -> i
     return max(1, min(preferred, num_train_batches))
 
 
+def _warm_start_model_from_checkpoint(
+    *,
+    model_cls: type,
+    checkpoint_path: Path,
+    registry: Any,
+    slider_set_version: str,
+) -> Any:
+    """Create a training-registry model and copy compatible base weights.
+
+    Foundation checkpoints may have a different categorical registry from the
+    Personal AI dataset. Reusing the checkpoint's registry would make camera and
+    lens IDs mean the wrong thing, so warm-starts keep the new training registry
+    and skip categorical embedding tables while copying shared visual/metadata
+    layers and heads.
+    """
+    ckpt = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
+    state: dict[str, torch.Tensor] = ckpt["model_state"]
+    arch_config = ckpt.get("arch_config", {}) or {}
+    source_slider_set_version = arch_config.get("slider_set_version")
+    if source_slider_set_version is None:
+        num_sliders = arch_config.get("num_sliders", model_cls._V1_OUTPUT_COUNT)
+        source_slider_set_version = (
+            "v2" if num_sliders >= model_cls._V2_OUTPUT_COUNT else "v1"
+        )
+    if source_slider_set_version != slider_set_version:
+        raise ValueError(
+            f"--slider-set-version={slider_set_version!r} does not match "
+            f"base checkpoint slider_set_version={source_slider_set_version!r}"
+        )
+
+    arch_version = arch_config.get("arch_version")
+    if arch_version is None:
+        if "metadata_encoder.scene_stats_mlp.0.weight" in state:
+            arch_version = 2
+        elif "metadata_encoder.make_emb.weight" in state:
+            arch_version = 1
+        else:
+            arch_version = 0
+
+    model = model_cls(
+        registry=registry,
+        freeze_backbone=True,
+        _pretrained_backbone=False,
+        arch_version=int(arch_version),
+        slider_set_version=slider_set_version,
+        use_wb_metadata_skip=bool(arch_config.get("use_wb_metadata_skip", False)),
+    )
+    current_state = model.state_dict()
+    filtered_state = {
+        key: value
+        for key, value in state.items()
+        if key in current_state
+        and current_state[key].shape == value.shape
+        and not key.endswith("_emb.weight")
+    }
+    missing, unexpected = model.load_state_dict(filtered_state, strict=False)
+    log.info(
+        "Warm-start copied %d tensors from %s; skipped %d missing and %d unexpected tensors",
+        len(filtered_state),
+        checkpoint_path,
+        len(missing),
+        len(unexpected),
+    )
+    return model
+
+
 def _publish_profile_checkpoint(
     *,
     source_ckpt: Path,
@@ -431,9 +507,30 @@ def train_profile(args: argparse.Namespace) -> dict:
     # -----------------------------------------------------------------------
     # Model
     # -----------------------------------------------------------------------
-    if args.resume_from_checkpoint and args.resume_from_checkpoint.exists():
-        log.info("Resuming from %s", args.resume_from_checkpoint)
-        model = SonnaEditor.from_checkpoint(args.resume_from_checkpoint)
+    resume_checkpoint = getattr(args, "resume_from_checkpoint", None)
+    base_model_checkpoint = getattr(args, "base_model_checkpoint", None)
+    if resume_checkpoint and base_model_checkpoint:
+        raise ValueError(
+            "Use either --resume-from-checkpoint for an interrupted run or "
+            "--base-model-checkpoint for a warm start, not both."
+        )
+
+    checkpoint_to_load = resume_checkpoint or base_model_checkpoint
+    if checkpoint_to_load and not checkpoint_to_load.exists():
+        raise FileNotFoundError(f"Checkpoint does not exist: {checkpoint_to_load}")
+
+    if checkpoint_to_load:
+        if resume_checkpoint:
+            log.info("Resuming trainer state from %s", resume_checkpoint)
+            model = SonnaEditor.from_checkpoint(resume_checkpoint)
+        else:
+            log.info("Warm-starting model weights from %s", base_model_checkpoint)
+            model = _warm_start_model_from_checkpoint(
+                model_cls=SonnaEditor,
+                checkpoint_path=base_model_checkpoint,
+                registry=reg,
+                slider_set_version=args.slider_set_version,
+            )
         if model._slider_set_version != args.slider_set_version:
             raise ValueError(
                 f"--slider-set-version={args.slider_set_version!r} does not match "
@@ -521,7 +618,7 @@ def train_profile(args: argparse.Namespace) -> dict:
     trainer.fit(
         lightning_module,
         datamodule=dm,
-        ckpt_path=str(args.resume_from_checkpoint) if args.resume_from_checkpoint else None,
+        ckpt_path=str(resume_checkpoint) if resume_checkpoint else None,
     )
 
     if getattr(args, "cancel_event", None) is not None and args.cancel_event.is_set():
@@ -543,6 +640,7 @@ def train_profile(args: argparse.Namespace) -> dict:
                 "slider_set_version": args.slider_set_version,
                 "use_wb_metadata_skip": not args.no_wb_metadata_skip,
                 "target_prior_init": not args.no_target_prior_init,
+                "base_model_checkpoint": str(base_model_checkpoint) if base_model_checkpoint else None,
             },
         }
         summary_path = args.output_dir / "training_summary.json"
@@ -619,6 +717,7 @@ def train_profile(args: argparse.Namespace) -> dict:
             "slider_set_version": args.slider_set_version,
             "use_wb_metadata_skip": not args.no_wb_metadata_skip,
             "target_prior_init": not args.no_target_prior_init,
+            "base_model_checkpoint": str(base_model_checkpoint) if base_model_checkpoint else None,
             "temperature_weight": args.temperature_weight,
             "tint_weight": args.tint_weight,
             "exposure_weight": args.exposure_weight,

@@ -16,6 +16,7 @@ from sonna_editor.mode_b.survey import (
     build_survey_payload,
     compute_offset,
     load_survey,
+    normalise_lite_answers,
     parse_answers_string,
     write_survey,
 )
@@ -37,7 +38,7 @@ def _all_zero_answers() -> dict[str, int]:
 
 
 def _example_answers_string() -> str:
-    return "exposure=0,temperature=1,tint=0,contrast=2,saturation=-1,shadows=1"
+    return "exposure=0,temperature=1,tint=-1,contrast=2,saturation=-1,shadows=1"
 
 
 # --- compute_offset ---
@@ -74,18 +75,19 @@ def test_compute_offset_symmetric(key: str, n: int) -> None:
 def test_parse_answers_happy_path() -> None:
     result = parse_answers_string(_example_answers_string())
     assert result == {
-        "exposure": 0, "temperature": 1, "tint": 0,
+        "exposure": 0, "temperature": 1, "tint": -1,
         "contrast": 2, "saturation": -1, "shadows": 1,
     }
 
 
 def test_parse_answers_whitespace_tolerated() -> None:
     s = (
-        "  exposure = 0 , temperature= 1, tint =0 , "
+        "  exposure = 0 , temperature= 1, tint = -1 , "
         "contrast=2,saturation= -1 ,shadows=1  "
     )
     result = parse_answers_string(s)
     assert result["exposure"] == 0
+    assert result["tint"] == -1
     assert result["saturation"] == -1
     assert len(result) == 6
 
@@ -138,6 +140,25 @@ def test_parse_answers_rejects_non_integer() -> None:
     s = "exposure=hot,temperature=0,tint=0,contrast=0,saturation=0,shadows=0"
     with pytest.raises(ValueError, match="must be an integer"):
         parse_answers_string(s)
+
+
+def test_normalise_lite_answers_keeps_all_six_keys() -> None:
+    answers = {
+        "exposure": 0,
+        "temperature": 0,
+        "tint": 0,
+        "contrast": 0,
+        "saturation": 0,
+        "shadows": 0,
+    }
+    assert normalise_lite_answers(answers) == {
+        "exposure": 0,
+        "temperature": 0,
+        "tint": 0,
+        "contrast": 0,
+        "saturation": 0,
+        "shadows": 0,
+    }
 
 
 # --- build_survey_payload ---
@@ -222,6 +243,8 @@ def test_cli_non_interactive_happy_path(
     payload = json.loads(out.read_text(encoding="utf-8"))
     assert payload["version"] == SURVEY_SCHEMA_VERSION
     assert payload["questions"]["exposure"]["answer"] == 0
+    assert payload["questions"]["temperature"]["answer"] == 1
+    assert payload["questions"]["tint"]["answer"] == -1
     assert payload["questions"]["contrast"]["answer"] == 2
     assert payload["questions"]["saturation"]["answer"] == -1
 

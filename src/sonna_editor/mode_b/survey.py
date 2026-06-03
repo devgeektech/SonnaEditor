@@ -1,11 +1,13 @@
-"""Mode B style survey.
+"""Lite style survey.
 
 Step 1 of the Mode B rebuild track (HANDOVER Part 6 item 17).
 
-Captures the user's editing preferences across six high-variation sliders
-and emits a JSON file mapping each answer to a slider offset. Step 2
-(preset-to-checkpoint converter) consumes this file to set output-head
-biases on the initial Mode B checkpoint.
+Captures the user's editing preferences and emits a JSON file mapping each
+answer to a slider offset. Step 2 (preset-to-checkpoint converter) consumes
+this file to set output-head biases on the initial Lite checkpoint. Initial
+Lite processing still keeps the preset as the fixed look baseline and adjusts
+only Exposure/WB per photo, but all six survey answers are preserved for
+profile metadata and future fine-tuning.
 
 Public surface:
 - OFFSET_MAGNITUDES, QUESTION_SLIDER_MAP, QUESTION_ORDER, QUESTIONS
@@ -52,6 +54,9 @@ QUESTION_SLIDER_MAP: Final[dict[str, str]] = {
 # Display order for interactive prompt + payload construction.
 QUESTION_ORDER: Final[tuple[str, ...]] = (
     "exposure", "temperature", "tint", "contrast", "saturation", "shadows",
+)
+INITIAL_LITE_ADJUSTMENT_FIELDS: Final[frozenset[str]] = frozenset(
+    {"Exposure2012", "Temperature", "Tint"}
 )
 
 VALID_ANSWERS: Final[tuple[int, ...]] = (-2, -1, 0, 1, 2)
@@ -153,13 +158,33 @@ def compute_offset(key: str, answer: int) -> float:
     return float(answer) * (OFFSET_MAGNITUDES[key] / 2.0)
 
 
+def normalise_lite_answers(answers: dict[str, int]) -> dict[str, int]:
+    """Validate Lite survey answers and return all six answers in display order."""
+    missing = set(QUESTION_ORDER) - set(answers.keys())
+    if missing:
+        raise ValueError(f"Missing keys in survey answers: {sorted(missing)}")
+
+    extra = set(answers.keys()) - set(QUESTION_ORDER)
+    if extra:
+        raise ValueError(f"Unknown survey keys: {sorted(extra)}")
+
+    normalised: dict[str, int] = {}
+    for key, value in answers.items():
+        if value not in VALID_ANSWERS:
+            raise ValueError(
+                f"Value for {key!r} must be one of {VALID_ANSWERS}, got {value}"
+            )
+        normalised[key] = value
+
+    return {key: normalised[key] for key in QUESTION_ORDER}
+
+
 def parse_answers_string(s: str) -> dict[str, int]:
     """Parse a --answers string into a {key: answer} dict.
 
     Format: comma-separated key=value pairs. Whitespace tolerated around
-    commas and equals. Key order is irrelevant. All 6 keys required.
-    Unknown keys, duplicate keys, non-integer values, and out-of-range
-    values are rejected with descriptive ValueError.
+    commas and equals. Key order is irrelevant. All six Lite survey keys are
+    required.
     """
     if not s or not s.strip():
         raise ValueError("--answers string is empty")
@@ -192,11 +217,13 @@ def parse_answers_string(s: str) -> dict[str, int]:
             )
         pairs[key] = value
 
-    missing = set(QUESTION_SLIDER_MAP) - set(pairs)
-    if missing:
-        raise ValueError(f"Missing keys in --answers: {sorted(missing)}")
-
-    return pairs
+    try:
+        return normalise_lite_answers(pairs)
+    except ValueError as exc:
+        message = str(exc)
+        if message.startswith("Missing keys"):
+            message = message.replace("survey answers", "--answers", 1)
+        raise ValueError(message) from exc
 
 
 def build_survey_payload(
@@ -205,11 +232,7 @@ def build_survey_payload(
     created: _dt.datetime | None = None,
 ) -> dict:
     """Build the JSON-serialisable survey payload."""
-    if set(answers.keys()) != set(QUESTION_SLIDER_MAP.keys()):
-        raise ValueError(
-            f"Answers must cover exactly {sorted(QUESTION_SLIDER_MAP)}; "
-            f"got {sorted(answers)}"
-        )
+    answers = normalise_lite_answers(answers)
 
     if created is None:
         created = _dt.datetime.now(_dt.timezone.utc).replace(microsecond=0)
@@ -294,14 +317,14 @@ def run_interactive(
     input_fn: Callable[[str], str] = input,
     output_stream: TextIO | None = None,
 ) -> dict[str, int]:
-    _emit("Sonna Editor — Style Survey", output_stream)
+    _emit("Sonna Editor — Lite Style Survey", output_stream)
     _emit("6 quick questions about your editing preferences.", output_stream)
     _emit("", output_stream)
 
     answers: dict[str, int] = {}
     for i, key in enumerate(QUESTION_ORDER, start=1):
         q = QUESTIONS[key]
-        _emit(f"Question {i} of 6: {q['title']}", output_stream)
+        _emit(f"Question {i} of {len(QUESTION_ORDER)}: {q['title']}", output_stream)
         answers[key] = _read_answer(
             key, input_fn=input_fn, output_stream=output_stream,
         )

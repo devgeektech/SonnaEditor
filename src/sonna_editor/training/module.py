@@ -70,7 +70,18 @@ class SonnaLightningModule(pl.LightningModule):
     def on_train_epoch_start(self) -> None:
         if self.current_epoch == self.freeze_backbone_epochs:
             self.model.unfreeze_backbone()
-            self.log("backbone_unfrozen_epoch", float(self.current_epoch))
+            self._log_metric("backbone_unfrozen_epoch", float(self.current_epoch))
+
+    def _log_metric(self, name: str, value: Any, **kwargs: Any) -> None:
+        """Log only when attached to a Trainer.
+
+        Unit tests call step methods directly to inspect loss behavior. Lightning
+        warns on `self.log()` in that standalone mode, while real training always
+        attaches a Trainer before steps run.
+        """
+        if getattr(self, "_trainer", None) is None:
+            return
+        self.log(name, value, **kwargs)
 
     # ------------------------------------------------------------------
     # Steps
@@ -92,13 +103,13 @@ class SonnaLightningModule(pl.LightningModule):
             print(f"⚠ training_step: ALL rows in batch {batch_idx} were masked "
                   f"out by the loss layer's validity check.", flush=True)
         batch_size = images.size(0)
-        self.log("train_loss",             loss,                    on_step=True, on_epoch=True, prog_bar=True, batch_size=batch_size)
-        self.log("train_loss_mse",         components["mse"],        on_step=False, on_epoch=True, batch_size=batch_size)
-        self.log("train_loss_exposure_scene", components["exposure_scene"], on_step=False, on_epoch=True, batch_size=batch_size)
-        self.log("train_loss_spread",      components["spread"],     on_step=False, on_epoch=True, batch_size=batch_size)
-        self.log("train_loss_temp_bucket", components["temp_bucket"], on_step=False, on_epoch=True, batch_size=batch_size)
-        self.log("train_loss_tint_bucket", components["tint_bucket"], on_step=False, on_epoch=True, batch_size=batch_size)
-        self.log("train_loss_sign_wrong",  components["sign_wrong"],  on_step=False, on_epoch=True, batch_size=batch_size)
+        self._log_metric("train_loss",             loss,                    on_step=True, on_epoch=True, prog_bar=True, batch_size=batch_size)
+        self._log_metric("train_loss_mse",         components["mse"],        on_step=False, on_epoch=True, batch_size=batch_size)
+        self._log_metric("train_loss_exposure_scene", components["exposure_scene"], on_step=False, on_epoch=True, batch_size=batch_size)
+        self._log_metric("train_loss_spread",      components["spread"],     on_step=False, on_epoch=True, batch_size=batch_size)
+        self._log_metric("train_loss_temp_bucket", components["temp_bucket"], on_step=False, on_epoch=True, batch_size=batch_size)
+        self._log_metric("train_loss_tint_bucket", components["tint_bucket"], on_step=False, on_epoch=True, batch_size=batch_size)
+        self._log_metric("train_loss_sign_wrong",  components["sign_wrong"],  on_step=False, on_epoch=True, batch_size=batch_size)
         return loss
 
     def validation_step(
@@ -111,13 +122,13 @@ class SonnaLightningModule(pl.LightningModule):
         predictions = self.model(images, metadata)
         components = self.loss_fn(predictions, targets, metadata, return_components=True)
         loss = components["total"]
-        self.log("val_loss",             loss,                    on_step=False, on_epoch=True, prog_bar=True, sync_dist=True, batch_size=batch_size)
-        self.log("val_loss_mse",         components["mse"],        on_step=False, on_epoch=True, sync_dist=True, batch_size=batch_size)
-        self.log("val_loss_exposure_scene", components["exposure_scene"], on_step=False, on_epoch=True, sync_dist=True, batch_size=batch_size)
-        self.log("val_loss_spread",      components["spread"],     on_step=False, on_epoch=True, sync_dist=True, batch_size=batch_size)
-        self.log("val_loss_temp_bucket", components["temp_bucket"], on_step=False, on_epoch=True, sync_dist=True, batch_size=batch_size)
-        self.log("val_loss_tint_bucket", components["tint_bucket"], on_step=False, on_epoch=True, sync_dist=True, batch_size=batch_size)
-        self.log("val_loss_sign_wrong",  components["sign_wrong"],  on_step=False, on_epoch=True, sync_dist=True, batch_size=batch_size)
+        self._log_metric("val_loss",             loss,                    on_step=False, on_epoch=True, prog_bar=True, sync_dist=True, batch_size=batch_size)
+        self._log_metric("val_loss_mse",         components["mse"],        on_step=False, on_epoch=True, sync_dist=True, batch_size=batch_size)
+        self._log_metric("val_loss_exposure_scene", components["exposure_scene"], on_step=False, on_epoch=True, sync_dist=True, batch_size=batch_size)
+        self._log_metric("val_loss_spread",      components["spread"],     on_step=False, on_epoch=True, sync_dist=True, batch_size=batch_size)
+        self._log_metric("val_loss_temp_bucket", components["temp_bucket"], on_step=False, on_epoch=True, sync_dist=True, batch_size=batch_size)
+        self._log_metric("val_loss_tint_bucket", components["tint_bucket"], on_step=False, on_epoch=True, sync_dist=True, batch_size=batch_size)
+        self._log_metric("val_loss_sign_wrong",  components["sign_wrong"],  on_step=False, on_epoch=True, sync_dist=True, batch_size=batch_size)
 
         mae = self.loss_fn.per_field_mae(predictions, targets)
         self._val_mae_outputs.append(mae)
@@ -139,7 +150,7 @@ class SonnaLightningModule(pl.LightningModule):
         batch_size = images.size(0)
         predictions = self.model(images, metadata)
         loss = self.loss_fn(predictions, targets, metadata)
-        self.log("test_loss", loss, on_step=False, on_epoch=True, sync_dist=True, batch_size=batch_size)
+        self._log_metric("test_loss", loss, on_step=False, on_epoch=True, sync_dist=True, batch_size=batch_size)
 
         mae = self.loss_fn.per_field_mae(predictions, targets)
         self._test_mae_outputs.append(mae)
@@ -178,12 +189,12 @@ class SonnaLightningModule(pl.LightningModule):
             val = field_means.get(field, math.nan)
             if not math.isnan(val):
                 safe_name = field.replace("2012", "").lower()
-                self.log(f"{prefix}_mae_{safe_name}", val, prog_bar=(prefix == "val"))
+                self._log_metric(f"{prefix}_mae_{safe_name}", val, prog_bar=(prefix == "val"))
 
         # Log HSL average
         hsl_vals = [field_means[f] for f in _HSL_FIELDS if not math.isnan(field_means.get(f, math.nan))]
         if hsl_vals:
-            self.log(f"{prefix}_mae_hsl_avg", sum(hsl_vals) / len(hsl_vals), prog_bar=(prefix == "val"))
+            self._log_metric(f"{prefix}_mae_hsl_avg", sum(hsl_vals) / len(hsl_vals), prog_bar=(prefix == "val"))
 
     def _log_distribution_stats(self) -> None:
         if not self._val_distribution_outputs:
@@ -215,9 +226,9 @@ class SonnaLightningModule(pl.LightningModule):
             target_std = torch.std(target_valid, unbiased=False)
             ratio = pred_std / target_std.clamp(min=1e-8)
             safe_name = field.replace("2012", "").lower()
-            self.log(f"val_dist_{safe_name}_pred_std", float(pred_std), prog_bar=False)
-            self.log(f"val_dist_{safe_name}_target_std", float(target_std), prog_bar=False)
-            self.log(f"val_dist_{safe_name}_std_ratio", float(ratio), prog_bar=False)
+            self._log_metric(f"val_dist_{safe_name}_pred_std", float(pred_std), prog_bar=False)
+            self._log_metric(f"val_dist_{safe_name}_target_std", float(target_std), prog_bar=False)
+            self._log_metric(f"val_dist_{safe_name}_std_ratio", float(ratio), prog_bar=False)
 
     # ------------------------------------------------------------------
     # Optimiser + scheduler

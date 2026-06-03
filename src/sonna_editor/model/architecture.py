@@ -76,6 +76,10 @@ class MetadataEncoder(nn.Module):
     arch_version = 2  (v2.1 — scene-stat quality pass)
         v1.1.0 inputs + preview luminance scene_stats(16)       =  144
 
+    arch_version = 3  (v3.0 — staged-head quality pass)
+        Same metadata encoder layout as arch_version 2. The staged prediction
+        change lives in SonnaEditor's output heads, not this encoder.
+
     The fusion MLP first layer matches the concat dim. v1.0.x camera_body is
     replaced by separate make + model embeddings in v1.1.0 (total dim
     unchanged: 16 → 4 + 12).
@@ -97,7 +101,7 @@ class MetadataEncoder(nn.Module):
     ) -> None:
         super().__init__()
 
-        if arch_version not in (0, 1, 2):
+        if arch_version not in (0, 1, 2, 3):
             raise ValueError(f"unknown arch_version={arch_version}")
         self._arch_version = arch_version
 
@@ -324,7 +328,7 @@ class SonnaEditor(nn.Module):
         freeze_backbone: bool = False,
         _embedding_sizes: Optional[dict[str, int]] = None,
         _pretrained_backbone: bool = True,
-        arch_version: int = 2,
+        arch_version: int = 3,
         slider_set_version: str = "v2",
         use_wb_metadata_skip: bool = True,
     ) -> None:
@@ -334,10 +338,11 @@ class SonnaEditor(nn.Module):
         #   0 = v1.0.x legacy (combined camera_body, one-hot focal, raw aperture)
         #   1 = v1.1.0       (separate make+model, log focal, log aperture, AsShot)
         #   2 = v2.1         (v1.1.0 + luminance scene statistics)
-        #   2 = v2.1         (v1.1.0 + luminance scene statistics)
-        if arch_version not in (0, 1, 2):
+        #   3 = v3.0         (v2.1 + staged head conditioning)
+        if arch_version not in (0, 1, 2, 3):
             raise ValueError(f"unknown arch_version={arch_version}")
         self._arch_version = arch_version
+        self._use_staged_heads = arch_version >= 3
 
         # slider_set_version selects which output heads exist:
         #   "v1" = 13 heads, 135 outputs (idx 0-134) — matches v1.2.3 shipping ckpt
@@ -383,11 +388,19 @@ class SonnaEditor(nn.Module):
             arch_version=arch_version,
         )
 
-        # Output heads — concatenated in SLIDER_FIELDS order
+        # Output heads — concatenated in SLIDER_FIELDS order.
+        # arch_version >= 3 uses staged conditioning: later edit blocks see the
+        # earlier block predictions, mirroring a practical editing sequence.
+        base_dim = self._FUSION_DIM
+        tone_context_dim = 8
+        early_context_dim = 8 + 3 + 2
+        wb_presence_in_dim = base_dim + tone_context_dim if self._use_staged_heads else base_dim
+        later_in_dim = base_dim + early_context_dim if self._use_staged_heads else base_dim
+
         # WB head: output[0] = log(Temperature), output[1] = Tint (raw units)
-        self.tone_head          = _make_head(self._FUSION_DIM, [256, 128], 8)
-        self.presence_head      = _make_head(self._FUSION_DIM, [128, 64], 3)
-        self.wb_head            = _make_head(self._FUSION_DIM, [128, 64], 2)
+        self.tone_head          = _make_head(base_dim, [256, 128], 8)
+        self.presence_head      = _make_head(wb_presence_in_dim, [128, 64], 3)
+        self.wb_head            = _make_head(wb_presence_in_dim, [128, 64], 2)
         if self._use_wb_metadata_skip:
             # The v1.2.3 audit found that AsShot Temperature/Tint were present
             # in metadata but got diluted by the shared fusion MLP. This
@@ -399,28 +412,28 @@ class SonnaEditor(nn.Module):
                 self.wb_metadata_skip.weight[0, 0] = 1.0
                 self.wb_metadata_skip.weight[1, 1] = 1.0
                 self.wb_metadata_skip.bias.zero_()
-        self.hsl_head           = _make_head(self._FUSION_DIM, [256, 128], 24)
-        self.parametric_head    = _make_head(self._FUSION_DIM, [128, 64], 7)
-        self.color_grading_head = _make_head(self._FUSION_DIM, [128, 64], 14)
-        self.calibration_head   = _make_head(self._FUSION_DIM, [128, 64], 6)
-        self.detail_head        = _make_head(self._FUSION_DIM, [64], 4)
-        self.noise_head         = _make_head(self._FUSION_DIM, [64], 4)
-        self.effects_head       = _make_head(self._FUSION_DIM, [64], 8)
-        self.lens_head          = _make_head(self._FUSION_DIM, [64], 2)
-        self.transform_head     = _make_head(self._FUSION_DIM, [64], 5)
+        self.hsl_head           = _make_head(later_in_dim, [256, 128], 24)
+        self.parametric_head    = _make_head(later_in_dim, [128, 64], 7)
+        self.color_grading_head = _make_head(later_in_dim, [128, 64], 14)
+        self.calibration_head   = _make_head(later_in_dim, [128, 64], 6)
+        self.detail_head        = _make_head(later_in_dim, [64], 4)
+        self.noise_head         = _make_head(later_in_dim, [64], 4)
+        self.effects_head       = _make_head(later_in_dim, [64], 8)
+        self.lens_head          = _make_head(later_in_dim, [64], 2)
+        self.transform_head     = _make_head(later_in_dim, [64], 5)
         # Larger hidden dims for tone curves — 6 correlated control points per channel
-        self.tone_curve_head    = _make_head(self._FUSION_DIM, [256, 128], 48)
+        self.tone_curve_head    = _make_head(later_in_dim, [256, 128], 48)
 
         # v2 extension heads — conditionally instantiated. When slider_set_version="v1"
         # these are absent so v1.2.3 ckpts load via load_state_dict(strict=True). When
         # "v2", these 5 heads add 12 outputs (idx 135-146) appended to the forward
         # concat. Hidden dim [64] is sufficient for the sparse-signal extension fields.
         if slider_set_version == "v2":
-            self.noise_ext_head       = _make_head(self._FUSION_DIM, [64], 2)   # idx 135-136
-            self.defringe_head        = _make_head(self._FUSION_DIM, [64], 6)   # idx 137-142
-            self.lens_profile_head    = _make_head(self._FUSION_DIM, [64], 2)   # idx 143-144
-            self.calibration_ext_head = _make_head(self._FUSION_DIM, [64], 1)   # idx 145
-            self.curve_ext_head       = _make_head(self._FUSION_DIM, [64], 1)   # idx 146
+            self.noise_ext_head       = _make_head(later_in_dim, [64], 2)   # idx 135-136
+            self.defringe_head        = _make_head(later_in_dim, [64], 6)   # idx 137-142
+            self.lens_profile_head    = _make_head(later_in_dim, [64], 2)   # idx 143-144
+            self.calibration_ext_head = _make_head(later_in_dim, [64], 1)   # idx 145
+            self.curve_ext_head       = _make_head(later_in_dim, [64], 1)   # idx 146
 
         if freeze_backbone:
             self.freeze_backbone()
@@ -581,7 +594,14 @@ class SonnaEditor(nn.Module):
         # Fuse and run heads — concat order matches SLIDER_FIELDS exactly
         fused = torch.cat([img_feat, meta_feat], dim=-1)  # [B, 832]
 
-        wb_out = self.wb_head(fused)
+        tone_out = self.tone_head(fused)
+        wb_presence_in = (
+            torch.cat([fused, tone_out], dim=-1)
+            if self._use_staged_heads
+            else fused
+        )
+
+        wb_out = self.wb_head(wb_presence_in)
         if self._use_wb_metadata_skip:
             as_shot_temp = torch.nan_to_num(
                 metadata["as_shot_temperature"].float(), nan=5500.0
@@ -591,32 +611,39 @@ class SonnaEditor(nn.Module):
             ).clamp(min=-100.0, max=100.0)
             wb_skip_in = torch.stack([torch.log(as_shot_temp), as_shot_tint], dim=-1)
             wb_out = wb_out + self.wb_metadata_skip(wb_skip_in)
+        presence_out = self.presence_head(wb_presence_in)
+
+        later_in = (
+            torch.cat([fused, tone_out, presence_out, wb_out], dim=-1)
+            if self._use_staged_heads
+            else fused
+        )
 
         outputs = [
-            self.tone_head(fused),           # [B, 8]   idx 0-7
-            self.presence_head(fused),       # [B, 3]   idx 8-10
+            tone_out,                        # [B, 8]   idx 0-7
+            presence_out,                    # [B, 3]   idx 8-10
             wb_out,                          # [B, 2]   idx 11-12: [log_temperature, tint]
-            self.hsl_head(fused),            # [B, 24]  idx 13-36
-            self.parametric_head(fused),     # [B, 7]   idx 37-43
-            self.color_grading_head(fused),  # [B, 14]  idx 44-57
-            self.calibration_head(fused),    # [B, 6]   idx 58-63
-            self.detail_head(fused),         # [B, 4]   idx 64-67
-            self.noise_head(fused),          # [B, 4]   idx 68-71
-            self.effects_head(fused),        # [B, 8]   idx 72-79
-            self.lens_head(fused),           # [B, 2]   idx 80-81
-            self.transform_head(fused),      # [B, 5]   idx 82-86
-            self.tone_curve_head(fused),     # [B, 48]  idx 87-134
+            self.hsl_head(later_in),         # [B, 24]  idx 13-36
+            self.parametric_head(later_in),  # [B, 7]   idx 37-43
+            self.color_grading_head(later_in), # [B, 14] idx 44-57
+            self.calibration_head(later_in), # [B, 6]   idx 58-63
+            self.detail_head(later_in),      # [B, 4]   idx 64-67
+            self.noise_head(later_in),       # [B, 4]   idx 68-71
+            self.effects_head(later_in),     # [B, 8]   idx 72-79
+            self.lens_head(later_in),        # [B, 2]   idx 80-81
+            self.transform_head(later_in),   # [B, 5]   idx 82-86
+            self.tone_curve_head(later_in),  # [B, 48]  idx 87-134
         ]
 
         # v2 extension heads — appended only when slider_set_version="v2".
         # Locked-append-only: these never reorder, never replace v1 outputs.
         if self._slider_set_version == "v2":
             outputs.extend([
-                self.noise_ext_head(fused),       # [B, 2]  idx 135-136
-                self.defringe_head(fused),        # [B, 6]  idx 137-142
-                self.lens_profile_head(fused),    # [B, 2]  idx 143-144
-                self.calibration_ext_head(fused), # [B, 1]  idx 145
-                self.curve_ext_head(fused),       # [B, 1]  idx 146
+                self.noise_ext_head(later_in),       # [B, 2]  idx 135-136
+                self.defringe_head(later_in),        # [B, 6]  idx 137-142
+                self.lens_profile_head(later_in),    # [B, 2]  idx 143-144
+                self.calibration_ext_head(later_in), # [B, 1]  idx 145
+                self.curve_ext_head(later_in),       # [B, 1]  idx 146
             ])
 
         return torch.cat(outputs, dim=-1)  # [B, 135] v1 / [B, 147] v2

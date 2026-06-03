@@ -14,7 +14,7 @@ produces a SonnaEditor checkpoint with:
   targets in the model's prediction space (log-Kelvin for Temperature,
   raw units elsewhere).
 
-Why bias-only for the initial profile carrier: Mode B is the user's uploaded
+Why bias-only for the initial profile carrier: Lite is the user's uploaded
 preset plus six survey choices. Preserving the base head weights made the
 active v2 base add its own predicted Exposure/colour corrections on top of the
 preset, which could push normal preset values into blown-out Lightroom output.
@@ -54,7 +54,11 @@ import torch
 
 from sonna_editor import config
 from sonna_editor.data.xmp import LR_DEFAULTS, read_xmp
-from sonna_editor.mode_b.survey import QUESTION_SLIDER_MAP, load_survey
+from sonna_editor.mode_b.survey import (
+    QUESTION_ORDER,
+    QUESTION_SLIDER_MAP,
+    load_survey,
+)
 from sonna_editor.model.architecture import SonnaEditor
 from sonna_editor.slider_set import V1_OUTPUT_COUNT, V2_OUTPUT_COUNT, fields_for_version
 
@@ -135,10 +139,9 @@ for _version, _slices in HEAD_SLICES_BY_VERSION.items():
 def _extract_survey_offsets(survey: dict) -> dict[str, float]:
     """Pull {slider_field: offset} from a survey JSON payload.
 
-    The survey JSON's ``questions[key]`` entries are self-describing — each
-    contains ``slider_field`` so we don't need to import QUESTION_SLIDER_MAP.
-    Survey questions with answer=0 still appear here with offset=0.0; the
-    bias computation treats them as no-ops naturally.
+    All six survey answers are kept in the profile carrier. Initial Lite
+    processing later applies only Exposure/WB dynamically, while the copied
+    survey remains available for profile metadata and future fine-tuning.
     """
     if "questions" not in survey:
         raise ValueError("Survey JSON missing 'questions' key")
@@ -148,7 +151,13 @@ def _extract_survey_offsets(survey: dict) -> dict[str, float]:
             raise ValueError(
                 f"Survey question {key!r} missing slider_field or offset"
             )
-        offsets[entry["slider_field"]] = float(entry["offset"])
+        field = str(entry["slider_field"])
+        offset = float(entry["offset"])
+        if field not in QUESTION_SLIDER_MAP.values():
+            raise ValueError(
+                f"Survey question {key!r} targets unsupported Lite field {field!r}"
+            )
+        offsets[field] = offset
     return offsets
 
 
@@ -509,6 +518,8 @@ def build_mode_b_checkpoint(
         "source_preset": str(preset_path),
         "source_survey": str(survey_path),
         "survey_version": survey.get("version"),
+        "survey_question_order": list(QUESTION_ORDER),
+        "initial_lite_dynamic_fields": ["Exposure2012", "Temperature", "Tint"],
         "default_skip_fields": effective_skip_fields,
         "slider_set_version": model._slider_set_version,
         "arch_version": model._arch_version,

@@ -62,7 +62,7 @@ This section tracks what each backend source file/folder does. Keep it updated w
 | Path | Purpose |
 |---|---|
 | `src/sonna_editor/model/__init__.py` | Package marker for model code. |
-| `src/sonna_editor/model/architecture.py` | Main PyTorch model stack: `EmbeddingRegistry`, `MetadataEncoder`, `SonnaEditor`, ConvNeXt image backbone, metadata fusion, slider-group heads, WB metadata-skip residual behavior, scene-stat metadata path for fresh `arch_version=2` models, and native checkpoint save/load. |
+| `src/sonna_editor/model/architecture.py` | Main PyTorch model stack: `EmbeddingRegistry`, `MetadataEncoder`, `SonnaEditor`, ConvNeXt image backbone, metadata fusion, slider-group heads, WB metadata-skip residual behavior, scene-stat metadata path, fresh `arch_version=3` staged-head conditioning, and native checkpoint save/load. |
 | `src/sonna_editor/model/augmentation.py` | Image-only training/validation augmentation. Target slider values are never augmented. |
 | `src/sonna_editor/model/losses.py` | `WeightedSliderLoss`, range-normalized MSE, per-field weights, WB bucket losses, sign-wrong penalty, direction stats, and per-field MAE metrics. |
 | `src/sonna_editor/model/postprocess.py` | Converts raw model outputs into Lightroom units, including log-Kelvin Temperature exponentiation, range clamping, and tensor-to-slider-dict mapping. |
@@ -100,7 +100,7 @@ This section tracks what each backend source file/folder does. Keep it updated w
 |---|---|
 | `src/sonna_editor/mode_b/__init__.py` | Package marker for Lite/Mode B profile creation. |
 | `src/sonna_editor/mode_b/checkpoint_builder.py` | Builds a Lite initial checkpoint/sidecar package from the configured foundation checkpoint, Lightroom preset, and style survey. It keeps pretrained foundation feature layers for future fine-tuning and stores preset/survey provenance for the adaptive initial Lite processing path. This is not supervised photo training. |
-| `src/sonna_editor/mode_b/survey.py` | Style survey models and conversion from user answers into slider offsets for exposure, temperature, tint, contrast, saturation, and shadows. |
+| `src/sonna_editor/mode_b/survey.py` | Lite style survey models and conversion from six user answers into slider offsets for Exposure2012, Temperature, Tint, Contrast2012, Saturation, and Shadows2012. Initial Lite runtime applies only Exposure/WB dynamically, but all six answers are stored in the profile package. |
 | `src/sonna_editor/preset/__init__.py` | Package marker for preset code. |
 | `src/sonna_editor/preset/adjuster.py` | Heuristic content-aware preset adjustments for exposure, WB, shadows/highlights, and similar safe corrections. Auto exposure uses mean luminance with 85th/95th percentile upper-tone guards so dark suits/rooms do not force bright faces/signage into overexposure. |
 | `src/sonna_editor/preset/parser.py` | Parses Lightroom `.xmp`, `.xmpsettings`, and `.lrtemplate` presets and validates extreme preset values. |
@@ -122,7 +122,7 @@ This section tracks what each backend source file/folder does. Keep it updated w
 | `src/sonna_editor/api/routes/folders.py` | Folder scan and recent-folder endpoints for UI file selection workflows. |
 | `src/sonna_editor/api/routes/health.py` | Health endpoint exposing backend status, device information, git SHA, and model-loaded state. |
 | `src/sonna_editor/api/routes/process.py` | Process-shoot job endpoints, job snapshots, cancellation, and websocket event streaming. |
-| `src/sonna_editor/api/routes/profiles.py` | Profile management endpoints. Scans `v1_learning/model-v*.ckpt`, reads sidecar JSON files, activates/deletes profiles, starts frontend Personal AI RAW+XMP training jobs, and creates Lite profiles from the configured foundation checkpoint. |
+| `src/sonna_editor/api/routes/profiles.py` | Profile management endpoints. Scans `v1_learning/model-v*.ckpt`, reads sidecar JSON files, activates/deletes profiles, starts frontend Personal AI RAW+XMP training jobs warm-started from the configured hidden foundation checkpoint, and creates Lite profiles from the configured foundation checkpoint. |
 
 ### Profiles And UI Placeholders
 
@@ -214,16 +214,18 @@ This section tracks what each backend source file/folder does. Keep it updated w
 
 ### `src/sonna_editor/training/profile_runner.py`
 - packaged training runner used by both the CLI wrapper and the frontend Personal AI route
+- supports `--base-model-checkpoint` for foundation warm-starts without resuming optimizer/epoch state; warm-starts keep the new training dataset registry and skip categorical embedding-table copies
 - owns the production training callable, published checkpoint/sidecar creation, optional epoch callbacks for job progress, and cancellation handling before test/save/publish
 
 ### `scripts/train_profile.py`
 - thin CLI wrapper for the packaged training runner and the current supported command for new Personal AI profiles
-- default v2 recipe: 512px input, `slider_set_version="v2"`, fresh `arch_version=2`, batch size 16, lr 1e-4, freeze backbone for 3 epochs, WB metadata skip enabled
+- default v2 recipe: 512px input, `slider_set_version="v2"`, fresh `arch_version=3`, batch size 16, lr 1e-4, freeze backbone for 3 epochs, WB metadata skip enabled
 - default loss recipe: Exposure2012=5.0, Temperature=4.0, Tint=4.0, Contrast/Highlights/Shadows=3.0, Whites/Blacks/Saturation/Vibrance=2.0 minimums, temperature bucket=0.15, tint bucket=2.0, sign-wrong penalty=0.2
 - fresh current-recipe training initialises output-head biases from training-set target medians
 - default training augmentation is geometry-only; photometric brightness/contrast/saturation jitter is disabled by default because XMP labels are tied to the original image exposure and colour
 - dataset splitting is still by shoot, but now balances Temperature correction, Exposure2012, and Tint correction instead of Temperature alone
 - validation logs distribution/std-ratio metrics for key sliders so collapse is visible during training
+- Lightning metric logging is guarded when step methods are called without a Trainer, so standalone unit tests do not emit spurious Lightning warnings.
 - inference XMP writing stabilises RGB tone-curve endpoints: `ToneCurveRed/Green/Blue_Pt1` are forced to `0,0` and `Pt6` to `255,255` before writing. This prevents model-predicted channel-curve endpoint drift from turning neutral white highlights pink/red while preserving model-predicted mid-curve shape.
 - logs default recipe changes as `Training recipe ...`; only user-supplied CLI flags log as `Override ...`
 - adapts `log_every_n_steps` to the actual train-batch count so small local splits do not trigger Lightning's logging-interval warning
@@ -267,7 +269,7 @@ This section tracks what each backend source file/folder does. Keep it updated w
 
 Preset-based execution has two paths:
 
-- **Lite checkpoint path:** `run_style_survey.py` writes survey JSON, `build_mode_b_checkpoint.py` combines that survey with a Lightroom `.xmp` preset and the configured foundation checkpoint, then `process_shoot_model.py` runs the generated profile. Initial Lite processing detects `profile_type: mode_b_initial`, keeps preset look sliders fixed, and computes per-photo Exposure/WB corrections through `preset.adjuster` before writing XMPs. The frontend Lite wizard asks only Exposure, Temperature, and Tint, while legacy compatibility answers for contrast/saturation/shadows are stored as zero. This is the preferred path when the preset should become a selectable frontend profile.
+- **Lite checkpoint path:** `run_style_survey.py` writes six-question survey JSON, `build_mode_b_checkpoint.py` combines that survey with a Lightroom `.xmp` preset and the configured foundation checkpoint, then `process_shoot_model.py` runs the generated profile. Initial Lite processing detects `profile_type: mode_b_initial`, keeps preset look sliders fixed, and computes per-photo Exposure/WB corrections through `preset.adjuster` before writing XMPs. This is the preferred path when the preset should become a selectable frontend profile.
 - **Direct preset path:** `process_shoot_preset.py` parses a preset, applies the same heuristic per-photo corrections, and writes XMP files directly. This is fast but does not create a model checkpoint and is not trainable by itself.
 
 Lite checkpoints are marked with `profile_type: mode_b_initial` in the sidecar JSON and are discovered by `/api/profiles` when written under `v1_learning/model-v*.ckpt`.
@@ -280,13 +282,15 @@ Lite checkpoints are marked with `profile_type: mode_b_initial` in the sidecar J
 - Frontend Personal AI training, 2026-06-02: `POST /api/profiles/personal` validates an absolute RAW+XMP folder, builds a dataset under `~/.saha/profile_training_runs/<job_id>/dataset`, trains with the production recipe, publishes into `v1_learning/`, and streams epoch progress through the jobs websocket.
 - Anti-collapse diagnostics, 2026-06-01: `model-v2.0.0` collapse audit on the 27-row val split found 14 collapsed sliders and Exposure2012 std_ratio=0.115. A fresh `arch_version=2` scene-stats candidate at `data/models/sonna-v2-scene-stats-run01` lowered test MAE but worsened collapse to 29 sliders and near-zero Exposure spread, so it was rejected and not kept frontend-visible.
 - Dark-image mismatch diagnosis, 2026-06-01: the Lightroom mismatch on `0H5A4599` is an Exposure2012 model-collapse issue, not an XMP writer issue. The reference/training XMP uses `Exposure2012=+1.11`; active `model-v2.0.0` writes about `+0.105` while nearby tone/WB sliders and curves are close to the reference. Across the 189-row dataset, target Exposure std is ~0.454 but model output std is ~0.061, and the darkest luminance quartile needs ~`+0.695` on average while the model predicts only ~`+0.090`.
-- Lite profile v2 compatibility fix, 2026-06-01: `src/sonna_editor/mode_b/checkpoint_builder.py` no longer forces `target_slider_set_version="v1"` when creating Mode B/Lite checkpoints. This fixes frontend Lite creation while `v1_learning/model-v2.0.0.ckpt` is active.
+- Lite profile slider-set compatibility fix, 2026-06-01: `src/sonna_editor/mode_b/checkpoint_builder.py` no longer down-converts the base checkpoint when creating Mode B/Lite checkpoints. This fixes frontend Lite creation while preserving the foundation checkpoint's native field count.
 - Mode B adaptive Lite output fix, 2026-06-02: the Lite builder no longer adds preset/survey deltas to the base model's output-head biases. Initial Mode B processing now bypasses `InferenceEngine`, applies the copied preset look baseline, computes per-photo Exposure/WB only, and records the adjusted output in `sonna_predictions.json`.
 - Mode B root-cause fix, 2026-06-02: stale `model-v0.1.0` was built with inherited final-layer base weights plus preset bias shifts, matching the observed double-apply failure. A corrected `model-v0.2.0` Lite profile was published, stale `model-v0.1.0` artifacts were removed, and `preset.adjuster` now guards auto exposure with upper-tone percentiles after real-folder testing showed mean-only exposure could still over-lift shadow-heavy event frames.
 - Training warning cleanup, 2026-06-01: current training suppresses the upstream Lightning `LeafSpec` deprecation and optional Torch Triton FLOP-counter warning, and adjusts `log_every_n_steps` for tiny datasets. A one-epoch smoke run on the local 132-row split with two workers completed without those three warnings.
 - Quick diagnostic row-count fix, 2026-06-02: `scripts/quick_diagnostic.py` now reports train/val/test row counts for older summaries that do not embed those fields by reading split parquet metadata. It also uses ASCII `OK`/`BAD` status labels so it completes cleanly in Windows PowerShell.
 - Mac setup runbook, 2026-06-03: `MAC_SETUP.md` documents Apple Silicon setup from system tools through backend/frontend startup, Personal AI, Lite profiles, processing, fine-tuning, diagnostics, and CLI equivalents for frontend-capable steps.
 - Foundation/Lite decoupling, 2026-06-03: Lite profile creation now resolves the configured foundation checkpoint through `sonna_editor.foundation.resolve_foundation_checkpoint()` instead of using the active Personal AI profile. `scripts/train_foundation_model.py` is the canonical CLI for building RAW+XMP datasets, training the foundation checkpoint, and promoting it into the separate foundation repo.
+- Lite survey contract correction, 2026-06-03: `src/sonna_editor/mode_b/survey.py`, `/api/profiles/lite`, and the Saha Lite wizard now capture all six Lite survey answers again. Initial Lite processing still dynamically adjusts only Exposure2012, Temperature, and Tint so the preset owns the initial look sliders.
+- Staged-head learning improvement, 2026-06-03: fresh `arch_version=3` models condition WB/presence heads on the tone block output and condition later color/detail/curve heads on tone + presence + WB outputs. Existing checkpoints load with their saved architecture version.
 - Earlier UI progress fix: `src/sonna_editor/inference/pipeline.py::process_shoot_with_model()` fires the per-photo `on_photo_complete` callback immediately after predictions are available, before the XMP write.
 
 ## Important behavior notes
@@ -295,9 +299,9 @@ Lite checkpoints are marked with `profile_type: mode_b_initial` in the sidecar J
 - XMP write semantics intentionally distinguish generic skip fields from WB skip fields.
 - Legacy v1 checkpoint support is preserved via checkpoint sidecar heuristics and output count gating.
 - Lite profile creation from a v2 base must keep `slider_set_version="v2"`; down-converting via `from_checkpoint(target_slider_set_version="v1")` is intentionally rejected by the model loader.
-- Initial Mode B/Lite checkpoints are intentionally profile carriers with preset/survey metadata. Before fine-tuning, the UI/CLI processing path is Imagen-aligned Lite execution: uploaded preset controls the look, with per-photo Exposure/WB corrections only.
+- Initial Mode B/Lite checkpoints are intentionally profile carriers with preset/survey metadata and the configured foundation checkpoint's native slider set. Before fine-tuning, the UI/CLI processing path is Imagen-aligned Lite execution: uploaded preset controls the look, with per-photo Exposure/WB corrections only.
 - Raw metadata extraction uses embedded JPEG EXIF first, then supplements from a `.xmp` sidecar if present.
-- Fresh `arch_version=2` models consume preview-derived scene luminance statistics. Existing `arch_version=1` checkpoints load unchanged and ignore the extra metadata.
+- Fresh `arch_version=3` models consume preview-derived scene luminance statistics and use staged output-head conditioning. Existing `arch_version=1`/`2` checkpoints load unchanged and keep their saved head shapes.
 
 ## Recommended next checks
 

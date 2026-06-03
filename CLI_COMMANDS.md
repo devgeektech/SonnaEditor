@@ -1,16 +1,17 @@
-# Sonna Editor Training Commands
+# Sonna Editor CLI Commands
 
-This is the practical runbook for preparing data, training Personal AI profiles,
-training the foundation model, and creating Lite profiles.
+This is the practical runbook for command-line data prep, Personal AI profiles,
+Lite profiles, processing, diagnostics, and fine-tuning. Foundation-only
+training, resume, and retrain commands live in `FOUNDATION_TRAINING.md`.
 
-## Current Local State (2026-06-02)
+## Current Local State (2026-06-03)
 
 - Python 3.11.15 via uv 0.11.17.
 - PyTorch is `2.11.0+cu128`; CUDA is verified on the local NVIDIA GeForce RTX 3050.
 - `uv sync --extra dev` now preserves CUDA PyTorch on Windows/Linux x86_64 through the pinned PyTorch CUDA 12.8 index in `pyproject.toml` / `uv.lock`.
 - Training/profile caches were intentionally cleared so a fresh dataset can be added.
 - `v1_learning\dataset\`, `data\models\`, `data\parquet\`, `data\captures\`, `data\thumbnails\`, `data\audits\`, `data\dbg\`, `data\raw\sonna_training\`, `.pytest_cache`, `.ruff_cache`, and `~\.saha\active_profile.txt` were removed or emptied.
-- There is currently no guaranteed local frontend-visible checkpoint in `v1_learning\`. Add fresh RAW+XMP data and train a Personal AI profile from the UI, or train the foundation checkpoint with `scripts\train_foundation_model.py`.
+- There is currently no guaranteed local frontend-visible checkpoint in `v1_learning\`. Add fresh RAW+XMP data and train a Personal AI profile from the UI, or configure the hidden foundation checkpoint using `FOUNDATION_TRAINING.md`.
 - Lite profile creation now uses the configured foundation checkpoint. It does not depend on whichever Personal AI profile is active in the frontend.
 - Raw training photos should live outside this app repo, for example `D:\SonnaTraining\EditedRawWithXmp\` on Windows or `~/SonnaEditorTraining/raw/` on Mac. Generated datasets and training runs can live in `SONNA_TRAINING_WORKSPACE`.
 - `scripts\train_profile.py` now logs default recipe values as `Training recipe ...`; only values explicitly supplied as CLI flags are logged as `Override ...`.
@@ -24,7 +25,7 @@ training the foundation model, and creating Lite profiles.
 RAW+XMP data preparation and foundation training are not the same thing.
 
 - **RAW+XMP dataset build:** reads edited photos, extracts previews/metadata/slider labels, and writes Parquet splits. This is just data preparation.
-- **Personal AI profile training:** trains from those splits and publishes a frontend-visible profile into `v1_learning/`.
+- **Personal AI profile training:** trains from those splits, warm-starting from the configured hidden foundation checkpoint in the frontend flow, and publishes a frontend-visible profile into `v1_learning/`.
 - **Foundation training:** trains from the same kind of supervised RAW+XMP labels, but promotes the final checkpoint into a separate foundation repo. It does not publish to `v1_learning/`.
 - **Lite profile creation:** does not train from photos. It combines the configured foundation checkpoint with a preset and survey answers.
 
@@ -63,9 +64,9 @@ RAW+XMP data preparation and foundation training are not the same thing.
 
 ## Production Profile Paths
 
-- **Personal AI profile:** built from RAW files plus matching Lightroom XMP sidecars. This is the normal profile-training path for operators and is now started from the Saha frontend. The backend uses the same dataset builder and `sonna_editor.training.profile_runner.train_profile()` recipe as the CLI, then publishes a versioned profile into `v1_learning/`.
-- **Lite profile:** built from the configured foundation checkpoint plus a Lightroom preset and the Lite survey. It does not depend on an active Personal AI profile. The frontend asks only for Exposure, Temperature, and Tint preference because the preset owns the look sliders. Legacy survey fields are stored as zero for compatibility.
-- **Foundation model:** CLI-only. Use `scripts\train_foundation_model.py` to build the dataset/training run outside the app repo, then promote the final checkpoint into the separate foundation repo.
+- **Personal AI profile:** built from RAW files plus matching Lightroom XMP sidecars. This is the normal profile-training path for operators and is now started from the Saha frontend. The backend resolves the configured foundation checkpoint, uses the same dataset builder and `sonna_editor.training.profile_runner.train_profile()` recipe as the CLI, warm-starts from that foundation, then publishes a versioned profile into `v1_learning/`.
+- **Lite profile:** built from the configured foundation checkpoint plus a Lightroom preset and the six-question Lite survey. It does not depend on an active Personal AI profile. The first Lite processing pass dynamically adjusts Exposure, Temperature, and Tint because the preset owns the look sliders; all six survey answers are still stored in the profile package for calibration metadata and future fine-tuning.
+- **Foundation model:** CLI-only and hidden from the UI. Use `FOUNDATION_TRAINING.md` for the complete train, resume, retrain, promotion, and FiveK guidance.
 
 ## Important Paths
 
@@ -144,7 +145,7 @@ uv run python scripts\run_style_survey.py `
   --output v1_learning\wedding-lite-survey.json
 ```
 
-Create survey JSON non-interactively. The CLI still accepts all six historical keys for compatibility; use zero for contrast/saturation/shadows when matching the current Lite UI:
+Create survey JSON non-interactively:
 
 ```powershell
 uv run python scripts\run_style_survey.py `
@@ -328,12 +329,17 @@ To resume an interrupted training run, add `--resume-from-checkpoint` and point 
   --resume-from-checkpoint "data\models\sonna-personal-run01\checkpoints\epoch=...-val_loss=....ckpt" `
 ```
 
-Omit `--resume-from-checkpoint` for a fresh model.
+Omit `--resume-from-checkpoint` for a scratch CLI experiment. Pass
+`--base-model-checkpoint <foundation.ckpt>` when you want a CLI warm start from
+the hidden foundation checkpoint without carrying over optimizer or epoch state.
+The frontend Personal AI route supplies that configured hidden foundation
+checkpoint automatically, so normal operator-created Personal AI profiles start
+from the foundation model.
 
 Note on `--resume-from-checkpoint`:
 
 - Purpose: intended to restart an interrupted training run and continue training with the same training module state (optimizer, scheduler, epoch counters, callbacks) preserved by PyTorch Lightning.
-- Do not use it as the primary mechanism for one-off fine-tuning from a published frontend checkpoint. For intentional fine-tuning from an existing published checkpoint use `scripts/finetune_profile.py --base-model <ckpt>` which implements the capture-combined dataset, evaluation, and promotion workflow.
+- Do not use it as the primary mechanism for one-off fine-tuning from a published frontend checkpoint or for foundation warm-starts. For foundation warm-starts use `--base-model-checkpoint <ckpt>`. For intentional fine-tuning from an existing published checkpoint use `scripts/finetune_profile.py --base-model <ckpt>` which implements the capture-combined dataset, evaluation, and promotion workflow.
 - Technically you can resume and then change some hyperparameters, but this risks inconsistent optimizer/scheduler state. Prefer `finetune_profile.py` for controlled fine-tuning and `train_profile.py --resume-from-checkpoint` only for true restarts.
 
 Current `scripts/train_profile.py` defaults:
@@ -424,74 +430,11 @@ Notes:
 - `audit_all_sliders_v1.2.3.py` now discovers published checkpoints under `v1_learning/model-v*.ckpt` and will prompt you to choose one if multiple are found.
 - Audit scripts (like `audit_all_sliders_v1.2.3.py`) are read-only analyses that load a published checkpoint and a test split; they may take longer and require the test parquet to exist. Output goes to `scripts/output/` — keep those reports under version control only when intended.
 
-### Creating the foundation model
+### Foundation model commands
 
-The foundation model is the stable base checkpoint used by Lite profile creation.
-It is trained from supervised RAW+XMP labels, but it is promoted into a separate
-foundation repo instead of `v1_learning/`.
-
-The one-command RAW+XMP path builds the dataset in `SONNA_TRAINING_WORKSPACE`,
-trains the current recipe, copies the final checkpoint to the foundation repo,
-and updates `foundation_manifest.json`:
-
-```powershell
-uv run python scripts\train_foundation_model.py `
-  --raw-xmp-dir D:\SonnaTraining\EditedRawWithXmp `
-  --workspace-dir D:\SonnaTraining\workspace `
-  --foundation-repo D:\SonnaFoundationModel `
-  --profile-name "Sonna Foundation" `
-  --version-stem foundation-current `
-  --max-epochs 100 `
-  --batch-size 16 `
-  --workers 4 `
-  --init-git
-```
-
-If you already have prepared splits, skip dataset rebuilding:
-
-```powershell
-uv run python scripts\train_foundation_model.py `
-  --splits-dir D:\SonnaTraining\workspace\foundation_runs\run01\dataset\splits_v2_stratified `
-  --workspace-dir D:\SonnaTraining\workspace `
-  --foundation-repo D:\SonnaFoundationModel `
-  --profile-name "Sonna Foundation" `
-  --version-stem foundation-current `
-  --max-epochs 100 `
-  --batch-size 16 `
-  --workers 4
-```
-
-The foundation repo contains:
-
-```text
-D:\SonnaFoundationModel\foundation_manifest.json
-D:\SonnaFoundationModel\checkpoints\foundation-current.ckpt
-D:\SonnaFoundationModel\checkpoints\foundation-current.json
-```
-
-The helper writes `.gitattributes` for Git LFS. For GitHub, install and enable
-Git LFS before pushing large `.ckpt` files:
-
-```powershell
-git lfs install
-cd D:\SonnaFoundationModel
-git add .
-git commit -m "Add foundation checkpoint"
-```
-
-Point the app at this repo if it is not beside the main checkout:
-
-```powershell
-$env:SONNA_FOUNDATION_REPO = "D:\SonnaFoundationModel"
-```
-
-Alternatives:
-- To create a Lite initial checkpoint, use `scripts/build_mode_b_checkpoint.py --preset <preset.xmp> --survey <survey.json> --profile-name <name>`. It reads the configured foundation checkpoint by default.
-
-Summary guidance:
-- Use `--resume-from-checkpoint` to recover interrupted training runs (same run continuation).
-- Use `scripts/finetune_profile.py --base-model <ckpt>` for deliberate fine-tuning on captured edits.
-- Use `scripts/train_foundation_model.py` on a large dataset to create or replace the active foundation checkpoint used by Lite creation.
+Foundation training, resume, retrain, promotion, and FiveK-specific guidance
+live in `FOUNDATION_TRAINING.md`. Keep the foundation checkpoint in the separate
+foundation repo, not in `v1_learning/`, so it stays hidden from the frontend.
 
 ## 5. Train With Explicit Published Version
 

@@ -110,6 +110,21 @@ def test_output_length_matches_slider_fields(model: SonnaEditor) -> None:
     assert out.shape[-1] == len(config.SLIDER_FIELDS)
 
 
+def test_default_model_uses_staged_head_architecture() -> None:
+    m = SonnaEditor(_pretrained_backbone=False)
+    assert m._arch_version == 3
+    assert m._use_staged_heads is True
+    assert m.wb_head[0].in_features == m._FUSION_DIM + 8
+    assert m.hsl_head[0].in_features == m._FUSION_DIM + 13
+
+
+def test_arch_v2_keeps_independent_head_shapes() -> None:
+    m = SonnaEditor(arch_version=2, _pretrained_backbone=False)
+    assert m._use_staged_heads is False
+    assert m.wb_head[0].in_features == m._FUSION_DIM
+    assert m.hsl_head[0].in_features == m._FUSION_DIM
+
+
 def test_temperature_at_correct_index() -> None:
     """Temperature is at index 11 (after Tone×8 + Presence×3)."""
     assert config.SLIDER_FIELDS[11] == "Temperature"

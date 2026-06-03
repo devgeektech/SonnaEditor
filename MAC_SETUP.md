@@ -257,9 +257,10 @@ git commit -m "Add foundation checkpoint"
 ## 10. Create A Lite Profile
 
 This can be done from the frontend: open Profiles, choose Lite, select a
-Lightroom preset, answer the Exposure, Temperature, and Tint survey, and create
+Lightroom preset, answer the six-question style survey, and create
 the profile. Lite uses the configured foundation checkpoint, not the active
-Personal AI profile.
+Personal AI profile. Initial Lite processing dynamically adjusts Exposure,
+Temperature, and Tint while preset look sliders stay fixed.
 
 CLI equivalent:
 
