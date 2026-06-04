@@ -2,10 +2,17 @@
 """Quick diagnostic: analyze training summary and config to explain current model performance."""
 import argparse
 import json
+import sys
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
+
+
+MetricSpec = tuple[str, str, float | None, float | None, str, str]
+
+if hasattr(sys.stdout, "reconfigure"):
+    cast(Any, sys.stdout).reconfigure(encoding="utf-8")
 
 
 def _find_training_summaries() -> list[Path]:
@@ -216,6 +223,85 @@ def _split_row_count(
     return None
 
 
+def _is_number(value: Any) -> bool:
+    return isinstance(value, (float, int)) and not isinstance(value, bool)
+
+
+def _status_for_metric(value: Any, ideal: float | None, usable: float | None) -> str:
+    if not _is_number(value):
+        return "INFO"
+    if usable is not None:
+        return "🟢 OK" if value <= usable else "🔴 BAD"
+    if ideal is not None:
+        return "🟢 OK" if value <= ideal else "🔴 BAD"
+    return "INFO"
+
+
+def _target_text(ideal: float | None, usable: float | None, unit: str) -> str:
+    if ideal is None and usable is None:
+        return "lower is better"
+
+    suffix = unit if unit else ""
+    if ideal is not None and usable is not None and usable > ideal:
+        return f"<{ideal:g}{suffix} ideal, <{usable:g}{suffix} usable"
+    limit = ideal if ideal is not None else usable
+    return f"<{limit:g}{suffix}"
+
+
+def _is_foundation_summary(summary_path: Path, summary: dict[str, Any]) -> bool:
+    path_text = str(summary_path).lower()
+    if "foundation_runs" in path_text or "foundation" in summary_path.name.lower():
+        return True
+
+    hparams = summary.get("hparams")
+    if isinstance(hparams, dict):
+        base_checkpoint = str(hparams.get("base_model_checkpoint", "")).lower()
+        return "foundation" in base_checkpoint
+    return False
+
+
+def _print_next_steps(
+    *,
+    is_foundation_run: bool,
+    final_model: Any,
+    published_model: Any,
+    val_parquet: Path | None,
+) -> None:
+    print(f"\n{'NEXT STEPS':^80}")
+    print(f"{'='*80}")
+
+    if is_foundation_run:
+        print("  1. Treat this as a hidden foundation-model result, not a frontend profile.")
+        print("     No published model path is expected for foundation training runs.")
+        print("  2. Confirm the active foundation manifest points to the checkpoint you want:")
+        print("     SonnaEditorFoundation\\foundation_manifest.json")
+        if final_model:
+            print("  3. Run a collapse check before trusting the low MAE numbers:")
+            print(
+                "     uv run python scripts\\analyse_prediction_collapse.py "
+                f"--model-path {final_model} --parquet <val.parquet>"
+            )
+        else:
+            print("  3. Run collapse analysis once you know the model checkpoint path.")
+        print("  4. Validate visually on a fresh shoot or use this foundation via Lite/Personal AI.")
+        return
+
+    if published_model:
+        print("  1. Process a small fresh shoot with the published model.")
+        print("  2. Open the XMPs in Lightroom and inspect exposure/WB on dark, mixed-light photos.")
+        print("  3. Run collapse analysis if the output looks too averaged.")
+        print("  4. Fine-tune only after real edited corrections are available.")
+        return
+
+    print("  1. This training run has a final model but no published frontend model path.")
+    print("  2. If this was meant to create a Personal AI profile, rerun/publish the profile.")
+    print("  3. If it was only an experiment, leave it unpublished and compare it to other runs.")
+    if val_parquet:
+        print("  4. Before publishing, run collapse analysis on the validation split.")
+    else:
+        print("  4. Before publishing, locate the validation parquet and run collapse analysis.")
+
+
 def main():
     parser = argparse.ArgumentParser(description="Quick diagnostic on a training summary JSON.")
     parser.add_argument("--summary-path", help="Path to a training summary JSON file.")
@@ -260,6 +346,12 @@ def main():
     train_rows = _split_row_count(summary, summary_path, "train")
     val_rows = _split_row_count(summary, summary_path, "val")
     test_rows = _split_row_count(summary, summary_path, "test")
+    val_parquet = _nested_path(
+        summary,
+        ("val_parquet", "val_path"),
+        summary_path=summary_path,
+    )
+    is_foundation_run = _is_foundation_summary(summary_path, summary)
 
     print("=" * 80)
     print("DIAGNOSTIC SUMMARY")
@@ -289,34 +381,55 @@ def main():
     
     # Test results - key metrics
     test_results = summary.get("test_results", {})
+    best_val = summary.get("best_val_loss")
     print(f"\n{'CRITICAL METRICS':^80}")
     print(f"{'='*80}")
 
-    metrics_priority = [
-        ("Temperature (K)", "test_mae_temperature", 500, "Should be <350K for good WB"),
-        ("Tint", "test_mae_tint", None, "Check training logs for stability"),
-        ("Exposure (stops)", "test_mae_exposure", 0.25, "Should be <0.20 for good exp"),
-        ("Shadows", "test_mae_shadows", None, "Tone curve proxy"),
-        ("Highlights", "test_mae_highlights", None, "Tone curve proxy"),
-        ("Whites", "test_mae_whites", None, "Highlight detail quality"),
-        ("Blacks", "test_mae_blacks", None, "Shadow detail quality"),
-        ("Clarity", "test_mae_clarity", None, "Local contrast fidelity"),
-        ("Vibrance", "test_mae_vibrance", None, "Color boost accuracy"),
-        ("Saturation", "test_mae_saturation", None, "Saturation accuracy"),
-        ("HSL Average", "test_mae_hsl_avg", 10, "Color tuning quality"),
-        ("Test loss", "test_loss", None, "Overall model loss on test set"),
+    metrics_priority: list[MetricSpec] = [
+        (
+            "Temperature (K)",
+            "test_mae_temperature",
+            250,
+            350,
+            "",
+            "White balance accuracy",
+        ),
+        ("Tint", "test_mae_tint", 5, 8, "", "Tint accuracy"),
+        (
+            "Exposure (stops)",
+            "test_mae_exposure",
+            0.20,
+            0.25,
+            "",
+            "Exposure accuracy",
+        ),
+        ("Shadows", "test_mae_shadows", 6, 8, "", "Tone-shape proxy"),
+        ("Highlights", "test_mae_highlights", 6, 8, "", "Tone-shape proxy"),
+        ("Whites", "test_mae_whites", 3, 5, "", "Highlight detail"),
+        ("Blacks", "test_mae_blacks", 3, 5, "", "Shadow detail"),
+        ("Clarity", "test_mae_clarity", 3, 5, "", "Local contrast"),
+        ("Vibrance", "test_mae_vibrance", 3, 5, "", "Colour boost"),
+        ("Saturation", "test_mae_saturation", 3, 5, "", "Saturation"),
+        ("HSL Average", "test_mae_hsl_avg", 6, 10, "", "Colour tuning"),
+        ("Test loss", "test_loss", None, None, "", "Compare with validation loss"),
     ]
 
+    print(f"  {'Metric':30} {'Value':>10}   {'Status':7}   {'Recommended score':28} Note")
+    print(f"  {'-'*30} {'-'*10}   {'-'*7}   {'-'*28} {'-'*18}")
     printed_keys = set()
-    for label, key, threshold, note in metrics_priority:
+    for label, key, ideal, usable, unit, note in metrics_priority:
         val = test_results.get(key)
         if val is None:
             continue
         printed_keys.add(key)
-        status = "🟡 OK"
-        if threshold is not None and isinstance(val, (int, float)):
-            status = "🔴BAD" if val > threshold else "OK"
-        print(f"  {label:30} {_fmt_float(val, 4):>8}   {status}   ({note})")
+        if key == "test_loss" and _is_number(val) and _is_number(best_val):
+            usable_loss = best_val * 1.25
+            status = "🟢 OK" if val <= usable_loss else "🔴 BAD"
+            target = f"<= {usable_loss:.4g} usable"
+        else:
+            status = _status_for_metric(val, ideal, usable)
+            target = _target_text(ideal, usable, unit)
+        print(f"  {label:30} {_fmt_float(val, 4):>10}   {status:7}   {target:28} {note}")
 
     extra_keys = [k for k in sorted(test_results) if k not in printed_keys]
     if extra_keys:
@@ -327,7 +440,6 @@ def main():
     # Training dynamics
     print(f"\n{'TRAINING DYNAMICS':^80}")
     print(f"{'='*80}")
-    best_val = summary.get("best_val_loss")
     test_loss = test_results.get("test_loss")
     epochs = summary.get("epochs_trained")
     halted_early = summary.get("halted_early", False)
@@ -347,32 +459,75 @@ def main():
     print(f"{'='*80}")
 
     recs = []
-    if test_results.get("test_mae_temperature", float('inf')) > 500:
-        recs.append("1. Temperature error too high (>500K): data quality or insufficient training signal.")
-    if test_results.get("test_mae_exposure", float('inf')) > 0.25:
-        recs.append("2. Exposure error >0.25 stops: consider higher resolution or more data.")
-    if test_results.get("test_mae_hsl_avg", float('inf')) > 10:
-        recs.append("3. HSL/color tuning weak: may need stronger loss weights or augmentation.")
-    if isinstance(cfg.get("image_resolution"), int) and cfg.get("image_resolution") < 512:
-        recs.append("4. Input resolution is below 512px: retrain at 512px or higher.")
-    if isinstance(loss_cfg.get("temperature_bucket_loss_weight"), (int, float)) and loss_cfg.get("temperature_bucket_loss_weight") < 0.5:
-        recs.append("5. Temperature bucket weight low: bump from config.py TEMPERATURE_BUCKET_LOSS_WEIGHT.")
-    if summary.get("published_model") is None:
-        recs.append("6. No published model path was found in the summary: confirm training/publish completed.")
+    temp_mae = test_results.get("test_mae_temperature")
+    exposure_mae = test_results.get("test_mae_exposure")
+    hsl_mae = test_results.get("test_mae_hsl_avg")
+
+    if _is_number(temp_mae) and temp_mae > 350:
+        recs.append(
+            "Temperature is above the usable range. Check WB labels first, then consider "
+            "raising the temperature bucket weight and retraining."
+        )
+    elif _is_number(temp_mae):
+        recs.append(
+            "Temperature is in the green range. Do not change WB loss weights unless "
+            "real-photo validation shows a WB problem."
+        )
+
+    if _is_number(exposure_mae) and exposure_mae > 0.25:
+        recs.append(
+            "Exposure is outside the usable range. Add more varied dark/bright scenes "
+            "or retrain before publishing."
+        )
+    elif _is_number(exposure_mae) and exposure_mae > 0.20:
+        recs.append(
+            "Exposure is usable but just above the ideal <0.20 stop target. Spot-check "
+            "low-light and backlit photos before trusting this run."
+        )
+
+    if _is_number(hsl_mae) and hsl_mae > 10:
+        recs.append(
+            "HSL colour tuning is weak. Audit colour labels and compare against another "
+            "run before promotion."
+        )
+    elif _is_number(hsl_mae):
+        recs.append("HSL colour tuning is comfortably within target.")
+
+    image_resolution = cfg.get("image_resolution")
+    if isinstance(image_resolution, int) and image_resolution < 512:
+        recs.append("Input resolution is below 512px. Prefer 512px or higher for new v2 runs.")
+
+    published_model = summary.get("published_model")
+    final_model = summary.get("final_model")
+    if published_model is None and is_foundation_run:
+        recs.append(
+            "No published model is normal here because foundation runs stay hidden from "
+            "the frontend. Check foundation_manifest.json instead."
+        )
+    elif published_model is None:
+        recs.append(
+            "No published model path was found. If this should be a Personal AI profile, "
+            "publish or rerun the profile training flow."
+        )
+
+    if isinstance(test_rows, int) and test_rows < 50:
+        recs.append(
+            f"The test split has only {test_rows} photos. Treat the numbers as a smoke "
+            "check, then validate on a fresh real shoot."
+        )
+
     if not recs:
-        recs.append("Model performance looks reasonable. Consider fine-tuning on specific shots or retraining with more data.")
+        recs.append("Model performance looks reasonable. Validate visually before promotion.")
 
-    for rec in recs:
-        print(f"  - {rec}")
+    for index, rec in enumerate(recs, start=1):
+        print(f"  {index}. {rec}")
 
-    print(f"\n{'NEXT STEPS':^80}")
-    print(f"{'='*80}")
-    print("""
-  Step 1: Run the training command (see below)
-  Step 2: Monitor training with TensorBoard (optional)
-  Step 3: Validate on new photos after training completes
-  Step 4: Fine-tune if needed on specific styles
-""")
+    _print_next_steps(
+        is_foundation_run=is_foundation_run,
+        final_model=final_model,
+        published_model=published_model,
+        val_parquet=val_parquet,
+    )
 
 if __name__ == "__main__":
     main()
