@@ -46,13 +46,13 @@ JOBS_DIR = APP_STATE_DIR / "jobs"
 PROFILE_TRAINING_RUNS_DIR = APP_STATE_DIR / "profile_training_runs"
 FINETUNE_RUNS_DIR = APP_STATE_DIR / "finetune_runs"
 
-# Foundation/base model repository. This intentionally defaults outside the
-# gitignored app data tree so the foundation checkpoint repo can be synced or
-# versioned separately. Operators can still override it per machine.
+# Foundation/base model repository. This intentionally defaults under the
+# project root so the SonnaEditor checkout is the parent workspace for all
+# runtime state. Operators can still override it per machine.
 FOUNDATION_REPO_ENV_VAR = "SONNA_FOUNDATION_REPO"
 FOUNDATION_CHECKPOINT_ENV_VAR = "SONNA_FOUNDATION_CHECKPOINT"
 FOUNDATION_REPO_DIR = Path(
-    os.environ.get(FOUNDATION_REPO_ENV_VAR, PROJECT_ROOT.parent / "SonnaEditorFoundation")
+    os.environ.get(FOUNDATION_REPO_ENV_VAR, PROJECT_ROOT / "SonnaEditorFoundation")
 ).expanduser()
 FOUNDATION_MANIFEST_PATH = FOUNDATION_REPO_DIR / "foundation_manifest.json"
 FOUNDATION_CHECKPOINT_FALLBACK_PATH = FOUNDATION_REPO_DIR / "foundation.ckpt"

@@ -1,0 +1,5 @@
+# Keep this folder focused on the foundation model only.
+*.tmp
+__pycache__/
+.DS_Store
+training_runs/

@@ -10,7 +10,7 @@ sidecars for new shoots.
 - Frontend: Electron + React in `saha-app/`.
 - Production profile lineage: frontend-visible profiles live under `v1_learning/`.
 - Personal AI profiles train from RAW+XMP through the frontend and warm-start
-  from the hidden foundation checkpoint. Lite profiles use the same separate
+  from the hidden foundation checkpoint. Lite profiles use the same hidden
   foundation checkpoint plus preset/survey style with adaptive per-photo
   Exposure/WB corrections before fine-tuning.
 - Platform target: macOS, Windows, and Linux. CUDA and Apple MPS are used when
@@ -48,9 +48,10 @@ backend or CLI startup, including `data/training_sources/`, `data/raw/`,
 `data/datasets/`, `v1_learning/`, and `.saha/`.
 That keeps a fresh clone usable even though those directories are gitignored.
 Generated foundation training runs stay under `data/training_workspace/` by
-default. Promoted foundation checkpoints live outside the gitignored `data/`
-tree in the sibling `SonnaEditorFoundation` repo unless `SONNA_FOUNDATION_REPO`
-points somewhere else.
+default. Promoted foundation checkpoints live under the project child folder
+`SonnaEditorFoundation/` unless `SONNA_FOUNDATION_REPO` points somewhere else.
+That folder is tracked by the parent repo; `.ckpt` checkpoint binaries are
+routed through Git LFS.
 
 On Windows/Linux x86_64, `uv sync --extra dev` installs CUDA-enabled PyTorch
 from the pinned PyTorch CUDA 12.8 index. If no NVIDIA GPU is available, the app
@@ -123,8 +124,9 @@ created a Lite profile before the 2026-06-02 Mode B fixes, rebuild it so the
 sidecar and copied preset/survey metadata match the current flow.
 
 Only profiles placed in `v1_learning/` are scanned by the UI. The foundation
-checkpoint lives in the separate foundation repo configured by
-`SONNA_FOUNDATION_REPO` or the default sibling `SonnaEditorFoundation` repo.
+checkpoint lives in the hidden foundation folder configured by
+`SONNA_FOUNDATION_REPO` or the default repo-local `SonnaEditorFoundation/`
+folder.
 
 Direct preset execution is also available through `scripts/process_shoot_preset.py`
 when you only want preset-derived XMP files and do not need a selectable model

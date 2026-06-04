@@ -1,0 +1,9 @@
+{
+  "active_checkpoint": "checkpoints/foundation-sonna-raw-xmp-001.ckpt",
+  "active_sidecar": "checkpoints/foundation-sonna-raw-xmp-001.json",
+  "display_name": "Sonna RAW XMP Foundation",
+  "source_run_dir": "C:\\Users\\vikas.DESKTOP-61LEE8B\\Projects\\SonnaEditor\\data\\training_workspace\\foundation_runs\\foundation-sonna-raw-xmp-001",
+  "updated_at": "2026-06-03T23:27:10.040674Z",
+  "foundation_type": "sonna_editor_slider_regression",
+  "history": []
+}

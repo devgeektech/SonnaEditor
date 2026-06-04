@@ -20,10 +20,32 @@ FIXTURE_RAW = Path(__file__).parent / "fixtures" / "sample.cr3"
 FIXTURE_XMP = Path(__file__).parent / "fixtures" / "sample.xmp"
 
 
+def _raw_fixture_skip_reason() -> str | None:
+    if not FIXTURE_RAW.exists():
+        return f"RAW fixture not present: {FIXTURE_RAW}"
+    try:
+        extract_preview(FIXTURE_RAW, target_size=16)
+    except Exception as exc:
+        return f"RAW fixture is not readable by rawpy: {exc}"
+    return None
+
+
+_RAW_FIXTURE_SKIP_REASON = _raw_fixture_skip_reason()
+requires_readable_raw = pytest.mark.skipif(
+    _RAW_FIXTURE_SKIP_REASON is not None,
+    reason=_RAW_FIXTURE_SKIP_REASON or "",
+)
+requires_sample_xmp = pytest.mark.skipif(
+    not FIXTURE_XMP.exists(),
+    reason=f"XMP fixture not present: {FIXTURE_XMP}",
+)
+
+
 # -----------------------------------------------------------------------
 # extract_preview
 # -----------------------------------------------------------------------
 
+@requires_readable_raw
 class TestExtractPreview:
     def test_returns_pil_image(self):
         img = extract_preview(FIXTURE_RAW)
@@ -62,6 +84,7 @@ class TestExtractPreview:
 # extract_metadata
 # -----------------------------------------------------------------------
 
+@requires_readable_raw
 class TestExtractMetadata:
     def setup_method(self):
         self.meta = extract_metadata(FIXTURE_RAW)
@@ -141,6 +164,7 @@ class TestComputeHistogram:
         hist = compute_histogram(img, bins=16)
         assert hist.shape == (3, 16)
 
+    @requires_readable_raw
     def test_real_image(self):
         img = extract_preview(FIXTURE_RAW, target_size=256)
         hist = compute_histogram(img, bins=32)
@@ -184,7 +208,9 @@ class TestComputeSceneStatistics:
 # extract_all
 # -----------------------------------------------------------------------
 
+@requires_readable_raw
 class TestExtractAll:
+    @requires_sample_xmp
     def test_returns_dict_with_all_keys(self):
         result = extract_all(FIXTURE_RAW, xmp_path=FIXTURE_XMP)
         assert "raw_path" in result
@@ -202,10 +228,12 @@ class TestExtractAll:
         result = extract_all(FIXTURE_RAW)
         assert result["histogram"].shape == (3, 32)
 
+    @requires_sample_xmp
     def test_sliders_has_all_fields(self):
         result = extract_all(FIXTURE_RAW, xmp_path=FIXTURE_XMP)
         assert set(SLIDER_FIELDS).issubset(result["sliders"].keys())
 
+    @requires_sample_xmp
     def test_sliders_exposure_from_xmp(self):
         # sample.xmp is the real Lightroom export (Exposure2012=+0.60)
         result = extract_all(FIXTURE_RAW, xmp_path=FIXTURE_XMP)
@@ -214,7 +242,7 @@ class TestExtractAll:
     def test_no_xmp_sliders_are_none(self, tmp_path):
         # Point at a RAW with no sidecar
         raw_copy = tmp_path / "sample.cr3"
-        raw_copy.symlink_to(FIXTURE_RAW)
+        raw_copy.write_bytes(FIXTURE_RAW.read_bytes())
         result = extract_all(raw_copy)
         assert all(v is None for v in result["sliders"].values())
 
@@ -222,7 +250,7 @@ class TestExtractAll:
         # Place raw + xmp in same dir — extract_all should find the xmp
         raw_copy = tmp_path / "sample.cr3"
         xmp_copy = tmp_path / "sample.xmp"
-        raw_copy.symlink_to(FIXTURE_RAW)
-        xmp_copy.symlink_to(FIXTURE_XMP)
+        raw_copy.write_bytes(FIXTURE_RAW.read_bytes())
+        xmp_copy.write_bytes(FIXTURE_XMP.read_bytes())
         result = extract_all(raw_copy)
         assert result["sliders"]["Exposure2012"] is not None

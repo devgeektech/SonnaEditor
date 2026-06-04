@@ -1,6 +1,6 @@
 # Session State - Sonna Editor
 
-**Saved:** 2026-06-03 local time
+**Saved:** 2026-06-04 local time
 **Current phase/task:** Foundation model and Lite profile architecture cleanup.
 
 ## Current Workspace
@@ -41,15 +41,15 @@ The earlier `GPU available: False` training issue was caused by a CPU-only PyTor
 - Moved transient app state to repo-local `.saha\` instead of `~\.saha\`. Active profile, recent folders, queued job snapshots, Personal AI training workspaces, and fine-tune scratch runs now resolve from the project root by default.
 - Added `config.ensure_runtime_directories()` and wired it into backend/server and CLI entrypoints so a fresh clone auto-creates `data\training_sources\`, `data\raw\`, `data\raw\sonna_training\`, `data\datasets\`, `data\dng\`, `data\parquet\`, `data\captures\`, `data\audits\`, `data\dbg\`, `v1_learning\`, and `.saha\` before use.
 - Split local learning inputs from generated outputs. Source photos now belong under separate gitignored child folders such as `data\training_sources\sonna_personal_001\raw_xmp\`; future FiveK image-pair inputs should use folders such as `data\training_sources\fivek_expert_c\raw_dng\` and `data\training_sources\fivek_expert_c\expert_tiff\`. Generated Parquet/checkpoint run outputs remain under `data\training_workspace\`.
-- `SONNA_TRAINING_WORKSPACE` defaults to `data\training_workspace\`. `SONNA_FOUNDATION_REPO` defaults to the sibling `SonnaEditorFoundation\` repo so promoted foundation checkpoints are outside gitignored `data\` and can be synced/versioned separately. Runtime directories are auto-created on startup unless the operator overrides them.
+- `SONNA_TRAINING_WORKSPACE` defaults to `data\training_workspace\`. `SONNA_FOUNDATION_REPO` defaults to the repo-local `SonnaEditorFoundation\` folder so promoted foundation checkpoints stay inside the SonnaEditor workspace while remaining outside gitignored `data\`. Runtime directories are auto-created on startup unless the operator overrides them.
 - Updated `scripts\process_shoot_model.py` so the default model path resolves to the newest published `v1_learning\model-v*.ckpt` instead of a stale hardcoded legacy checkpoint path. If no published profile exists yet, the CLI now fails with a clear instruction.
 
 - Decoupled Lite profile creation from active Personal AI profiles. `POST /api/profiles/lite` now resolves the configured foundation checkpoint and passes that to the Lite checkpoint builder.
-- Added `src/sonna_editor/foundation.py` helpers for creating the separate foundation repo layout, resolving the active foundation checkpoint from env/manifest/fallback, and promoting trained checkpoints into that repo.
-- Added `scripts/train_foundation_model.py`, the canonical foundation-training command. It can build a RAW+XMP dataset or use existing splits, trains with the current recipe without publishing to the frontend, then promotes the final checkpoint into the configured foundation repo.
+- Added `src/sonna_editor/foundation.py` helpers for creating the hidden foundation folder layout, resolving the active foundation checkpoint from env/manifest/fallback, and promoting trained checkpoints into that folder.
+- Added `scripts/train_foundation_model.py`, the canonical foundation-training command. It can build a RAW+XMP dataset or use existing splits, trains with the current recipe without publishing to the frontend, then promotes the final checkpoint into the configured foundation folder.
 - Updated API tests so Lite creation proves it uses the foundation checkpoint even when no Personal AI profile is active.
-- Added `tests/test_foundation.py` for foundation repo layout, manifest writing, promotion, and checkpoint resolution.
-- Updated runbooks to clarify that RAW+XMP data preparation, Personal AI training, foundation training, and Lite profile creation are separate workflows. Raw training photos should live outside the app repo; the foundation checkpoint lives in a separate Git/LFS-ready foundation repo.
+- Added `tests/test_foundation.py` for foundation folder layout, manifest writing, promotion, and checkpoint resolution.
+- Updated runbooks to clarify that RAW+XMP data preparation, Personal AI training, foundation training, and Lite profile creation are separate workflows. Raw training photos should live in repo-local gitignored source folders by default, or in explicitly chosen external folders; the foundation checkpoint lives in `SonnaEditorFoundation/`.
 - Cleaned operator-facing docs to avoid making v1/v2 a user decision. Internal legacy checkpoint compatibility remains in code.
 - Added `MAC_SETUP.md`, a Mac-specific setup and operating guide covering clean machine setup, uv/Python dependency sync, MPS verification, backend/frontend startup, profile discovery, RAW+XMP and catalog dataset preparation, Personal AI training, hidden foundation training, Lite profile creation, shoot processing, fine-tuning, diagnostics, and update steps.
 - Added a README pointer to `MAC_SETUP.md`.
@@ -89,17 +89,33 @@ The earlier `GPU available: False` training issue was caused by a CPU-only PyTor
 - Renamed `TRAINING_COMMANDS.md` to `CLI_COMMANDS.md` and created `FOUNDATION_TRAINING.md` for foundation train, resume, retrain, promotion, and FiveK guidance.
 - Updated frontend Personal AI backend flow so RAW+XMP profile training resolves the configured hidden foundation checkpoint and warm-starts model weights from it before publishing a user-facing checkpoint into `v1_learning/`. Warm-start now uses `base_model_checkpoint` rather than Lightning resume state, keeps the new training registry, and skips categorical embedding-table copies.
 - Verified MIT-Adobe FiveK is suitable foundation material, with the caveat that it is 5,000 DNG inputs plus five expert renditions/catalog edits, not 25,000 independent RAW inputs. Use one expert target style first.
-- Implemented the TIFF/image foundation path. `scripts\train_foundation_model.py` now accepts `--raw-image-dir` plus `--target-tiff-dir` for paired `RAW/DNG/image -> edited TIFF` training, saving an `image_to_image_v1` checkpoint in the foundation repo. Personal AI warm-start and Lite profile creation can copy the image-foundation ConvNeXt backbone into a fresh `SonnaEditor`; Mode A remains RAW+XMP slider regression.
-- Updated foundation training semantics so each new foundation run warm-starts from the active foundation checkpoint by default, writes a new versioned checkpoint, promotes it as the active default, and keeps previous checkpoints untouched. If the active checkpoint file is removed after a bad run, resolution falls back to the newest remaining checkpoint in the foundation repo.
+- Implemented the TIFF/image foundation path. `scripts\train_foundation_model.py` now accepts `--raw-image-dir` plus `--target-tiff-dir` for paired `RAW/DNG/image -> edited TIFF` training, saving an `image_to_image_v1` checkpoint in the foundation folder. Personal AI warm-start and Lite profile creation can copy the image-foundation ConvNeXt backbone into a fresh `SonnaEditor`; Mode A remains RAW+XMP slider regression.
+- Updated foundation training semantics so each new foundation run warm-starts from the active foundation checkpoint by default, writes a new versioned checkpoint, promotes it as the active default, and keeps previous checkpoints untouched. If the active checkpoint file is removed after a bad run, resolution falls back to the newest remaining checkpoint in the foundation folder.
 - Updated the foundation and operator docs so RAW+XMP foundation training uses direct script commands only: Lightroom metadata export/source-folder expectation, inspectable dataset/split build, audits, training from prepared splits, and the direct `--raw-xmp-dir` shortcut. Operator-facing stale references to repo-local `data\foundation_repo\`, old local dataset presence, and old Lite profile artifacts were cleaned up.
 - Added `matplotlib` to the base project dependencies and refreshed `uv.lock` so dataset audit plots generate without optional-import warnings. `scripts\audit_catalog.py` now prints ASCII `OK`/`WARN`/`STOP` status labels so Windows PowerShell does not fail on emoji encoding.
 - Fixed foundation training CUDA OOM handling. `scripts\train_foundation_model.py` now defaults to `--batch-size 8` for foundation runs and the RAW+XMP slider-regression path automatically catches CUDA memory failures, clears the CUDA cache, and retries with halved batch sizes. Foundation docs now recommend batch 8 on the Windows RTX 3050 workstation.
 - Adjusted Lite/preset auto-exposure for low-light images. Dark scenes with no near-clipped highlights now receive a stronger positive exposure floor, so event frames like the sofa/table example lift closer to the Imagen-style reference instead of staying slightly underexposed. WB remains conservative by default.
 - Guarded Lightning metric logging in `src/sonna_editor/training/module.py` so standalone `training_step()` unit tests no longer emit `self.log()` warnings without a Trainer.
+- Corrected the foundation workspace boundary so `SonnaEditor` is the parent folder. The default foundation folder is now `SonnaEditor\SonnaEditorFoundation\` instead of the sibling `Projects\SonnaEditorFoundation\`. The folder is tracked by the parent repo, with checkpoint binaries routed through Git LFS.
+- Removed the nested `SonnaEditorFoundation\.git` metadata so the parent `SonnaEditor` repo can track the foundation folder directly. Added parent `.gitattributes` rules for `SonnaEditorFoundation/checkpoints/*.ckpt`, `v1_learning/*.ckpt`, and `models/**/*.ckpt` through Git LFS.
+- Removed the obsolete `--init-git` foundation CLI option so future foundation runs cannot recreate a nested Git repository inside `SonnaEditorFoundation\`.
+- Cleaned fixture-dependent RAW/XMP tests so missing/unreadable private fixtures skip cleanly instead of failing the full suite on this Windows workspace.
 
 ## Verification
 
 - `uv run ruff check src\sonna_editor\foundation.py src\sonna_editor\api\routes\profiles.py src\sonna_editor\api\models.py scripts\train_foundation_model.py scripts\build_mode_b_checkpoint.py tests\test_foundation.py tests\api\test_profiles.py tests\api\conftest.py` passed.
+- Current repo-local foundation/Git LFS verification:
+  - `git check-attr filter diff merge -- SonnaEditorFoundation\checkpoints\foundation-sonna-raw-xmp-001.ckpt` reports `filter: lfs`, `diff: lfs`, and `merge: lfs`.
+  - `Test-Path SonnaEditorFoundation\.git` returned `False`.
+  - `git add --dry-run .gitattributes SonnaEditorFoundation` lists the foundation manifest, sidecar, README, and active checkpoint as addable by the parent repo.
+- Current cleanup verification:
+  - `uv run ruff check .` passed.
+  - `uv run python -m compileall -q src scripts tests` passed.
+  - `uv run mypy src\sonna_editor\foundation.py scripts\train_foundation_model.py` passed.
+  - `npm run build:vite` passed in `saha-app\`.
+  - `uv run pytest tests\test_foundation.py tests\test_train_foundation_model.py tests\test_config.py tests\api\test_profiles.py tests\test_checkpoint_builder.py -q` passed: 88 passed.
+  - `uv run pytest tests\test_extract.py tests\test_xmp.py -q` passed with local fixture skips: 71 passed, 34 skipped.
+  - `uv run pytest tests -q --ignore=tests/test_extract.py --ignore=tests/test_xmp.py` passed: 653 passed, 11 skipped, 1 warning.
 - `uv run python -m py_compile src\sonna_editor\foundation.py src\sonna_editor\api\routes\profiles.py scripts\train_foundation_model.py scripts\build_mode_b_checkpoint.py` passed.
 - `uv run pytest tests\test_foundation.py tests\api\test_profiles.py -q` passed: 22 passed.
 - `uv run ruff check src\sonna_editor\mode_b\survey.py src\sonna_editor\mode_b\checkpoint_builder.py src\sonna_editor\api\routes\profiles.py tests\test_style_survey.py tests\test_checkpoint_builder.py tests\api\test_profiles.py tests\api\test_callback_bridge.py tests\test_inference_pipeline_integration.py` passed.
@@ -123,7 +139,7 @@ The earlier `GPU available: False` training issue was caused by a CPU-only PyTor
   - `uv run ruff check scripts\train_foundation_model.py tests\test_train_foundation_model.py` passed.
   - `uv run pytest tests\test_train_foundation_model.py -q` passed: 5 passed.
   - `uv run python -m py_compile scripts\train_foundation_model.py` passed.
-  - One-epoch smoke completed on CUDA with `--batch-size 8 --workers 0 --no-warm-start`, using `data\training_workspace\sonna_foundation_001_dataset\splits_v2_stratified` and disposable foundation repo `data\tmp_foundation_oom_smoke_repo`. It promoted `data\tmp_foundation_oom_smoke_repo\checkpoints\foundation-oom-smoke.ckpt`; the real sibling foundation repo was not touched.
+  - One-epoch smoke completed on CUDA with `--batch-size 8 --workers 0 --no-warm-start`, using `data\training_workspace\sonna_foundation_001_dataset\splits_v2_stratified` and disposable foundation folder `data\tmp_foundation_oom_smoke_repo`. It promoted `data\tmp_foundation_oom_smoke_repo\checkpoints\foundation-oom-smoke.ckpt`; the real foundation folder was not touched.
 - Reviewed existing `HANDOVER.md`, `SESSION_STATE.md`, `project_knowledge.md`, `SONNA_EDITOR_BUILD_SPEC.md`, `CLI_COMMANDS.md`, `RUN.md`, `README.md`, `pyproject.toml`, and `saha-app/package.json` before writing the Mac guide.
 - `uv run python -c "import torch; ..."` confirmed:
   - `torch 2.11.0+cu128`
@@ -152,7 +168,7 @@ The earlier `GPU available: False` training issue was caused by a CPU-only PyTor
 - `scripts\analyse_prediction_collapse.py` ran on existing `model-v2.0.0`: 27 val photos, 14 collapsed sliders; Exposure2012 std_ratio=0.115, Temperature/Tint std_ratio ~1.0.
 - `scripts\analyse_prediction_collapse.py` ran on rejected scene-stats candidate: 27 val photos, 29 collapsed sliders; Exposure2012 std_ratio near zero, so the candidate was rejected despite lower test MAE.
 - Dark low-light output diagnosis on `0H5A4599`: the reference/training XMP has `Exposure2012=+1.11`, while active `model-v2.0.0` writes about `+0.105`, roughly one stop too dark. Other key tone/WB sliders and tone curves are close to the reference, so this is not an XMP writer or tone-curve endpoint issue. Root cause is Exposure2012 prediction collapse: across the 189-row dataset, target Exposure std is ~0.454 but model output std is ~0.061; in the darkest luminance quartile, targets average `+0.695` while predictions average only `+0.090`.
-- Full `uv run pytest tests` result: 691 passed, 12 skipped, 28 failed. Failures are concentrated in `tests/test_extract.py` and `tests/test_xmp.py` because the gitignored RAW/XMP fixtures are absent from `tests/fixtures/` (`sample.cr3`, `sample.xmp`, `sample_edit.xmp`) and two extract tests require Windows symlink privileges.
+- Fixture-dependent RAW/XMP tests now skip cleanly when local private fixtures are absent or unreadable. `tests\test_extract.py tests\test_xmp.py` passes with local fixture skips instead of failing on missing `sample_edit.xmp`, unreadable `sample.cr3`, or Windows symlink privileges.
 - Lite compatibility verification passed: `uv run ruff check src\sonna_editor\mode_b\checkpoint_builder.py tests\test_checkpoint_builder.py tests\api\test_profiles.py`; `uv run pytest tests\test_checkpoint_builder.py tests\api\test_profiles.py -q` -> 53 passed; `uv run python -m py_compile src\sonna_editor\mode_b\checkpoint_builder.py scripts\build_mode_b_checkpoint.py`; real smoke build from `v1_learning\model-v2.0.0.ckpt` to `%TEMP%\sonna-lite-v2-smoke\mode-b-v2-smoke.ckpt` succeeded and wrote sidecar `slider_set_version: v2`.
 - Training warning cleanup verification passed: `uv run ruff check scripts\train_profile.py scripts\train_v1_2_0_full_production.py src\sonna_editor\training\__init__.py src\sonna_editor\finetune\retrain.py tests\test_training.py`; `uv run pytest tests\test_training.py::test_train_profile_log_interval_adapts_to_small_dataset tests\test_training.py::test_training_step_returns_scalar tests\test_training.py::test_training_step_loss_is_non_negative -q` -> 3 passed; `uv run python -m py_compile scripts\train_profile.py scripts\train_v1_2_0_full_production.py src\sonna_editor\finetune\retrain.py src\sonna_editor\training\__init__.py`; one-epoch smoke training with `--num-workers 2 --no-publish` completed without the pasted `LeafSpec`, Triton FLOP-counter, or `log_every_n_steps` warnings.
 - Quick diagnostic row-count verification passed: `uv run ruff check scripts\quick_diagnostic.py`; `uv run python -m py_compile scripts\quick_diagnostic.py`; `uv run python scripts\quick_diagnostic.py --summary-path data\models\sonna-v2-run01\training_summary.json` now prints train=132, val=27, test=30 and completes successfully.
@@ -181,7 +197,7 @@ The earlier `GPU available: False` training issue was caused by a CPU-only PyTor
   - `uv run python -m py_compile scripts\train_profile.py src\sonna_editor\training\profile_runner.py src\sonna_editor\api\routes\profiles.py src\sonna_editor\api\jobs.py src\sonna_editor\api\models.py` -> passed
   - `uv run pytest tests\api\test_profiles.py tests\api\test_callback_bridge.py tests\test_adjuster.py tests\test_checkpoint_builder.py -q` -> 101 passed
   - `uv run pytest tests\test_config.py::TestSliderLossWeights::test_c3k_tuned_weights tests\test_training.py::test_train_profile_log_interval_adapts_to_small_dataset -q` -> 2 passed
-  - Full `uv run pytest tests -q` -> 705 passed, 12 skipped, 28 failed. Remaining failures are fixture/environment issues: `tests/fixtures/sample_edit.xmp` is missing, `tests/fixtures/sample.cr3` is unreadable by rawpy on this machine, and two tests require Windows symlink privileges.
+  - Historical note: full `uv run pytest tests -q` used to fail when local RAW/XMP fixtures were absent or unreadable. The fixture-dependent tests now skip cleanly in that state.
 
 ## Current Code Behavior Notes
 
@@ -209,6 +225,6 @@ The earlier `GPU available: False` training issue was caused by a CPU-only PyTor
 
 Add the fresh RAW+XMP dataset, start the backend/Electron app, and create a Personal AI profile from the frontend. Use Lite profile creation from the frontend after a foundation checkpoint is configured in `SONNA_FOUNDATION_CHECKPOINT`, `SONNA_FOUNDATION_REPO/foundation_manifest.json`, or `SONNA_FOUNDATION_REPO/foundation.ckpt`.
 
-For current parameter-supervised foundation model work, use `scripts\train_foundation_model.py --raw-xmp-dir ...` or `--splits-dir ...` so the checkpoint is promoted to the separate foundation repo and stays out of the frontend profile list. It will warm-start from the active foundation checkpoint unless `--no-warm-start` is supplied. For MIT-Adobe FiveK, use `scripts\train_foundation_model.py --raw-image-dir ... --target-tiff-dir ...`; do not push FiveK TIFF targets through the existing RAW+XMP pipeline.
+For current parameter-supervised foundation model work, use `scripts\train_foundation_model.py --raw-xmp-dir ...` or `--splits-dir ...` so the checkpoint is promoted to `SonnaEditorFoundation\` and stays out of the frontend profile list. It will warm-start from the active foundation checkpoint unless `--no-warm-start` is supplied. For MIT-Adobe FiveK, use `scripts\train_foundation_model.py --raw-image-dir ... --target-tiff-dir ...`; do not push FiveK TIFF targets through the existing RAW+XMP pipeline.
 
-Before relying on full-suite green status, restore the local fixture files under `tests/fixtures/` or mark those fixture-dependent tests as integration/local-data tests, then rerun `uv run pytest tests`.
+Before relying on live RAW/XMP extraction coverage, restore the local fixture files under `tests/fixtures/`. The normal full suite now skips those local-data checks when the fixtures are missing or unreadable.

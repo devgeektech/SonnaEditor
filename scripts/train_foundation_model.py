@@ -3,8 +3,8 @@
 
 This is the canonical path for creating the base checkpoint used by Lite
 profile creation. It is intentionally separate from Personal AI profile
-training: the output is promoted to the configured foundation repo, not to the
-frontend profile directory.
+training: the output is promoted to the configured hidden foundation folder,
+not to the frontend profile directory.
 
 Supported training modes:
 - parameter-supervised: RAW+XMP or prepared parquet splits -> Lightroom sliders
@@ -19,6 +19,7 @@ import logging
 import os
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any
 
 import torch
 
@@ -76,7 +77,7 @@ def _parse_args() -> argparse.Namespace:
         type=Path,
         default=config.FOUNDATION_REPO_DIR,
         help=(
-            "Standalone foundation model repo "
+            "Foundation model folder "
             f"(default: {config.FOUNDATION_REPO_DIR})."
         ),
     )
@@ -100,7 +101,6 @@ def _parse_args() -> argparse.Namespace:
             "checkpoint and writes a new versioned checkpoint."
         ),
     )
-    parser.add_argument("--init-git", action="store_true")
     return parser.parse_args()
 
 
@@ -141,12 +141,12 @@ def _clear_cuda_after_failure() -> None:
     if torch.cuda.is_available():
         torch.cuda.empty_cache()
         try:
-            torch.cuda.ipc_collect()
+            torch.cuda.ipc_collect()  # type: ignore[no-untyped-call]
         except RuntimeError:
             pass
 
 
-def _train_profile_with_cuda_oom_retry(train_args: argparse.Namespace) -> dict:
+def _train_profile_with_cuda_oom_retry(train_args: argparse.Namespace) -> dict[str, Any]:
     requested_batch_size = int(train_args.batch_size)
     last_error: Exception | None = None
     for attempt_batch_size in _batch_size_attempts(requested_batch_size):
@@ -190,7 +190,7 @@ def _build_dataset_from_raw_xmp(args: argparse.Namespace, run_dir: Path) -> Path
 
     if args.raw_xmp_dir is None:
         raise ValueError("--raw-xmp-dir is required when building a dataset")
-    input_dir = args.raw_xmp_dir.expanduser()
+    input_dir = Path(args.raw_xmp_dir).expanduser()
     if not input_dir.exists() or not input_dir.is_dir():
         raise FileNotFoundError(f"RAW+XMP folder not found: {input_dir}")
 
@@ -217,7 +217,7 @@ def _build_dataset_from_raw_xmp(args: argparse.Namespace, run_dir: Path) -> Path
 
 def _resolve_splits(args: argparse.Namespace, run_dir: Path) -> Path:
     if args.splits_dir is not None:
-        splits_dir = args.splits_dir.expanduser()
+        splits_dir = Path(args.splits_dir).expanduser()
         missing = [
             name for name in ("train.parquet", "val.parquet", "test.parquet")
             if not (splits_dir / name).exists()
@@ -238,7 +238,7 @@ def main() -> None:
     foundation_repo = args.foundation_repo.expanduser()
     config.FOUNDATION_REPO_DIR = foundation_repo
     os.environ[config.FOUNDATION_REPO_ENV_VAR] = str(foundation_repo)
-    ensure_foundation_repo_layout(initialise_git=args.init_git)
+    ensure_foundation_repo_layout()
 
     workspace_dir = args.workspace_dir.expanduser()
     run_name = args.run_name or f"foundation-{_timestamp()}"

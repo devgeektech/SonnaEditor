@@ -22,8 +22,8 @@ class TestPlatformPaths:
     def test_training_workspace_defaults_to_project_data(self) -> None:
         assert config.TRAINING_WORKSPACE_DIR == config.DATA_DIR / "training_workspace"
 
-    def test_foundation_repo_defaults_to_sibling_repo(self) -> None:
-        assert config.FOUNDATION_REPO_DIR == config.PROJECT_ROOT.parent / "SonnaEditorFoundation"
+    def test_foundation_repo_defaults_to_project_child(self) -> None:
+        assert config.FOUNDATION_REPO_DIR == config.PROJECT_ROOT / "SonnaEditorFoundation"
 
     def test_training_sources_default_to_project_data(self) -> None:
         assert config.TRAINING_SOURCES_DIR == config.DATA_DIR / "training_sources"

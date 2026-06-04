@@ -112,13 +112,13 @@ Foundation has two implemented CLI paths:
 
 - `scripts/train_foundation_model.py` currently trains the existing
   slider-regression model from real Lightroom parameters, then promotes the
-  checkpoint into the hidden foundation repo.
+  checkpoint into the hidden repo-local foundation folder.
 - MIT-Adobe FiveK-style training uses an image-to-image foundation trainer from
   `RAW/DNG -> expert TIFF`. Do not turn FiveK TIFF outputs into fake XMP labels.
 
 Every foundation run is versioned. By default, it warm-starts from the active
 foundation checkpoint, trains on the new dataset, writes a new checkpoint under
-`..\SonnaEditorFoundation\checkpoints\`, and makes that checkpoint active in
+`SonnaEditorFoundation\checkpoints\`, and makes that checkpoint active in
 `foundation_manifest.json`. Older checkpoints are kept. If a bad run is
 promoted, remove the bad new `.ckpt`; the resolver falls back to the newest
 remaining checkpoint. Use `--no-warm-start` only for a deliberate scratch run.
@@ -147,13 +147,12 @@ Foundation model training is intentionally **not** exposed in the frontend. Trai
 uv run python scripts\train_foundation_model.py `
   --raw-xmp-dir data\training_sources\sonna_personal_001\raw_xmp `
   --workspace-dir data\training_workspace `
-  --foundation-repo ..\SonnaEditorFoundation `
+  --foundation-repo SonnaEditorFoundation `
   --profile-name "Sonna Parameter Foundation" `
   --version-stem foundation-sonna-parameter-001 `
   --max-epochs 100 `
   --batch-size 8 `
-  --workers 4 `
-  --init-git
+  --workers 4
 ```
 
 For TIFF/image foundation training, use paired folders matched by file stem:
@@ -163,7 +162,7 @@ uv run python scripts\train_foundation_model.py `
   --raw-image-dir data\training_sources\fivek_expert_c\raw_dng `
   --target-tiff-dir data\training_sources\fivek_expert_c\expert_tiff `
   --workspace-dir data\training_workspace `
-  --foundation-repo ..\SonnaEditorFoundation `
+  --foundation-repo SonnaEditorFoundation `
   --profile-name "Sonna FiveK Image Foundation Expert C" `
   --run-name foundation-fivek-image-expert-c-001 `
   --version-stem foundation-fivek-image-expert-c-001 `
@@ -205,7 +204,7 @@ uv run python scripts\build_mode_b_checkpoint.py `
 
 Without `--output`, the checkpoint is published as the next available `v1_learning\model-v0.N.0.ckpt`, with a matching `.json` sidecar. The frontend sees it through the same `/api/profiles` scan as trained profiles.
 
-Lite checkpoints are visible in the UI when they are published into `v1_learning/`. The foundation checkpoint stays in the separate foundation repo and is not listed as a frontend profile.
+Lite checkpoints are visible in the UI when they are published into `v1_learning/`. The foundation checkpoint stays in the repo-local hidden foundation folder and is not listed as a frontend profile.
 
 Important: Lite profiles created before the 2026-06-02 Mode B fixes can over-apply the preset because they added the base model's predicted Exposure/colour values on top. Rebuild those old `v1_learning\model-v0.*.ckpt` Lite profiles from the UI or CLI before judging current Mode B output.
 

@@ -11,7 +11,7 @@ There are two foundation concepts in the project now:
 - **Implemented today:** `scripts/train_foundation_model.py` trains the existing
   `SonnaEditor` slider-regression model from real Lightroom parameters
   (`RAW + XMP` or catalog-derived develop settings), then promotes that
-  checkpoint into the hidden foundation repo.
+  checkpoint into the hidden repo-local foundation folder.
 - **Implemented TIFF direction:** MIT-Adobe FiveK can train an image-supervised
   enhancement backbone from `RAW/DNG -> expert TIFF`. This is a separate
   foundation-only path. Do not force FiveK TIFF targets through the current XMP
@@ -54,12 +54,12 @@ preference, preset behaviour, and event-specific colour grading.
 
 ## Foundation Visibility Rule
 
-- Foundation checkpoints live in a hidden foundation repo, by default
-  the sibling folder `..\SonnaEditorFoundation`, or a custom path from
-  `SONNA_FOUNDATION_REPO`. Keep this outside gitignored `data/` so foundation
-  checkpoints can be synced/versioned separately.
+- Foundation checkpoints live in a hidden foundation folder, by default
+  the repo-local child folder `SonnaEditorFoundation/`, or a custom path from
+  `SONNA_FOUNDATION_REPO`. Keep this outside gitignored `data/` but inside the
+  SonnaEditor project root so the workspace stays self-contained.
 - The UI scans only `v1_learning/model-v*.ckpt`, so foundation checkpoints stay
-  unseen as long as they remain in the foundation repo.
+  unseen as long as they remain in the foundation folder.
 - Lite profiles and Personal AI profile creation resolve the foundation
   checkpoint from:
   1. `SONNA_FOUNDATION_CHECKPOINT`
@@ -71,7 +71,7 @@ preference, preset behaviour, and event-specific colour grading.
 Every foundation training run writes a new versioned checkpoint under:
 
 ```text
-..\SonnaEditorFoundation/checkpoints/<version-stem>.ckpt
+SonnaEditorFoundation/checkpoints/<version-stem>.ckpt
 ```
 
 The previous checkpoint is never overwritten. After a successful run,
@@ -96,7 +96,7 @@ new checkpoint = previous active foundation + new dataset training
 ```
 
 The previous active checkpoint file stays untouched. If a bad new checkpoint is
-promoted, remove that bad `.ckpt` file from `..\SonnaEditorFoundation\checkpoints\`.
+promoted, remove that bad `.ckpt` file from `SonnaEditorFoundation\checkpoints\`.
 When the manifest points at a missing active checkpoint, the resolver falls back
 to the newest remaining checkpoint in that folder. For a deliberate scratch
 foundation run that should not warm-start from the active checkpoint, pass
@@ -154,8 +154,8 @@ data/training_sources/
 These folders are for local learning inputs only. They are under gitignored
 `data/`, so RAWs, TIFFs, XMPs, and downloaded datasets do not get committed.
 Generated datasets, thumbnails, and training summaries stay under
-`data/training_workspace/`. Promoted foundation checkpoints stay in the separate
-foundation repo, outside `data/`.
+`data/training_workspace/`. Promoted foundation checkpoints stay in
+`SonnaEditorFoundation/`, outside `data/` but inside the project root.
 
 `data\training_sources\` is part of the auto-created repo-local layout. You
 still need to place the actual FiveK files or Sonna RAW+XMP folders there
@@ -191,7 +191,7 @@ uv run python scripts\train_foundation_model.py `
   --raw-image-dir "$PWD\data\training_sources\fivek_expert_c\raw_dng" `
   --target-tiff-dir "$PWD\data\training_sources\fivek_expert_c\expert_tiff" `
   --workspace-dir "$PWD\data\training_workspace" `
-  --foundation-repo "..\SonnaEditorFoundation" `
+  --foundation-repo "SonnaEditorFoundation" `
   --profile-name "Sonna FiveK Image Foundation Expert C" `
   --run-name "foundation-fivek-image-expert-c-001" `
   --version-stem "foundation-fivek-image-expert-c-001" `
@@ -200,8 +200,7 @@ uv run python scripts\train_foundation_model.py `
   --batch-size 8 `
   --workers 8 `
   --l1-weight 1.0 `
-  --ssim-weight 0.2 `
-  --init-git
+  --ssim-weight 0.2
 ```
 
 Expected outputs:
@@ -209,8 +208,8 @@ Expected outputs:
 ```text
 <project>\data\training_workspace\foundation_runs\foundation-fivek-image-expert-c-001\
 <project>\data\training_workspace\foundation_runs\foundation-fivek-image-expert-c-001\training\model.ckpt
-<project-parent>\SonnaEditorFoundation\checkpoints\foundation-fivek-image-expert-c-001.ckpt
-<project-parent>\SonnaEditorFoundation\foundation_manifest.json
+<project>\SonnaEditorFoundation\checkpoints\foundation-fivek-image-expert-c-001.ckpt
+<project>\SonnaEditorFoundation\foundation_manifest.json
 ```
 
 The promoted checkpoint is not a full Lightroom slider-regression checkpoint.
@@ -308,14 +307,13 @@ visible and audited:
 uv run python scripts\train_foundation_model.py `
   --splits-dir "data\training_workspace\sonna_foundation_001_dataset\splits_v2_stratified" `
   --workspace-dir "data\training_workspace" `
-  --foundation-repo "..\SonnaEditorFoundation" `
+  --foundation-repo "SonnaEditorFoundation" `
   --profile-name "Sonna RAW XMP Foundation" `
   --run-name "foundation-sonna-raw-xmp-001" `
   --version-stem "foundation-sonna-raw-xmp-001" `
   --max-epochs 100 `
   --batch-size 8 `
-  --workers 8 `
-  --init-git
+  --workers 8
 ```
 
 ### Step 5B: Direct Train From RAW+XMP
@@ -327,14 +325,13 @@ then trains and promotes the checkpoint:
 uv run python scripts\train_foundation_model.py `
   --raw-xmp-dir "data\training_sources\sonna_foundation_001\raw_xmp" `
   --workspace-dir "data\training_workspace" `
-  --foundation-repo "..\SonnaEditorFoundation" `
+  --foundation-repo "SonnaEditorFoundation" `
   --profile-name "Sonna RAW XMP Foundation" `
   --run-name "foundation-sonna-raw-xmp-001" `
   --version-stem "foundation-sonna-raw-xmp-001" `
   --max-epochs 100 `
   --batch-size 8 `
-  --workers 8 `
-  --init-git
+  --workers 8
 ```
 
 Expected outputs:
@@ -342,8 +339,8 @@ Expected outputs:
 ```text
 <project>\data\training_workspace\foundation_runs\foundation-sonna-raw-xmp-001\
 <project>\data\training_workspace\foundation_runs\foundation-sonna-raw-xmp-001\training\model.ckpt
-<project-parent>\SonnaEditorFoundation\checkpoints\foundation-sonna-raw-xmp-001.ckpt
-<project-parent>\SonnaEditorFoundation\foundation_manifest.json
+<project>\SonnaEditorFoundation\checkpoints\foundation-sonna-raw-xmp-001.ckpt
+<project>\SonnaEditorFoundation\foundation_manifest.json
 ```
 
 Unless `--no-warm-start` is supplied, either RAW+XMP route starts from the
@@ -385,14 +382,13 @@ separate experimental checkpoint from those prepared splits:
 uv run python scripts\train_foundation_model.py `
   --splits-dir "$PWD\data\training_workspace\fivek_expert_c_dataset\splits_v2_stratified" `
   --workspace-dir "$PWD\data\training_workspace" `
-  --foundation-repo "..\SonnaEditorFoundation" `
+  --foundation-repo "SonnaEditorFoundation" `
   --profile-name "Sonna Foundation FiveK Expert C" `
   --run-name "foundation-fivek-expert-c-001" `
   --version-stem "foundation-fivek-expert-c-001" `
   --max-epochs 100 `
   --batch-size 8 `
-  --workers 8 `
-  --init-git
+  --workers 8
 ```
 
 ## Resume Interrupted Foundation Training
@@ -429,7 +425,7 @@ new version stem:
 uv run python scripts\train_foundation_model.py `
   --splits-dir "$PWD\data\training_workspace\sonna_parameter_dataset\splits_v2_stratified" `
   --workspace-dir "$PWD\data\training_workspace" `
-  --foundation-repo "..\SonnaEditorFoundation" `
+  --foundation-repo "SonnaEditorFoundation" `
   --profile-name "Sonna Parameter Foundation" `
   --run-name "foundation-sonna-parameter-002" `
   --version-stem "foundation-sonna-parameter-002" `

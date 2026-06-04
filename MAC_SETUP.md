@@ -226,8 +226,8 @@ uv run python scripts/train_profile.py \
 ## 9. Train A Hidden Foundation Model
 
 This is CLI-only. It is not exposed in the frontend. The foundation checkpoint
-is promoted into a separate private foundation repo and is used as the base for
-Lite profile creation.
+is promoted into the repo-local hidden `SonnaEditorFoundation/` folder and is
+used as the base for Lite profile creation.
 
 For RAW+XMP foundation data, first export metadata from Lightroom and keep the
 edited RAW/DNG files plus same-stem `.xmp` sidecars in a dedicated source
@@ -257,19 +257,19 @@ Train from the inspected splits:
 uv run python scripts/train_foundation_model.py \
   --splits-dir "$HOME/SonnaEditorTraining/workspace/sonna_foundation_001_dataset/splits_v2_stratified" \
   --workspace-dir "$HOME/SonnaEditorTraining/workspace" \
-  --foundation-repo "$HOME/Projects/SonnaEditorFoundation" \
+  --foundation-repo "$PWD/SonnaEditorFoundation" \
   --profile-name "Sonna RAW XMP Foundation" \
   --run-name foundation-sonna-raw-xmp-001 \
   --version-stem foundation-sonna-raw-xmp-001 \
   --max-epochs 100 \
   --batch-size 8 \
-  --workers 4 \
-  --init-git
+  --workers 4
 ```
 
-The foundation repo contains `foundation_manifest.json` and
-`checkpoints/foundation-sonna-raw-xmp-001.ckpt`. Install Git LFS before pushing the
-foundation repo to GitHub:
+The foundation folder contains `foundation_manifest.json` and
+`checkpoints/foundation-sonna-raw-xmp-001.ckpt`. It is tracked by the parent
+repo, with checkpoint binaries routed through Git LFS. Install Git LFS before
+pushing from a new machine:
 
 For small GPUs, start foundation runs at `--batch-size 8`. The RAW+XMP
 foundation CLI automatically retries with smaller batch sizes after CUDA memory
@@ -278,9 +278,10 @@ failures.
 ```bash
 brew install git-lfs
 git lfs install
-cd ~/Projects/SonnaEditorFoundation
-git add .
-git commit -m "Add foundation checkpoint"
+cd /path/to/SonnaEditor
+git add .gitattributes SonnaEditorFoundation
+git commit -m "Track foundation checkpoint"
+git push
 ```
 
 ## 10. Create A Lite Profile
@@ -407,9 +408,9 @@ npm run build:vite
 cd ..
 ```
 
-Known local caveat: some full-suite tests require gitignored RAW/XMP fixtures in
-`tests/fixtures/`. If those fixtures are missing on the Mac, run focused tests or
-restore the fixture files before treating the full suite as a release gate.
+Fixture-dependent RAW/XMP tests skip automatically when private local files in
+`tests/fixtures/` are absent or unreadable. Restore those fixtures only when you
+want to exercise live RAW extraction and real Lightroom XMP parsing locally.
 
 ## 14. Updating The App
 

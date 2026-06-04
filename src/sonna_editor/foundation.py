@@ -5,7 +5,6 @@ from __future__ import annotations
 import json
 import os
 import shutil
-import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -27,12 +26,12 @@ def foundation_manifest_path() -> Path:
     return foundation_repo_dir() / "foundation_manifest.json"
 
 
-def ensure_foundation_repo_layout(*, initialise_git: bool = False) -> Path:
-    """Create the local foundation repo layout and helper metadata files.
+def ensure_foundation_repo_layout() -> Path:
+    """Create the local foundation folder layout and helper metadata files.
 
-    By default the foundation repo lives under the project root so a fresh clone
-    is self-contained. Operators can still point SONNA_FOUNDATION_REPO at a
-    separate private Git/LFS repo when they want that workflow.
+    By default the foundation folder lives under the project root so a fresh
+    clone is self-contained. The parent SonnaEditor repo tracks this folder,
+    with checkpoint binaries routed through Git LFS.
     """
     repo = foundation_repo_dir()
     (repo / "checkpoints").mkdir(parents=True, exist_ok=True)
@@ -41,7 +40,7 @@ def ensure_foundation_repo_layout(*, initialise_git: bool = False) -> Path:
     if not readme.exists():
         readme.write_text(
             "# Sonna Editor Foundation Model\n\n"
-            "Private repository for the active Sonna Editor foundation checkpoint.\n"
+            "Repo-local folder for the active Sonna Editor foundation checkpoint.\n"
             "Do not store RAW photos or generated training datasets here.\n\n"
             "Files:\n"
             "- `foundation_manifest.json`: points to the active checkpoint.\n"
@@ -67,9 +66,6 @@ def ensure_foundation_repo_layout(*, initialise_git: bool = False) -> Path:
             "*.ckpt filter=lfs diff=lfs merge=lfs -text\n",
             encoding="utf-8",
         )
-
-    if initialise_git and not (repo / ".git").exists():
-        subprocess.run(["git", "init"], cwd=repo, check=True)
 
     return repo
 
@@ -152,7 +148,7 @@ def write_foundation_manifest(
         except ValueError:
             return str(path.resolve())
 
-    payload = {
+    payload: dict[str, Any] = {
         "active_checkpoint": rel(checkpoint_path),
         "active_sidecar": rel(sidecar_path) if sidecar_path is not None else None,
         "display_name": display_name,
@@ -244,7 +240,7 @@ def load_sonna_model_from_foundation_checkpoint(
     *,
     registry: Any | None = None,
     slider_set_version: str = config.CURRENT_SLIDER_SET_VERSION,
-):
+) -> Any:
     """Load a foundation checkpoint as a `SonnaEditor` instance.
 
     Full `SonnaEditor` checkpoints load normally. Image-to-image foundation

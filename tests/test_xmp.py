@@ -8,8 +8,13 @@ from sonna_editor.config import SLIDER_FIELDS
 from sonna_editor.data.xmp import read_xmp, write_xmp
 
 FIXTURE = Path(__file__).parent / "fixtures" / "sample_edit.xmp"
+requires_sample_edit_xmp = pytest.mark.skipif(
+    not FIXTURE.exists(),
+    reason=f"XMP fixture not present: {FIXTURE}",
+)
 
 
+@requires_sample_edit_xmp
 class TestReadXmp:
     def test_fixture_parses(self):
         result = read_xmp(FIXTURE)
@@ -201,6 +206,7 @@ class TestRoundTrip:
         raw = xmp_path.read_text()
         assert "IMG_0001.CR3" in raw
 
+    @requires_sample_edit_xmp
     def test_fixture_values_survives_write_read(self, tmp_path):
         original = read_xmp(FIXTURE)
         xmp_path = tmp_path / "rewritten.xmp"

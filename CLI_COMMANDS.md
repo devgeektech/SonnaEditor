@@ -29,8 +29,8 @@ RAW+XMP data preparation and foundation training are not the same thing.
 - **Personal AI profile training:** trains from those splits, warm-starting from the configured hidden foundation checkpoint in the frontend flow, and publishes a frontend-visible profile into `v1_learning/`.
 - **Current parameter-supervised foundation training:** trains from real Lightroom
   slider labels (`RAW+XMP` or catalog-derived settings), but promotes the final
-  checkpoint into a separate foundation repo. It does not publish to
-  `v1_learning/`.
+  checkpoint into the repo-local hidden foundation folder. It does not publish
+  to `v1_learning/`.
 - **TIFF/image foundation training:** uses paired images
   (`RAW/DNG -> expert TIFF`) to learn general photographic enhancement. Do not
   convert FiveK TIFF outputs into fake XMP labels.
@@ -38,13 +38,13 @@ RAW+XMP data preparation and foundation training are not the same thing.
 
 Foundation runs are versioned. By default a new foundation run warm-starts from
 the active foundation checkpoint, trains on the new dataset, saves a new
-checkpoint under `..\SonnaEditorFoundation\checkpoints\`, and makes that new
-checkpoint active in `foundation_manifest.json`. The default foundation repo is
-the sibling `..\SonnaEditorFoundation`, not gitignored `data/`, so it can be
-synced/versioned separately. Existing checkpoints are not overwritten. If a new
-run is bad, remove that new `.ckpt`; the resolver falls back to the newest
-remaining checkpoint. Use `--no-warm-start` only for a deliberate scratch
-foundation run.
+checkpoint under `SonnaEditorFoundation\checkpoints\`, and makes that new
+checkpoint active in `foundation_manifest.json`. The default foundation folder is
+the repo-local `SonnaEditorFoundation/` child folder, not gitignored `data/`.
+That folder is tracked by the parent repo; checkpoint binaries are handled by
+Git LFS. Existing checkpoints are not overwritten. If a new run is bad, remove
+that new `.ckpt`; the resolver falls back to the newest remaining checkpoint.
+Use `--no-warm-start` only for a deliberate scratch foundation run.
 
 ## Project Flow
 
@@ -104,7 +104,7 @@ foundation run.
 | Source Lightroom catalog | Any `.lrcat` path, opened read-only | Lightroom should be closed for catalog reads |
 | Personal AI dataset output root | `v1_learning/dataset/` or frontend job workspace | Used for frontend-visible profile training |
 | Foundation training workspace | `SONNA_TRAINING_WORKSPACE` or `data/training_workspace/` | Generated foundation datasets and run folders |
-| Foundation repo | `SONNA_FOUNDATION_REPO` or sibling `..\SonnaEditorFoundation` | Promoted hidden checkpoints, outside gitignored `data/` |
+| Foundation repo | `SONNA_FOUNDATION_REPO` or repo-local `SonnaEditorFoundation/` | Promoted hidden checkpoints, outside gitignored `data/` |
 | Foundation manifest | `<foundation_repo>/foundation_manifest.json` | Active foundation pointer and history |
 | Foundation checkpoint path | `<foundation_repo>/checkpoints/<version>.ckpt` | Never overwrite old checkpoints |
 | Personal AI training run outputs | `data/models/<run_name>/` or frontend job workspace | Non-foundation profile training artifacts |
@@ -160,7 +160,7 @@ Two preset execution paths exist:
 
 Recommended Lite flow:
 
-1. Train or configure the foundation checkpoint in the separate foundation repo.
+1. Train or configure the foundation checkpoint in `SonnaEditorFoundation/`.
 2. Export or choose a Lightroom preset `.xmp`.
 3. Run the style survey to create a survey JSON.
 4. Build a Lite checkpoint. If `--output` is omitted, the CLI publishes to the next frontend-visible path: `v1_learning/model-v0.N.0.ckpt`.
@@ -222,8 +222,8 @@ uv run python scripts\process_shoot_model.py `
 ```
 
 Lite checkpoints are visible in the UI when they are published into
-`v1_learning/`. The foundation checkpoint stays in the separate foundation repo
-and is not listed as a frontend profile.
+`v1_learning/`. The foundation checkpoint stays in the repo-local hidden
+foundation folder and is not listed as a frontend profile.
 
 `process_shoot_preset.py` is the direct preset-only path. It does not build a
 profile checkpoint and does not publish anything to the UI. Instead it:
@@ -463,7 +463,7 @@ Notes:
 
 Foundation training, resume, retrain, promotion, and FiveK-specific guidance
 live in `FOUNDATION_TRAINING.md`. Keep the foundation checkpoint in the separate
-foundation repo, not in `v1_learning/`, so it stays hidden from the frontend.
+foundation folder, not in `v1_learning/`, so it stays hidden from the frontend.
 
 For RAW+XMP foundation training, first export Lightroom metadata to sidecars,
 keep the source files in a dedicated folder, build/audit inspectable splits, and
@@ -491,7 +491,7 @@ uv run python scripts\audit_catalog.py `
 uv run python scripts\train_foundation_model.py `
   --splits-dir data\training_workspace\sonna_foundation_001_dataset\splits_v2_stratified `
   --workspace-dir data\training_workspace `
-  --foundation-repo ..\SonnaEditorFoundation `
+  --foundation-repo SonnaEditorFoundation `
   --profile-name "Sonna RAW XMP Foundation" `
   --run-name foundation-sonna-raw-xmp-001 `
   --version-stem foundation-sonna-raw-xmp-001 `
@@ -507,7 +507,7 @@ uv run python scripts\train_foundation_model.py `
   --raw-image-dir data\training_sources\fivek_expert_c\raw_dng `
   --target-tiff-dir data\training_sources\fivek_expert_c\expert_tiff `
   --workspace-dir data\training_workspace `
-  --foundation-repo ..\SonnaEditorFoundation `
+  --foundation-repo SonnaEditorFoundation `
   --profile-name "Sonna FiveK Image Foundation Expert C" `
   --run-name foundation-fivek-image-expert-c-001 `
   --version-stem foundation-fivek-image-expert-c-001 `
