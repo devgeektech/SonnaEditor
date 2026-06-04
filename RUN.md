@@ -119,9 +119,11 @@ Foundation has two implemented CLI paths:
 Every foundation run is versioned. By default, it warm-starts from the active
 foundation checkpoint, trains on the new dataset, writes a new checkpoint under
 `SonnaEditorFoundation\checkpoints\`, and makes that checkpoint active in
-`foundation_manifest.json`. Older checkpoints are kept. If a bad run is
-promoted, remove the bad new `.ckpt`; the resolver falls back to the newest
-remaining checkpoint. Use `--no-warm-start` only for a deliberate scratch run.
+`foundation_manifest.json`. Older checkpoints are kept. New runs auto-promote
+as `foundation-vN` unless a version stem is supplied. If a bad run is promoted,
+roll back the active manifest pointer with `scripts\rollback_foundation.py`
+rather than deleting checkpoints. Use `--no-warm-start` only for a deliberate
+scratch run.
 
 Dataset preparation code paths:
 

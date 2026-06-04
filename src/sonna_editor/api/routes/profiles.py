@@ -331,6 +331,7 @@ def _train_personal_profile_sync(
         lr=1e-4,
         weight_decay=1e-4,
         freeze_backbone_epochs=3,
+        backbone_unfreeze_strategy="progressive",
         num_workers=req.workers,
         resume_from_checkpoint=None,
         base_model_checkpoint=foundation_ckpt_path,

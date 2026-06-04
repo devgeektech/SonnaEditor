@@ -276,6 +276,7 @@ def main() -> None:
             lr=1e-4,
             weight_decay=1e-4,
             freeze_backbone_epochs=3,
+            backbone_unfreeze_strategy="progressive",
             num_workers=args.workers,
             resume_from_checkpoint=None,
             base_model_checkpoint=base_foundation,
@@ -304,11 +305,10 @@ def main() -> None:
     if not final_model:
         raise RuntimeError("Training did not produce a final model checkpoint")
 
-    version_stem = args.version_stem or run_name
     promoted = promote_foundation_checkpoint(
         source_ckpt=Path(final_model),
         display_name=args.profile_name,
-        version_stem=version_stem,
+        version_stem=args.version_stem,
         source_run_dir=run_dir,
     )
 

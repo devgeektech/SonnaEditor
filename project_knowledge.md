@@ -29,7 +29,7 @@ The core inference flow is:
 - `v1_learning/`: legacy model artifacts and training outputs
 - `.saha/`: repo-local runtime state for active-profile selection, recent folders, job snapshots, Personal AI training scratch runs, and fine-tune scratch runs. Auto-created at runtime and gitignored.
 - `MAC_SETUP.md`: Mac-specific setup and run guide covering clean install, backend/frontend startup, frontend-capable workflows, and CLI equivalents.
-- `SonnaEditorFoundation/`: repo-local hidden foundation-model folder by default, or `SONNA_FOUNDATION_REPO` if overridden. It contains `foundation_manifest.json` and versioned `checkpoints/*.ckpt` files. Keep this out of gitignored `data/` but inside the SonnaEditor project root so the workspace stays self-contained.
+- `SonnaEditorFoundation/`: repo-local hidden foundation-model folder by default, or `SONNA_FOUNDATION_REPO` if overridden. It contains schema-v2 `foundation_manifest.json` with `active_version` / `versions[]` lineage metadata and versioned `checkpoints/foundation-vN.ckpt` files. Keep this out of gitignored `data/` but inside the SonnaEditor project root so the workspace stays self-contained.
 
  ## Source Package Map (`src/sonna_editor`)
 
@@ -41,7 +41,7 @@ This section tracks what each backend source file/folder does. Keep it updated w
 |---|---|
 | `src/sonna_editor/__init__.py` | Package marker for the backend Python package. |
 | `src/sonna_editor/config.py` | Central constants: repo-root/runtime paths, auto-created working-directory helpers, supported RAW extensions, model resolution, six scene-stat metadata field names, 147-slider field order, slider ranges, defaults, loss weights, confidence settings, and frontend-visible checkpoint directory `v1_learning/`. |
-| `src/sonna_editor/foundation.py` | Foundation checkpoint discovery, foundation folder layout creation, manifest writing, and promotion of trained checkpoints into the repo-local hidden foundation folder. |
+| `src/sonna_editor/foundation.py` | Foundation checkpoint discovery, foundation folder layout creation, schema-v2 manifest writing, version listing, rollback helpers, provenance metadata, and promotion of trained checkpoints into the repo-local hidden foundation folder. |
 | `src/sonna_editor/runtime.py` | Runtime helpers for selecting CUDA, Apple MPS, or CPU and configuring data-loader pinned memory safely across platforms. |
 | `src/sonna_editor/slider_set.py` | Slider-set version helpers for `v1`/`v2`, preventing checkpoint and tensor shape mismatches. |
 
@@ -63,7 +63,7 @@ This section tracks what each backend source file/folder does. Keep it updated w
 | Path | Purpose |
 |---|---|
 | `src/sonna_editor/model/__init__.py` | Package marker for model code. |
-| `src/sonna_editor/model/architecture.py` | Main PyTorch model stack: `EmbeddingRegistry`, `MetadataEncoder`, `SonnaEditor`, ConvNeXt image backbone, metadata fusion, slider-group heads, WB metadata-skip residual behavior, scene-stat metadata path, fresh `arch_version=3` staged-head conditioning, and native checkpoint save/load. |
+| `src/sonna_editor/model/architecture.py` | Main PyTorch model stack: `EmbeddingRegistry`, `MetadataEncoder`, `SonnaEditor`, ConvNeXt image backbone, metadata fusion, slider-group heads, WB metadata-skip residual behavior, scene-stat metadata path, fresh `arch_version=3` staged-head conditioning, backbone freeze/unfreeze helpers, and native checkpoint save/load. |
 | `src/sonna_editor/model/augmentation.py` | Image-only training/validation augmentation. Target slider values are never augmented. |
 | `src/sonna_editor/model/losses.py` | `WeightedSliderLoss`, range-normalized MSE, per-field weights, WB bucket losses, sign-wrong penalty, direction stats, and per-field MAE metrics. |
 | `src/sonna_editor/model/postprocess.py` | Converts raw model outputs into Lightroom units, including log-Kelvin Temperature exponentiation, range clamping, and tensor-to-slider-dict mapping. |
@@ -76,7 +76,7 @@ This section tracks what each backend source file/folder does. Keep it updated w
 | `src/sonna_editor/training/callbacks.py` | Training alert callbacks for NaN loss, overfitting, disk space, ETA, loss balance, critical MAE, and overcorrection warnings. |
 | `src/sonna_editor/training/datamodule.py` | Lightning data module and dataset wrapper. Builds embedding registries from parquet rows, loads thumbnails/metadata/histograms/scene stats, emits image tensors, metadata tensors, targets, and sample weights. Old parquets without scene-stat columns are approximated from RGB histograms. |
 | `src/sonna_editor/training/image_foundation.py` | Image-to-image foundation training path for paired `RAW/DNG/image -> edited TIFF` data. Matches pairs by stem, trains a ConvNeXt encoder plus lightweight decoder with L1 + SSIM loss, and saves `image_to_image_v1` checkpoints whose backbone can warm-start `SonnaEditor`. |
-| `src/sonna_editor/training/module.py` | Lightning module around `SonnaEditor`: forward pass, train/val/test steps, optimizer/scheduler setup, loss logging, MAE aggregation, and validation distribution/std-ratio logging for key sliders. |
+| `src/sonna_editor/training/module.py` | Lightning module around `SonnaEditor`: forward pass, train/val/test steps, optimizer/scheduler setup, progressive backbone freeze/unfreeze handling, loss logging, MAE aggregation, and validation distribution/std-ratio logging for key sliders. |
 | `src/sonna_editor/training/unfreeze_callback.py` | Backbone-unfreeze callback that resets early stopping after frozen-backbone warmup completes. |
 
 ### Inference Package
@@ -217,6 +217,7 @@ This section tracks what each backend source file/folder does. Keep it updated w
 ### `src/sonna_editor/training/profile_runner.py`
 - packaged training runner used by both the CLI wrapper and the frontend Personal AI route
 - supports `--base-model-checkpoint` for foundation warm-starts without resuming optimizer/epoch state; warm-starts keep the new training dataset registry and skip categorical embedding-table copies
+- supports image-foundation warm-start target-prior initialisation and configurable backbone unfreeze strategies (`partial`, `full`, `progressive`)
 - owns the production training callable, published checkpoint/sidecar creation, optional epoch callbacks for job progress, and cancellation handling before test/save/publish
 
 ### `scripts/train_profile.py`
@@ -253,7 +254,9 @@ This section tracks what each backend source file/folder does. Keep it updated w
 
 - `scripts/build_dataset.py`: generate training dataset from RAW + XMP
 - `scripts/build_dataset_from_catalog.py`: generate training dataset from Lightroom catalog develop settings
-- `scripts/train_foundation_model.py`: current foundation-training command. It supports parameter-supervised training from real Lightroom slider labels (`RAW+XMP` or trusted prepared splits) and image-supervised training from paired `RAW/DNG -> expert TIFF` folders. Both paths avoid frontend publishing, warm-start from the active foundation checkpoint by default, save a new versioned checkpoint, and promote that checkpoint into the configured foundation folder. Foundation defaults use batch size 8; the RAW+XMP path auto-retries with smaller batches after CUDA memory failures.
+- `scripts/train_foundation_model.py`: current foundation-training command. It supports parameter-supervised training from real Lightroom slider labels (`RAW+XMP` or trusted prepared splits) and image-supervised training from paired `RAW/DNG -> expert TIFF` folders. Both paths avoid frontend publishing, warm-start from the active foundation checkpoint by default, save a new versioned checkpoint, and promote that checkpoint into the configured foundation folder. Promotion auto-allocates `foundation-vN` when no version stem is supplied. Foundation defaults use batch size 8; the RAW+XMP path auto-retries with smaller batches after CUDA memory failures.
+- `scripts/rollback_foundation.py`: lists foundation manifest versions and rolls back the active foundation pointer to a previous version without deleting or overwriting checkpoint files.
+- `scripts/analyse_backbone_drift.py`: compares ConvNeXt `backbone_features` tensors between a foundation checkpoint and a Personal AI checkpoint, reporting per-stage relative drift, cosine similarity, and the largest tensor changes.
 - `scripts/run_style_survey.py`: create the Mode B/Lite survey JSON used with preset-based checkpoint creation
 - `scripts/build_mode_b_checkpoint.py`: create a Lite checkpoint from preset + survey + configured foundation checkpoint; if `--output` is omitted it publishes the next `v1_learning/model-v0.N.0.ckpt` for frontend visibility
 - `scripts/process_shoot_preset.py`: direct preset-to-XMP execution with heuristic per-photo corrections, without creating a model checkpoint
@@ -293,7 +296,8 @@ Lite checkpoints are marked with `profile_type: mode_b_initial` in the sidecar J
 - Mac setup runbook, 2026-06-03: `MAC_SETUP.md` documents Apple Silicon setup from system tools through backend/frontend startup, Personal AI, Lite profiles, processing, fine-tuning, diagnostics, and CLI equivalents for frontend-capable steps.
 - Foundation/Lite decoupling, 2026-06-03: Lite profile creation now resolves the configured foundation checkpoint through `sonna_editor.foundation.resolve_foundation_checkpoint()` instead of using the active Personal AI profile. `scripts/train_foundation_model.py` is the canonical CLI for real-parameter foundation training or image-pair TIFF foundation training, then promotion into the repo-local hidden foundation folder.
 - FiveK TIFF foundation path, 2026-06-03: MIT-Adobe FiveK should not be forced into the current RAW+XMP pipeline. FiveK provides 5,000 DNG inputs and five expert TIFF renditions, not direct XMP labels. `src/sonna_editor/training/image_foundation.py` now implements paired image training from DNG/image inputs to expert TIFF targets and saves `image_to_image_v1` backbone checkpoints. Personal AI warm-start and Lite profile creation can copy those backbone weights into a fresh `SonnaEditor` while keeping Mode A as RAW+XMP slider regression. Only investigate `fivek.lrcat` slider extraction as a separate research path.
-- Foundation checkpoint versioning, 2026-06-03: promotion never overwrites old foundation checkpoints. Each run updates `foundation_manifest.json` so the new checkpoint becomes active, keeps recent history, and `resolve_foundation_checkpoint()` falls back to the newest remaining checkpoint if the active manifest target has been removed.
+- Foundation checkpoint versioning, 2026-06-03 and schema-v2 update 2026-06-04: promotion never overwrites old foundation checkpoints. Each run updates `foundation_manifest.json` so the new checkpoint becomes active, records `active_version`, `versions[]`, SHA256, capabilities, and training source tags, and `scripts/rollback_foundation.py` can switch the active version without deleting files. `resolve_foundation_checkpoint()` still falls back to the newest remaining checkpoint if the active manifest target has been removed.
+- Foundation warm-start retention, 2026-06-04: frontend Personal AI and RAW+XMP foundation training now use a progressive backbone schedule by default: full backbone frozen first, then later ConvNeXt stages unfreeze before full fine-tuning. Image-to-image foundation warm starts initialise slider output heads from RAW+XMP target medians so randomly initialised heads do not immediately push noisy gradients into the transferred backbone. Use `scripts/analyse_backbone_drift.py` after training to quantify whether foundation features were preserved.
 - RAW+XMP foundation runbook cleanup, 2026-06-03 and path correction 2026-06-04: `FOUNDATION_TRAINING.md` now documents the parameter-supervised foundation path with direct script commands only: export Lightroom XMP sidecars, place source files under `data/training_sources/`, build inspectable Parquet splits, audit the dataset, then train from `--splits-dir` or use the direct `--raw-xmp-dir` shortcut. `CLI_COMMANDS.md`, `RUN.md`, `MAC_SETUP.md`, `README.md`, `HANDOVER.md`, and `SESSION_STATE.md` are aligned with the repo-local `SonnaEditorFoundation/` folder and the current cleared-local-cache state.
 - Dataset audit dependency fix, 2026-06-03: `matplotlib` is now a base dependency so `scripts/audit_catalog.py` can generate ISO and slider-distribution PNGs without optional-import warnings. The audit CLI prints ASCII status labels to avoid Windows PowerShell emoji encoding errors.
 - Foundation CUDA OOM fix, 2026-06-03: `scripts/train_foundation_model.py` defaults to batch size 8 and wraps RAW+XMP slider-regression training in CUDA-memory retry logic. On `CUDA out of memory` or `CUDNN_STATUS_EXECUTION_FAILED_CUDART`, it clears the CUDA cache and retries with halved batch sizes. A one-epoch RTX 3050 smoke passed at batch 8.
@@ -317,3 +321,4 @@ Lite checkpoints are marked with `profile_type: mode_b_initial` in the sidecar J
 - Fixture-dependent RAW/XMP tests in `tests/test_extract.py` and `tests/test_xmp.py` now skip automatically when private local files such as `tests/fixtures/sample.cr3`, `sample.xmp`, or `sample_edit.xmp` are absent or unreadable. Restore those fixtures only when you want live RAW extraction and real Lightroom XMP parsing coverage.
 - Build a larger edited dataset before trying another full model improvement run; the 189-photo local dataset lets median-prior models look good on MAE while failing prediction-spread/collapse checks.
 - Run `scripts/analyse_prediction_collapse.py` after every candidate training run before publishing or activating it.
+- Run `scripts/analyse_backbone_drift.py` for every foundation warm-start ablation to measure feature retention from the selected foundation checkpoint into the final Personal AI checkpoint.

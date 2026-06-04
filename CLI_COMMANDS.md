@@ -42,9 +42,15 @@ checkpoint under `SonnaEditorFoundation\checkpoints\`, and makes that new
 checkpoint active in `foundation_manifest.json`. The default foundation folder is
 the repo-local `SonnaEditorFoundation/` child folder, not gitignored `data/`.
 That folder is tracked by the parent repo; checkpoint binaries are handled by
-Git LFS. Existing checkpoints are not overwritten. If a new run is bad, remove
-that new `.ckpt`; the resolver falls back to the newest remaining checkpoint.
-Use `--no-warm-start` only for a deliberate scratch foundation run.
+Git LFS. Existing checkpoints are not overwritten. New runs auto-promote as
+`foundation-vN` unless a version stem is supplied. If a new run is bad, roll
+back the active manifest pointer instead of deleting checkpoints:
+`uv run python scripts\rollback_foundation.py --list`, then
+`uv run python scripts\rollback_foundation.py foundation-vN`. Use
+`--no-warm-start` only for a deliberate scratch foundation run. Frontend
+Personal AI and RAW+XMP foundation warm-starts now use the progressive backbone
+schedule by default: full backbone frozen first, later stages unfreezing before
+full fine-tuning.
 
 ## Project Flow
 
@@ -105,7 +111,7 @@ Use `--no-warm-start` only for a deliberate scratch foundation run.
 | Personal AI dataset output root | `v1_learning/dataset/` or frontend job workspace | Used for frontend-visible profile training |
 | Foundation training workspace | `SONNA_TRAINING_WORKSPACE` or `data/training_workspace/` | Generated foundation datasets and run folders |
 | Foundation repo | `SONNA_FOUNDATION_REPO` or repo-local `SonnaEditorFoundation/` | Promoted hidden checkpoints, outside gitignored `data/` |
-| Foundation manifest | `<foundation_repo>/foundation_manifest.json` | Active foundation pointer and history |
+| Foundation manifest | `<foundation_repo>/foundation_manifest.json` | Active foundation version, checkpoint pointer, version list, hashes, and capabilities |
 | Foundation checkpoint path | `<foundation_repo>/checkpoints/<version>.ckpt` | Never overwrite old checkpoints |
 | Personal AI training run outputs | `data/models/<run_name>/` or frontend job workspace | Non-foundation profile training artifacts |
 | Best native checkpoint for a run | `<run_output>/model.ckpt` | Best validation checkpoint exported by trainer |

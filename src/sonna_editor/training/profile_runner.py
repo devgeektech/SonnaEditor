@@ -88,6 +88,16 @@ def _parse_args() -> argparse.Namespace:
     p.add_argument("--weight-decay",  type=float, default=1e-4)
     p.add_argument("--freeze-backbone-epochs", type=int, default=3,
                    help="Number of epochs to keep backbone frozen (default: 3)")
+    p.add_argument(
+        "--backbone-unfreeze-strategy",
+        choices=("partial", "full", "progressive"),
+        default="partial",
+        help=(
+            "Backbone freeze schedule: partial preserves legacy stage-0/1 freeze; "
+            "full freezes all stages until --freeze-backbone-epochs; progressive "
+            "freezes all stages then unfreezes upper/mid/all stages at epochs 5/10/15."
+        ),
+    )
     p.add_argument("--num-workers",   type=int,   default=4)
     p.add_argument("--resume-from-checkpoint", type=Path, default=None, metavar="CKPT")
     p.add_argument(
@@ -295,8 +305,9 @@ def _profile_sidecar_payload(
     use_wb_metadata_skip: bool,
     train_rows: int,
     val_loss: float,
+    foundation_provenance: dict[str, Any] | None = None,
 ) -> dict:
-    return {
+    payload = {
         "display_name": display_name,
         "profile_type": "mode_a_trained",
         "profile_id": profile_id,
@@ -311,6 +322,9 @@ def _profile_sidecar_payload(
         "train_rows": train_rows,
         "val_loss": val_loss,
     }
+    if foundation_provenance:
+        payload.update(foundation_provenance)
+    return payload
 
 
 def _write_sidecar(path: Path, payload: dict) -> None:
@@ -343,6 +357,14 @@ def _training_target_priors(train_parquet: Path, slider_set_version: str) -> dic
         elif field in config.SLIDER_DEFAULTS:
             priors[field] = float(config.SLIDER_DEFAULTS[field])
     return priors
+
+
+def _is_image_foundation_warm_start(checkpoint_path: Path | None) -> bool:
+    if checkpoint_path is None:
+        return False
+    from sonna_editor.foundation import is_image_foundation_checkpoint
+
+    return is_image_foundation_checkpoint(checkpoint_path)
 
 
 def _trainer_log_every_n_steps(num_train_batches: int, preferred: int = 10) -> int:
@@ -451,6 +473,30 @@ def _warm_start_model_from_checkpoint(
     return model
 
 
+def _foundation_provenance(checkpoint_path: Path | None) -> dict[str, Any] | None:
+    if checkpoint_path is None:
+        return None
+    from sonna_editor.foundation import describe_foundation_checkpoint
+
+    return describe_foundation_checkpoint(checkpoint_path)
+
+
+def _initialise_image_foundation_output_priors(
+    *,
+    model: Any,
+    base_model_checkpoint: Path | None,
+    train_parquet: Path,
+    slider_set_version: str,
+    disabled: bool,
+) -> dict[str, float] | None:
+    """Initialise random slider heads after an image-foundation warm start."""
+    if disabled or not _is_image_foundation_warm_start(base_model_checkpoint):
+        return None
+    priors = _training_target_priors(train_parquet, slider_set_version)
+    model.initialise_output_priors(priors)
+    return priors
+
+
 def _publish_profile_checkpoint(
     *,
     source_ckpt: Path,
@@ -462,6 +508,7 @@ def _publish_profile_checkpoint(
     use_wb_metadata_skip: bool,
     train_rows: int,
     val_loss: float,
+    foundation_provenance: dict[str, Any] | None = None,
 ) -> Path:
     """Copy the trained native checkpoint into the directory scanned by the UI."""
     publish_dir.mkdir(parents=True, exist_ok=True)
@@ -489,6 +536,7 @@ def _publish_profile_checkpoint(
             use_wb_metadata_skip=use_wb_metadata_skip,
             train_rows=train_rows,
             val_loss=val_loss,
+            foundation_provenance=foundation_provenance,
         ),
     )
     return dest
@@ -552,6 +600,11 @@ def train_profile(args: argparse.Namespace) -> dict:
     checkpoint_to_load = resume_checkpoint or base_model_checkpoint
     if checkpoint_to_load and not checkpoint_to_load.exists():
         raise FileNotFoundError(f"Checkpoint does not exist: {checkpoint_to_load}")
+    foundation_provenance = (
+        _foundation_provenance(base_model_checkpoint)
+        if base_model_checkpoint is not None and resume_checkpoint is None
+        else None
+    )
 
     if checkpoint_to_load:
         if resume_checkpoint:
@@ -569,6 +622,21 @@ def train_profile(args: argparse.Namespace) -> dict:
             raise ValueError(
                 f"--slider-set-version={args.slider_set_version!r} does not match "
                 f"checkpoint slider_set_version={model._slider_set_version!r}"
+            )
+        priors = _initialise_image_foundation_output_priors(
+            model=model,
+            base_model_checkpoint=base_model_checkpoint if not resume_checkpoint else None,
+            train_parquet=args.train_parquet,
+            slider_set_version=args.slider_set_version,
+            disabled=args.no_target_prior_init,
+        )
+        if priors is not None:
+            log.info(
+                "Initialised image-foundation warm-start heads from training target "
+                "medians (Exposure2012=%0.3f, Temperature=%0.0f, Tint=%0.2f)",
+                priors.get("Exposure2012", 0.0),
+                priors.get("Temperature", 0.0),
+                priors.get("Tint", 0.0),
             )
     else:
         model = SonnaEditor(
@@ -599,6 +667,7 @@ def train_profile(args: argparse.Namespace) -> dict:
         lr=args.lr,
         weight_decay=args.weight_decay,
         freeze_backbone_epochs=args.freeze_backbone_epochs,
+        backbone_unfreeze_strategy=getattr(args, "backbone_unfreeze_strategy", "partial"),
     )
 
     # -----------------------------------------------------------------------
@@ -670,11 +739,15 @@ def train_profile(args: argparse.Namespace) -> dict:
                 "weight_decay": args.weight_decay,
                 "batch_size": args.batch_size,
                 "freeze_backbone_epochs": args.freeze_backbone_epochs,
+                "backbone_unfreeze_strategy": getattr(
+                    args, "backbone_unfreeze_strategy", "partial"
+                ),
                 "image_resolution": config.IMAGE_RESOLUTION,
                 "slider_set_version": args.slider_set_version,
                 "use_wb_metadata_skip": not args.no_wb_metadata_skip,
                 "target_prior_init": not args.no_target_prior_init,
                 "base_model_checkpoint": str(base_model_checkpoint) if base_model_checkpoint else None,
+                "foundation_provenance": foundation_provenance,
             },
         }
         summary_path = args.output_dir / "training_summary.json"
@@ -714,6 +787,7 @@ def train_profile(args: argparse.Namespace) -> dict:
             use_wb_metadata_skip=lightning_module.model._use_wb_metadata_skip,
             train_rows=len(dm._train_ds),
             val_loss=best_val_loss,
+            foundation_provenance=foundation_provenance,
         ),
     )
     log.info("Saved model sidecar to %s", sidecar_path)
@@ -730,6 +804,7 @@ def train_profile(args: argparse.Namespace) -> dict:
             use_wb_metadata_skip=lightning_module.model._use_wb_metadata_skip,
             train_rows=len(dm._train_ds),
             val_loss=best_val_loss,
+            foundation_provenance=foundation_provenance,
         )
         published_model_path = str(published)
         log.info("Published frontend-visible profile to %s", published)
@@ -747,11 +822,15 @@ def train_profile(args: argparse.Namespace) -> dict:
             "weight_decay": args.weight_decay,
             "batch_size": args.batch_size,
             "freeze_backbone_epochs": args.freeze_backbone_epochs,
+            "backbone_unfreeze_strategy": getattr(
+                args, "backbone_unfreeze_strategy", "partial"
+            ),
             "image_resolution": config.IMAGE_RESOLUTION,
             "slider_set_version": args.slider_set_version,
             "use_wb_metadata_skip": not args.no_wb_metadata_skip,
             "target_prior_init": not args.no_target_prior_init,
             "base_model_checkpoint": str(base_model_checkpoint) if base_model_checkpoint else None,
+            "foundation_provenance": foundation_provenance,
             "temperature_weight": args.temperature_weight,
             "tint_weight": args.tint_weight,
             "exposure_weight": args.exposure_weight,

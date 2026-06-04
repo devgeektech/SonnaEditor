@@ -71,13 +71,19 @@ preference, preset behaviour, and event-specific colour grading.
 Every foundation training run writes a new versioned checkpoint under:
 
 ```text
-SonnaEditorFoundation/checkpoints/<version-stem>.ckpt
+SonnaEditorFoundation/checkpoints/foundation-vN.ckpt
 ```
 
 The previous checkpoint is never overwritten. After a successful run,
 `foundation_manifest.json` is updated so the new checkpoint becomes the active
 default foundation model for Personal AI and Lite profile creation. The manifest
-also keeps recent history entries so the previous active checkpoint is visible.
+uses schema version 2 and records `active_version`, `active_checkpoint`,
+`versions[]`, checkpoint SHA256 hashes, foundation type, capabilities, training
+source tags, and recent compatibility history.
+`trained_on` is cumulative lineage metadata: if the active foundation has been
+warm-started through both RAW+XMP and TIFF runs, the manifest records both
+sources even though `capabilities` still describe the concrete checkpoint heads
+that are present in the active file.
 
 By default, each new foundation run **warm-starts from the currently active
 foundation checkpoint**:
@@ -96,11 +102,42 @@ new checkpoint = previous active foundation + new dataset training
 ```
 
 The previous active checkpoint file stays untouched. If a bad new checkpoint is
-promoted, remove that bad `.ckpt` file from `SonnaEditorFoundation\checkpoints\`.
+promoted, roll back by changing the active manifest pointer:
+
+```powershell
+uv run python scripts\rollback_foundation.py --list
+uv run python scripts\rollback_foundation.py foundation-v3
+```
+
 When the manifest points at a missing active checkpoint, the resolver falls back
-to the newest remaining checkpoint in that folder. For a deliberate scratch
-foundation run that should not warm-start from the active checkpoint, pass
-`--no-warm-start`.
+to the newest remaining checkpoint in that folder as a recovery guard. For a
+deliberate scratch foundation run that should not warm-start from the active
+checkpoint, pass `--no-warm-start`.
+
+## Personal AI Warm-Start Retention
+
+RAW+XMP Personal AI training and RAW+XMP foundation training can use three
+backbone unfreeze strategies:
+
+- `partial`: legacy behavior, stages 0 and 1 frozen initially.
+- `full`: full ConvNeXt backbone frozen until `--freeze-backbone-epochs`.
+- `progressive`: full backbone frozen first, then later stages unfreeze before
+  full fine-tuning.
+
+The frontend Personal AI route and RAW+XMP foundation CLI use `progressive` by
+default for foundation warm starts. This protects transferred foundation
+features while metadata, fusion layers, and slider heads adapt to the new
+RAW+XMP target distribution.
+
+After training a Personal AI candidate from a foundation checkpoint, measure
+feature retention with:
+
+```powershell
+uv run python scripts\analyse_backbone_drift.py `
+  --foundation-checkpoint SonnaEditorFoundation\checkpoints\foundation-v3.ckpt `
+  --personal-checkpoint v1_learning\model-v2.0.1.ckpt `
+  --output data\audits\foundation-v3-to-model-v2.0.1-backbone-drift.md
+```
 
 ## FiveK Dataset Notes
 
@@ -208,7 +245,7 @@ Expected outputs:
 ```text
 <project>\data\training_workspace\foundation_runs\foundation-fivek-image-expert-c-001\
 <project>\data\training_workspace\foundation_runs\foundation-fivek-image-expert-c-001\training\model.ckpt
-<project>\SonnaEditorFoundation\checkpoints\foundation-fivek-image-expert-c-001.ckpt
+<project>\SonnaEditorFoundation\checkpoints\foundation-vN.ckpt
 <project>\SonnaEditorFoundation\foundation_manifest.json
 ```
 
@@ -339,7 +376,7 @@ Expected outputs:
 ```text
 <project>\data\training_workspace\foundation_runs\foundation-sonna-raw-xmp-001\
 <project>\data\training_workspace\foundation_runs\foundation-sonna-raw-xmp-001\training\model.ckpt
-<project>\SonnaEditorFoundation\checkpoints\foundation-sonna-raw-xmp-001.ckpt
+<project>\SonnaEditorFoundation\checkpoints\foundation-vN.ckpt
 <project>\SonnaEditorFoundation\foundation_manifest.json
 ```
 

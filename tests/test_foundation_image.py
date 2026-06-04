@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pandas as pd
 import torch
 from PIL import Image
 
@@ -22,6 +23,7 @@ from sonna_editor.training.image_foundation import (
     split_image_pairs,
 )
 from sonna_editor.training.profile_runner import _warm_start_model_from_checkpoint
+from sonna_editor.training.profile_runner import _initialise_image_foundation_output_priors
 
 
 FIXTURE_PRESET = Path(__file__).parent / "fixtures" / "preset_sonna_v1.xmp"
@@ -117,6 +119,32 @@ def test_profile_training_warm_start_accepts_image_foundation(tmp_path: Path) ->
 
     assert isinstance(model, SonnaEditor)
     assert model._slider_set_version == config.CURRENT_SLIDER_SET_VERSION
+
+
+def test_image_foundation_warm_start_initialises_output_priors(tmp_path: Path) -> None:
+    ckpt = _write_image_foundation_checkpoint(tmp_path)
+    train_parquet = tmp_path / "train.parquet"
+    row = {field: 0.0 for field in config.SLIDER_FIELDS}
+    row["Exposure2012"] = 0.75
+    row["Temperature"] = 4800.0
+    row["Tint"] = 4.0
+    pd.DataFrame([row]).to_parquet(train_parquet)
+    model = SonnaEditor(_pretrained_backbone=False, slider_set_version="v2")
+    with torch.no_grad():
+        model.tone_head[-1].bias.zero_()
+
+    priors = _initialise_image_foundation_output_priors(
+        model=model,
+        base_model_checkpoint=ckpt,
+        train_parquet=train_parquet,
+        slider_set_version="v2",
+        disabled=False,
+    )
+
+    assert priors is not None
+    assert priors["Exposure2012"] == 0.75
+    assert model.tone_head[-1].bias[0].item() == 0.75
+    assert torch.allclose(model.wb_head[-1].bias, torch.zeros_like(model.wb_head[-1].bias))
 
 
 def test_mode_b_can_build_from_image_foundation_checkpoint(tmp_path: Path) -> None:

@@ -319,6 +319,27 @@ def test_configure_optimizers_has_scheduler(module: SonnaLightningModule) -> Non
     assert "lr_scheduler" in cfg
 
 
+def test_progressive_strategy_starts_with_full_backbone_frozen() -> None:
+    model = SonnaEditor(_pretrained_backbone=False)
+    module = SonnaLightningModule(model=model, backbone_unfreeze_strategy="progressive")
+
+    assert module.backbone_unfreeze_strategy == "progressive"
+    assert not any(p.requires_grad for p in model.backbone_features.parameters())
+    assert not any(p.requires_grad for p in model.backbone_norm.parameters())
+
+
+def test_unfreeze_backbone_from_stage_keeps_lower_stages_frozen() -> None:
+    model = SonnaEditor(_pretrained_backbone=False)
+    model.freeze_entire_backbone()
+    model.unfreeze_backbone_from_stage(6)
+
+    assert not any(p.requires_grad for p in model.backbone_features[0].parameters())
+    assert not any(p.requires_grad for p in model.backbone_features[5].parameters())
+    assert any(p.requires_grad for p in model.backbone_features[6].parameters())
+    assert any(p.requires_grad for p in model.backbone_features[7].parameters())
+    assert any(p.requires_grad for p in model.backbone_norm.parameters())
+
+
 def test_loss_fn_is_weighted_slider_loss(module: SonnaLightningModule) -> None:
     from sonna_editor.model.losses import WeightedSliderLoss
     assert isinstance(module.loss_fn, WeightedSliderLoss)

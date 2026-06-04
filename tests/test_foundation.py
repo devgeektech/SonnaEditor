@@ -5,9 +5,12 @@ from pathlib import Path
 
 from sonna_editor import config
 from sonna_editor.foundation import (
+    describe_foundation_checkpoint,
     ensure_foundation_repo_layout,
+    list_foundation_versions,
     promote_foundation_checkpoint,
     resolve_foundation_checkpoint,
+    rollback_foundation_checkpoint,
 )
 
 
@@ -47,7 +50,11 @@ def test_foundation_layout_and_resolution(
     assert resolve_foundation_checkpoint() == promoted
 
     manifest = json.loads((repo / "foundation_manifest.json").read_text(encoding="utf-8"))
+    assert manifest["schema_version"] == 2
+    assert manifest["active_version"] == "foundation-test"
     assert manifest["active_checkpoint"] == "checkpoints/foundation-test.ckpt"
+    assert manifest["versions"][0]["version"] == "foundation-test"
+    assert manifest["versions"][0]["sha256"] is not None
 
 
 def test_foundation_promotion_keeps_history_and_falls_back_when_active_removed(
@@ -81,9 +88,58 @@ def test_foundation_promotion_keeps_history_and_falls_back_when_active_removed(
 
     assert resolve_foundation_checkpoint() == promoted_second
     manifest = json.loads((repo / "foundation_manifest.json").read_text(encoding="utf-8"))
+    assert manifest["active_version"] == "foundation-002"
     assert manifest["active_checkpoint"] == "checkpoints/foundation-002.ckpt"
     assert manifest["history"][-1]["checkpoint"] == "checkpoints/foundation-001.ckpt"
 
     promoted_second.unlink()
 
     assert resolve_foundation_checkpoint() == promoted_first
+
+
+def test_foundation_auto_versions_and_explicit_rollback(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    repo = tmp_path / "foundation"
+    monkeypatch.setattr(config, "FOUNDATION_REPO_DIR", repo)
+    monkeypatch.delenv(config.FOUNDATION_REPO_ENV_VAR, raising=False)
+    monkeypatch.delenv(config.FOUNDATION_CHECKPOINT_ENV_VAR, raising=False)
+
+    source_dir = tmp_path / "run"
+    source_dir.mkdir()
+    first = source_dir / "first.ckpt"
+    first.write_bytes(b"first")
+    second = source_dir / "second.ckpt"
+    second.write_bytes(b"second")
+
+    promoted_first = promote_foundation_checkpoint(
+        source_ckpt=first,
+        display_name="Foundation First",
+        source_run_dir=source_dir,
+    )
+    promoted_second = promote_foundation_checkpoint(
+        source_ckpt=second,
+        display_name="Foundation Second",
+        source_run_dir=source_dir,
+    )
+
+    assert promoted_first.name == "foundation-v1.ckpt"
+    assert promoted_second.name == "foundation-v2.ckpt"
+    assert [v["version"] for v in list_foundation_versions()] == [
+        "foundation-v1",
+        "foundation-v2",
+    ]
+
+    active = rollback_foundation_checkpoint("foundation-v1")
+
+    assert active == promoted_first
+    assert resolve_foundation_checkpoint() == promoted_first
+    manifest = json.loads((repo / "foundation_manifest.json").read_text(encoding="utf-8"))
+    assert manifest["active_version"] == "foundation-v1"
+    assert manifest["active_checkpoint"] == "checkpoints/foundation-v1.ckpt"
+
+    provenance = describe_foundation_checkpoint(promoted_first)
+    assert provenance["foundation_version"] == "foundation-v1"
+    assert provenance["foundation_checkpoint"] == str(promoted_first.resolve())
+    assert provenance["foundation_sha256"] is not None
