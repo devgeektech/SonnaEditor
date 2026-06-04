@@ -9,8 +9,13 @@ from PIL import Image
 
 from sonna_editor import config
 from sonna_editor.foundation import (
+    HYBRID_FOUNDATION_TYPE,
+    IMAGE_DECODER_STATE_KEY,
+    carry_foundation_auxiliary_state,
+    foundation_requires_slider_prior_initialisation,
     is_image_foundation_checkpoint,
     load_sonna_model_from_foundation_checkpoint,
+    save_hybrid_foundation_checkpoint,
 )
 from sonna_editor.mode_b import survey as survey_mod
 from sonna_editor.mode_b.checkpoint_builder import build_mode_b_checkpoint
@@ -105,6 +110,62 @@ def test_image_foundation_checkpoint_loads_as_sonna_backbone(tmp_path: Path) -> 
 
     assert isinstance(model, SonnaEditor)
     assert model._slider_set_version == config.CURRENT_SLIDER_SET_VERSION
+
+
+def test_image_training_output_can_be_saved_as_hybrid_checkpoint(tmp_path: Path) -> None:
+    image_ckpt = _write_image_foundation_checkpoint(tmp_path)
+    hybrid_ckpt = tmp_path / "hybrid.ckpt"
+
+    save_hybrid_foundation_checkpoint(
+        image_checkpoint=image_ckpt,
+        output_checkpoint=hybrid_ckpt,
+        base_checkpoint=None,
+        image_resolution=32,
+        train_rows=3,
+        val_rows=1,
+        test_rows=1,
+        metrics={"best_val_loss": 0.1},
+    )
+
+    payload = torch.load(hybrid_ckpt, map_location="cpu", weights_only=False)
+    assert payload["foundation_type"] == HYBRID_FOUNDATION_TYPE
+    assert payload["arch_config"]["foundation_type"] == HYBRID_FOUNDATION_TYPE
+    assert IMAGE_DECODER_STATE_KEY in payload
+    assert payload["slider_heads_trained"] is False
+    assert foundation_requires_slider_prior_initialisation(hybrid_ckpt)
+
+    model = load_sonna_model_from_foundation_checkpoint(hybrid_ckpt)
+    assert model._slider_set_version == config.CURRENT_SLIDER_SET_VERSION
+
+
+def test_raw_xmp_foundation_save_carries_hybrid_decoder_forward(tmp_path: Path) -> None:
+    image_ckpt = _write_image_foundation_checkpoint(tmp_path)
+    hybrid_ckpt = tmp_path / "hybrid.ckpt"
+    save_hybrid_foundation_checkpoint(
+        image_checkpoint=image_ckpt,
+        output_checkpoint=hybrid_ckpt,
+        base_checkpoint=None,
+        image_resolution=32,
+        train_rows=3,
+        val_rows=1,
+        test_rows=1,
+        metrics={"best_val_loss": 0.1},
+    )
+    raw_xmp_ckpt = tmp_path / "raw_xmp.ckpt"
+    SonnaEditor(_pretrained_backbone=False, slider_set_version="v2").save_checkpoint(raw_xmp_ckpt)
+
+    carried = carry_foundation_auxiliary_state(
+        source_checkpoint=hybrid_ckpt,
+        destination_checkpoint=raw_xmp_ckpt,
+        trained_on=["raw_xmp"],
+    )
+
+    payload = torch.load(raw_xmp_ckpt, map_location="cpu", weights_only=False)
+    assert carried
+    assert payload["foundation_type"] == HYBRID_FOUNDATION_TYPE
+    assert IMAGE_DECODER_STATE_KEY in payload
+    assert payload["slider_heads_trained"] is True
+    assert not foundation_requires_slider_prior_initialisation(raw_xmp_ckpt)
 
 
 def test_profile_training_warm_start_accepts_image_foundation(tmp_path: Path) -> None:

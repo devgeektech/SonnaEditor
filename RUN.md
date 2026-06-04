@@ -119,11 +119,13 @@ Foundation has two implemented CLI paths:
 Every foundation run is versioned. By default, it warm-starts from the active
 foundation checkpoint, trains on the new dataset, writes a new checkpoint under
 `SonnaEditorFoundation\checkpoints\`, and makes that checkpoint active in
-`foundation_manifest.json`. Older checkpoints are kept. New runs auto-promote
-as `foundation-vN` unless a version stem is supplied. If a bad run is promoted,
-roll back the active manifest pointer with `scripts\rollback_foundation.py`
-rather than deleting checkpoints. Use `--no-warm-start` only for a deliberate
-scratch run.
+`foundation_manifest.json`. The active foundation checkpoint is cumulative:
+RAW+XMP runs update the SonnaEditor slider model and preserve any image decoder;
+TIFF runs update the visual backbone/decoder and preserve existing slider heads.
+Older checkpoints are kept. New runs auto-promote as `foundation-vN` unless a
+version stem is supplied. If a bad run is promoted, roll back the active
+manifest pointer with `scripts\rollback_foundation.py` rather than deleting
+checkpoints. Use `--no-warm-start` only for a deliberate scratch run.
 
 Dataset preparation code paths:
 
@@ -174,8 +176,9 @@ uv run python scripts\train_foundation_model.py `
   --workers 8
 ```
 
-This produces an `image_to_image_v1` foundation checkpoint. Mode A still trains
-from RAW+XMP; the TIFF checkpoint only warm-starts the visual backbone.
+This produces a hybrid foundation checkpoint. Mode A still trains from RAW+XMP;
+the TIFF path trains visual backbone/decoder state, not direct Lightroom slider
+labels.
 
 On the Windows RTX 3050 workstation, start foundation runs at `--batch-size 8`.
 The RAW+XMP foundation CLI automatically retries with smaller batch sizes after

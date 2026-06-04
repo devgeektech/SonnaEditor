@@ -362,9 +362,9 @@ def _training_target_priors(train_parquet: Path, slider_set_version: str) -> dic
 def _is_image_foundation_warm_start(checkpoint_path: Path | None) -> bool:
     if checkpoint_path is None:
         return False
-    from sonna_editor.foundation import is_image_foundation_checkpoint
+    from sonna_editor.foundation import foundation_requires_slider_prior_initialisation
 
-    return is_image_foundation_checkpoint(checkpoint_path)
+    return foundation_requires_slider_prior_initialisation(checkpoint_path)
 
 
 def _trainer_log_every_n_steps(num_train_batches: int, preferred: int = 10) -> int:

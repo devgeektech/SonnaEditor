@@ -25,6 +25,7 @@ import torch
 
 from sonna_editor import config
 from sonna_editor.foundation import (
+    carry_foundation_auxiliary_state,
     ensure_foundation_repo_layout,
     promote_foundation_checkpoint,
     resolve_foundation_checkpoint,
@@ -304,6 +305,12 @@ def main() -> None:
     final_model = summary.get("final_model")
     if not final_model:
         raise RuntimeError("Training did not produce a final model checkpoint")
+    if args.raw_image_dir is None:
+        carry_foundation_auxiliary_state(
+            source_checkpoint=base_foundation,
+            destination_checkpoint=Path(final_model),
+            trained_on=["raw_xmp"],
+        )
 
     promoted = promote_foundation_checkpoint(
         source_ckpt=Path(final_model),

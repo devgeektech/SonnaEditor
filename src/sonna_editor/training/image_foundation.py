@@ -458,8 +458,21 @@ def train_image_foundation(
         "test_loss": float(test_results[0].get("test_loss", 0.0)) if test_results else 0.0,
     }
     final_model = output_dir / "model.ckpt"
+    image_only_model = output_dir / "image_model.ckpt"
     module.model.save_checkpoint(
-        final_model,
+        image_only_model,
+        image_resolution=image_resolution,
+        train_rows=len(train_pairs),
+        val_rows=len(val_pairs),
+        test_rows=len(test_pairs),
+        metrics=metrics,
+    )
+    from sonna_editor.foundation import HYBRID_FOUNDATION_TYPE, save_hybrid_foundation_checkpoint
+
+    save_hybrid_foundation_checkpoint(
+        image_checkpoint=image_only_model,
+        output_checkpoint=final_model,
+        base_checkpoint=base_model_checkpoint,
         image_resolution=image_resolution,
         train_rows=len(train_pairs),
         val_rows=len(val_pairs),
@@ -469,9 +482,10 @@ def train_image_foundation(
 
     sidecar = {
         "display_name": profile_name,
-        "profile_type": "foundation_image_to_image",
-        "foundation_type": FOUNDATION_IMAGE_TYPE,
+        "profile_type": "foundation_hybrid",
+        "foundation_type": HYBRID_FOUNDATION_TYPE,
         "checkpoint_path": str(final_model.resolve()),
+        "image_only_checkpoint_path": str(image_only_model.resolve()),
         "date_iso": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
         "resolution": image_resolution,
         "train_rows": len(train_pairs),
@@ -483,16 +497,18 @@ def train_image_foundation(
             "lpips_weight": 0.0,
         },
         "notes": (
-            "Image-supervised foundation checkpoint trained from paired source images "
-            "and edited TIFF targets. It provides reusable ConvNeXt backbone weights; "
-            "it is not a Lightroom slider-regression checkpoint."
+            "Hybrid foundation checkpoint updated from paired source images and "
+            "edited TIFF targets. The promoted model.ckpt keeps the SonnaEditor "
+            "slider-regression model as the canonical checkpoint and stores the "
+            "image decoder as auxiliary foundation state."
         ),
     }
     (output_dir / "model.json").write_text(json.dumps(sidecar, indent=2) + "\n", encoding="utf-8")
 
     summary = {
-        "foundation_type": FOUNDATION_IMAGE_TYPE,
+        "foundation_type": HYBRID_FOUNDATION_TYPE,
         "final_model": str(final_model),
+        "image_only_model": str(image_only_model),
         "best_checkpoint": checkpoint.best_model_path,
         "metrics": metrics,
         "test_results": test_results[0] if test_results else {},

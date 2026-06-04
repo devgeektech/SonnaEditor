@@ -13,9 +13,11 @@ There are two foundation concepts in the project now:
   (`RAW + XMP` or catalog-derived develop settings), then promotes that
   checkpoint into the hidden repo-local foundation folder.
 - **Implemented TIFF direction:** MIT-Adobe FiveK can train an image-supervised
-  enhancement backbone from `RAW/DNG -> expert TIFF`. This is a separate
-  foundation-only path. Do not force FiveK TIFF targets through the current XMP
-  slider-regression pipeline.
+  enhancement model from `RAW/DNG -> expert TIFF`. New TIFF runs save a hybrid
+  foundation checkpoint: the `SonnaEditor` slider-regression model remains the
+  canonical checkpoint, and the image decoder is stored as auxiliary foundation
+  state in the same `.ckpt` file. Do not force FiveK TIFF targets through the
+  current XMP slider-regression pipeline.
 
 The current foundation checkpoint can still warm-start Personal AI and Lite
 profiles. The long-term target is a stronger image-supervised foundation
@@ -93,13 +95,27 @@ foundation checkpoint**:
   dataset.
 - TIFF/image foundation runs copy the active checkpoint's compatible ConvNeXt
   backbone weights, then train the image-to-image foundation model on the new
-  paired-image dataset.
+  paired-image dataset. The final promoted checkpoint carries existing slider
+  heads forward and stores the trained image decoder in the same file.
 
 This means a new run is effectively:
 
 ```text
 new checkpoint = previous active foundation + new dataset training
 ```
+
+The active checkpoint is now the cumulative foundation file for both supported
+training sources:
+
+- RAW+XMP runs update the `SonnaEditor` slider-regression weights and carry any
+  existing image decoder forward.
+- RAW/DNG->TIFF runs update the ConvNeXt backbone plus image decoder and carry
+  existing slider heads forward.
+
+If the first foundation run is TIFF-only, the generated hybrid checkpoint marks
+`slider_heads_trained=false`; the next RAW+XMP warm start will initialise slider
+head priors from the RAW+XMP target medians before training. After RAW+XMP
+training, the checkpoint marks `slider_heads_trained=true`.
 
 The previous active checkpoint file stays untouched. If a bad new checkpoint is
 promoted, roll back by changing the active manifest pointer:
@@ -213,7 +229,8 @@ The trainer:
 3. Train an image-supervised enhancement model with L1/MAE and SSIM loss.
    LPIPS is documented as a future optional enhancement and is not enabled in
    the current dependency set.
-4. Save reusable ConvNeXt backbone weights in an `image_to_image_v1` checkpoint.
+4. Save a hybrid foundation checkpoint with updated ConvNeXt backbone weights
+   and image decoder state while preserving any existing slider heads.
 5. Use those weights to initialise the existing `SonnaEditor` XMP-regression
    profile model.
 

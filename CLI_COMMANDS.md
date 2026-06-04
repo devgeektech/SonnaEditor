@@ -39,10 +39,13 @@ RAW+XMP data preparation and foundation training are not the same thing.
 Foundation runs are versioned. By default a new foundation run warm-starts from
 the active foundation checkpoint, trains on the new dataset, saves a new
 checkpoint under `SonnaEditorFoundation\checkpoints\`, and makes that new
-checkpoint active in `foundation_manifest.json`. The default foundation folder is
-the repo-local `SonnaEditorFoundation/` child folder, not gitignored `data/`.
-That folder is tracked by the parent repo; checkpoint binaries are handled by
-Git LFS. Existing checkpoints are not overwritten. New runs auto-promote as
+checkpoint active in `foundation_manifest.json`. The active checkpoint is the
+cumulative foundation file: RAW+XMP runs update slider-regression weights and
+carry any image decoder forward; TIFF runs update the visual backbone/decoder
+and carry existing slider heads forward. The default foundation folder is the
+repo-local `SonnaEditorFoundation/` child folder, not gitignored `data/`. That
+folder is tracked by the parent repo; checkpoint binaries are handled by Git
+LFS. Existing checkpoints are not overwritten. New runs auto-promote as
 `foundation-vN` unless a version stem is supplied. If a new run is bad, roll
 back the active manifest pointer instead of deleting checkpoints:
 `uv run python scripts\rollback_foundation.py --list`, then
