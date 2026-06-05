@@ -14,12 +14,9 @@ from typing import Any
 import torch
 
 from sonna_editor import config
-from sonna_editor.training.image_foundation import FOUNDATION_IMAGE_TYPE
 
 FOUNDATION_MANIFEST_SCHEMA_VERSION = 2
 DEFAULT_FOUNDATION_TYPE = "sonna_editor_slider_regression"
-HYBRID_FOUNDATION_TYPE = "hybrid_multitask"
-IMAGE_DECODER_STATE_KEY = "image_decoder_state"
 _FOUNDATION_VERSION_RE = re.compile(r"^foundation-v(\d+)$")
 
 
@@ -127,30 +124,16 @@ def _foundation_type_from_checkpoint(checkpoint_path: Path) -> str:
     return str(
         ckpt.get("foundation_type")
         or (ckpt.get("arch_config") or {}).get("foundation_type")
-        or (HYBRID_FOUNDATION_TYPE if IMAGE_DECODER_STATE_KEY in ckpt else None)
         or DEFAULT_FOUNDATION_TYPE
     )
 
 
 def _capabilities_for_foundation_type(foundation_type: str) -> list[str]:
-    if foundation_type == FOUNDATION_IMAGE_TYPE:
-        return ["backbone_features", "image_decoder"]
-    if foundation_type == HYBRID_FOUNDATION_TYPE:
-        return [
-            "backbone_features",
-            "metadata_encoder",
-            "slider_regression",
-            "image_decoder",
-        ]
     return ["backbone_features", "metadata_encoder", "slider_regression"]
 
 
 def _trained_on_for_foundation_type(foundation_type: str) -> list[str]:
-    if foundation_type == FOUNDATION_IMAGE_TYPE:
-        return ["raw_dng_tiff"]
-    if foundation_type == HYBRID_FOUNDATION_TYPE:
-        return ["raw_xmp", "raw_dng_tiff"]
-    return ["raw_xmp"]
+    return ["lightroom_parameters"]
 
 
 def _merge_training_sources(*sources: Any) -> list[str]:
@@ -166,42 +149,6 @@ def _merge_training_sources(*sources: Any) -> list[str]:
             if candidate not in ordered:
                 ordered.append(candidate)
     return ordered
-
-
-def _extract_decoder_state(payload: dict[str, Any]) -> dict[str, torch.Tensor]:
-    decoder_state = payload.get(IMAGE_DECODER_STATE_KEY)
-    if isinstance(decoder_state, dict):
-        return {
-            str(key): value
-            for key, value in decoder_state.items()
-            if isinstance(value, torch.Tensor)
-        }
-    model_state = payload.get("model_state")
-    if not isinstance(model_state, dict):
-        return {}
-    return {
-        str(key): value
-        for key, value in model_state.items()
-        if isinstance(key, str)
-        and isinstance(value, torch.Tensor)
-        and key.startswith("decoder.")
-    }
-
-
-def _copy_compatible_state(
-    *,
-    destination: dict[str, torch.Tensor],
-    source: dict[str, torch.Tensor],
-    prefixes: tuple[str, ...],
-) -> dict[str, torch.Tensor]:
-    return {
-        key: value
-        for key, value in source.items()
-        if key.startswith(prefixes)
-        and key in destination
-        and isinstance(value, torch.Tensor)
-        and destination[key].shape == value.shape
-    }
 
 
 def _normalise_version_stem(version_stem: str) -> str:
@@ -532,223 +479,3 @@ def rollback_foundation_checkpoint(version: str) -> Path:
     return checkpoint_path
 
 
-def carry_foundation_auxiliary_state(
-    *,
-    source_checkpoint: Path | None,
-    destination_checkpoint: Path,
-    trained_on: list[str] | None = None,
-) -> bool:
-    """Carry non-SonnaEditor foundation heads into a newly saved Sonna checkpoint.
-
-    RAW+XMP training saves a native `SonnaEditor` checkpoint. When it warm-starts
-    from a hybrid/image foundation checkpoint, this helper preserves the image
-    decoder and marks the result as a hybrid foundation checkpoint so later TIFF
-    training can keep using the same active file.
-    """
-    if source_checkpoint is None or not source_checkpoint.exists():
-        return False
-    source = torch.load(source_checkpoint, map_location="cpu", weights_only=False)
-    if not isinstance(source, dict):
-        return False
-    decoder_state = _extract_decoder_state(source)
-    if not decoder_state:
-        return False
-
-    destination = torch.load(destination_checkpoint, map_location="cpu", weights_only=False)
-    if not isinstance(destination, dict):
-        return False
-    destination[IMAGE_DECODER_STATE_KEY] = decoder_state
-    destination["foundation_type"] = HYBRID_FOUNDATION_TYPE
-    destination["slider_heads_trained"] = True
-    arch_config = destination.setdefault("arch_config", {})
-    if isinstance(arch_config, dict):
-        arch_config["foundation_type"] = HYBRID_FOUNDATION_TYPE
-        arch_config["slider_heads_trained"] = True
-    destination["foundation_trained_on"] = _merge_training_sources(
-        source.get("foundation_trained_on"),
-        (source.get("arch_config") or {}).get("foundation_trained_on")
-        if isinstance(source.get("arch_config"), dict)
-        else None,
-        _trained_on_for_foundation_type(_foundation_type_from_checkpoint(source_checkpoint)),
-        trained_on,
-    )
-    if "image_metrics" in source:
-        destination["image_metrics"] = source["image_metrics"]
-    torch.save(destination, destination_checkpoint)
-    return True
-
-
-def save_hybrid_foundation_checkpoint(
-    *,
-    image_checkpoint: Path,
-    output_checkpoint: Path,
-    base_checkpoint: Path | None,
-    image_resolution: int,
-    train_rows: int,
-    val_rows: int,
-    test_rows: int,
-    metrics: dict[str, float],
-) -> Path:
-    """Save one foundation checkpoint containing slider model + image decoder.
-
-    TIFF/image training updates the ConvNeXt backbone and decoder. This function
-    writes those learned visual weights into a `SonnaEditor` checkpoint while
-    preserving slider heads from the previous active foundation checkpoint when
-    they exist.
-    """
-    from sonna_editor.model.architecture import SonnaEditor
-
-    image_payload = torch.load(image_checkpoint, map_location="cpu", weights_only=False)
-    if not isinstance(image_payload, dict) or "model_state" not in image_payload:
-        raise ValueError(f"Invalid image foundation checkpoint: {image_checkpoint}")
-    image_state = image_payload["model_state"]
-    if not isinstance(image_state, dict):
-        raise ValueError(f"Image foundation checkpoint has invalid model_state: {image_checkpoint}")
-
-    base_payload: dict[str, Any] | None = None
-    if base_checkpoint is not None and base_checkpoint.exists():
-        loaded = torch.load(base_checkpoint, map_location="cpu", weights_only=False)
-        if isinstance(loaded, dict):
-            base_payload = loaded
-
-    if base_payload is not None and "registry" in base_payload:
-        sonna_model = SonnaEditor.from_checkpoint(base_checkpoint)
-    else:
-        sonna_model = SonnaEditor(
-            _pretrained_backbone=False,
-            arch_version=3,
-            slider_set_version=config.CURRENT_SLIDER_SET_VERSION,
-            use_wb_metadata_skip=True,
-        )
-
-    current_state = sonna_model.state_dict()
-    backbone_state = _copy_compatible_state(
-        destination=current_state,
-        source=image_state,
-        prefixes=("backbone_features.",),
-    )
-    sonna_model.load_state_dict(backbone_state, strict=False)
-    sonna_model.save_checkpoint(output_checkpoint)
-
-    hybrid_payload = torch.load(output_checkpoint, map_location="cpu", weights_only=False)
-    if not isinstance(hybrid_payload, dict):
-        raise ValueError(f"Invalid Sonna checkpoint after save: {output_checkpoint}")
-
-    decoder_state = _extract_decoder_state(image_payload)
-    hybrid_payload[IMAGE_DECODER_STATE_KEY] = decoder_state
-    hybrid_payload["foundation_type"] = HYBRID_FOUNDATION_TYPE
-    hybrid_payload["image_metrics"] = metrics
-    base_type = (
-        _foundation_type_from_checkpoint(base_checkpoint)
-        if base_checkpoint is not None and base_checkpoint.exists()
-        else None
-    )
-    base_slider_heads_trained = True
-    if base_payload is not None:
-        base_arch = base_payload.get("arch_config") or {}
-        if isinstance(base_arch, dict):
-            base_slider_heads_trained = bool(
-                base_payload.get("slider_heads_trained", base_arch.get("slider_heads_trained", True))
-            )
-    hybrid_payload["slider_heads_trained"] = bool(
-        base_payload is not None
-        and "registry" in base_payload
-        and base_type != FOUNDATION_IMAGE_TYPE
-        and base_slider_heads_trained
-    )
-    hybrid_payload["foundation_trained_on"] = _merge_training_sources(
-        base_payload.get("foundation_trained_on") if base_payload else None,
-        (base_payload.get("arch_config") or {}).get("foundation_trained_on")
-        if base_payload and isinstance(base_payload.get("arch_config"), dict)
-        else None,
-        _trained_on_for_foundation_type(_foundation_type_from_checkpoint(base_checkpoint))
-        if base_checkpoint is not None and base_checkpoint.exists()
-        else None,
-        ["raw_dng_tiff"],
-    )
-    arch_config = hybrid_payload.setdefault("arch_config", {})
-    if isinstance(arch_config, dict):
-        arch_config["foundation_type"] = HYBRID_FOUNDATION_TYPE
-        arch_config["slider_heads_trained"] = hybrid_payload["slider_heads_trained"]
-        arch_config["image_resolution"] = image_resolution
-        arch_config["image_train_rows"] = train_rows
-        arch_config["image_val_rows"] = val_rows
-        arch_config["image_test_rows"] = test_rows
-        arch_config["foundation_trained_on"] = hybrid_payload["foundation_trained_on"]
-    torch.save(hybrid_payload, output_checkpoint)
-    return output_checkpoint
-
-
-def foundation_requires_slider_prior_initialisation(path: Path) -> bool:
-    """Return True when a foundation warm start has untrained slider heads."""
-    ckpt = torch.load(path, map_location="cpu", weights_only=False)
-    if not isinstance(ckpt, dict):
-        return False
-    foundation_type = _foundation_type_from_checkpoint(path)
-    if foundation_type == FOUNDATION_IMAGE_TYPE:
-        return True
-    if foundation_type != HYBRID_FOUNDATION_TYPE:
-        return False
-    arch_config = ckpt.get("arch_config") or {}
-    slider_heads_trained = ckpt.get("slider_heads_trained")
-    if slider_heads_trained is None and isinstance(arch_config, dict):
-        slider_heads_trained = arch_config.get("slider_heads_trained")
-    return slider_heads_trained is False
-
-
-def is_image_foundation_checkpoint(path: Path) -> bool:
-    """Return True when `path` is an image-to-image foundation checkpoint."""
-    ckpt = torch.load(path, map_location="cpu", weights_only=False)
-    if not isinstance(ckpt, dict):
-        return False
-    return (
-        ckpt.get("foundation_type") == FOUNDATION_IMAGE_TYPE
-        or (ckpt.get("arch_config") or {}).get("foundation_type") == FOUNDATION_IMAGE_TYPE
-    )
-
-
-def image_foundation_resolution(path: Path) -> int:
-    """Return the training resolution recorded in an image foundation checkpoint."""
-    ckpt = torch.load(path, map_location="cpu", weights_only=False)
-    arch_config = ckpt.get("arch_config") or {}
-    return int(arch_config.get("image_resolution") or config.IMAGE_RESOLUTION)
-
-
-def load_sonna_model_from_foundation_checkpoint(
-    checkpoint_path: Path,
-    *,
-    registry: Any | None = None,
-    slider_set_version: str = config.CURRENT_SLIDER_SET_VERSION,
-) -> Any:
-    """Load a foundation checkpoint as a `SonnaEditor` instance.
-
-    Full `SonnaEditor` checkpoints load normally. Image-to-image foundation
-    checkpoints initialise a fresh `SonnaEditor` and copy only compatible
-    ConvNeXt backbone tensors, preserving the RAW+XMP profile-training contract.
-    """
-    from sonna_editor.model.architecture import SonnaEditor
-
-    checkpoint_path = Path(checkpoint_path)
-    if not is_image_foundation_checkpoint(checkpoint_path):
-        return SonnaEditor.from_checkpoint(checkpoint_path)
-
-    ckpt = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
-    state: dict[str, torch.Tensor] = ckpt["model_state"]
-    model = SonnaEditor(
-        registry=registry,
-        freeze_backbone=True,
-        _pretrained_backbone=False,
-        arch_version=3,
-        slider_set_version=slider_set_version,
-        use_wb_metadata_skip=True,
-    )
-    current_state = model.state_dict()
-    backbone_state = {
-        key: value
-        for key, value in state.items()
-        if key.startswith("backbone_features.")
-        and key in current_state
-        and current_state[key].shape == value.shape
-    }
-    model.load_state_dict(backbone_state, strict=False)
-    return model

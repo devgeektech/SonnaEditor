@@ -1,315 +1,203 @@
 # Foundation Model Training
 
-This file is the foundation-only runbook. The foundation checkpoint is a hidden
-base model used by Personal AI and Lite profile creation. It is not a
-frontend-visible profile and should not be published into `v1_learning/`.
+This is the foundation-only runbook. The foundation checkpoint is a hidden base
+model used by Personal AI and Lite profile creation. It is not a frontend-visible
+profile and must not be published into `v1_learning/`.
 
-## Current Implementation Boundary
+## Current Boundary
 
-There are two foundation concepts in the project now:
+Foundation training is now **Lightroom-parameter supervised only**:
 
-- **Implemented today:** `scripts/train_foundation_model.py` trains the existing
-  `SonnaEditor` slider-regression model from real Lightroom parameters
-  (`RAW + XMP` or catalog-derived develop settings), then promotes that
-  checkpoint into the hidden repo-local foundation folder.
-- **Implemented TIFF direction:** MIT-Adobe FiveK can train an image-supervised
-  enhancement model from `RAW/DNG -> expert TIFF`. New TIFF runs save a hybrid
-  foundation checkpoint: the `SonnaEditor` slider-regression model remains the
-  canonical checkpoint, and the image decoder is stored as auxiliary foundation
-  state in the same `.ckpt` file. Do not force FiveK TIFF targets through the
-  current XMP slider-regression pipeline.
+- RAW/DNG inputs are model inputs.
+- Lightroom develop settings are the target labels.
+- Targets can come from exported `.xmp` sidecars or from a read-only Lightroom
+  catalog build.
+- Paired rendered-image foundation training is not supported.
 
-The current foundation checkpoint can still warm-start Personal AI and Lite
-profiles. The long-term target is a stronger image-supervised foundation
-backbone that teaches exposure, white balance, tone, and global colour before
-profile-specific XMP prediction.
+`scripts\train_foundation_model.py` trains the normal `SonnaEditor`
+slider-regression checkpoint and promotes it into `SonnaEditorFoundation\`.
+Every run creates a new checkpoint. Old checkpoints are never overwritten.
 
-## Two-Stage Model Strategy
+## Versioning And Cumulative Training
 
-Stage 1 is the **Foundation Enhancement Model**:
-
-- input: RAW/DNG image features
-- target: professional edited image, initially a FiveK expert TIFF
-- goal: learn general photographic correction, not a photographer's style
-- primary concepts: white balance, exposure, contrast, highlights, shadows,
-  tone mapping, and global colour correction
-- likely losses: L1/MAE plus perceptual image losses such as SSIM and LPIPS
-- saved assets: encoder/backbone/feature-extractor weights
-
-Stage 2 is the **Profile-Specific Model**:
-
-- input: RAW image features, metadata, and the foundation-initialised backbone
-- target: Lightroom XMP slider values from Sonna/proprietary profile data
-- goal: learn photographer, event, wedding, birthday, party, and other creative
-  style preferences
-- output: Lightroom-compatible slider predictions and XMP sidecars
-
-Conceptually, the final edit should behave like:
+Every promoted foundation checkpoint is written under:
 
 ```text
-Final Edit = Foundation Edit + Profile Residual Adjustment
+SonnaEditorFoundation\checkpoints\<version>.ckpt
 ```
 
-The foundation model should learn the common photographic correction layer. The
-profile model should learn the creative residual: Sonna style, photographer
-preference, preset behaviour, and event-specific colour grading.
+If `--version-stem` is omitted, the promoter creates the next
+`foundation-vN.ckpt`. If `--version-stem` is supplied, it must be new.
 
-## Foundation Visibility Rule
-
-- Foundation checkpoints live in a hidden foundation folder, by default
-  the repo-local child folder `SonnaEditorFoundation/`, or a custom path from
-  `SONNA_FOUNDATION_REPO`. Keep this outside gitignored `data/` but inside the
-  SonnaEditor project root so the workspace stays self-contained.
-- The UI scans only `v1_learning/model-v*.ckpt`, so foundation checkpoints stay
-  unseen as long as they remain in the foundation folder.
-- Lite profiles and Personal AI profile creation resolve the foundation
-  checkpoint from:
-  1. `SONNA_FOUNDATION_CHECKPOINT`
-  2. `SONNA_FOUNDATION_REPO/foundation_manifest.json`
-  3. `SONNA_FOUNDATION_REPO/foundation.ckpt`
-
-## Foundation Versioning Rule
-
-Every foundation training run writes a new versioned checkpoint under:
-
-```text
-SonnaEditorFoundation/checkpoints/foundation-vN.ckpt
-```
-
-The previous checkpoint is never overwritten. After a successful run,
-`foundation_manifest.json` is updated so the new checkpoint becomes the active
-default foundation model for Personal AI and Lite profile creation. The manifest
-uses schema version 2 and records `active_version`, `active_checkpoint`,
-`versions[]`, checkpoint SHA256 hashes, foundation type, capabilities, training
-source tags, and recent compatibility history.
-`trained_on` is cumulative lineage metadata: if the active foundation has been
-warm-started through both RAW+XMP and TIFF runs, the manifest records both
-sources even though `capabilities` still describe the concrete checkpoint heads
-that are present in the active file.
-
-By default, each new foundation run **warm-starts from the currently active
-foundation checkpoint**:
-
-- RAW+XMP or catalog-split foundation runs warm-start the `SonnaEditor` model
-  from the active foundation checkpoint, then train on the new Lightroom-label
-  dataset.
-- TIFF/image foundation runs copy the active checkpoint's compatible ConvNeXt
-  backbone weights, then train the image-to-image foundation model on the new
-  paired-image dataset. The final promoted checkpoint carries existing slider
-  heads forward and stores the trained image decoder in the same file.
-
-This means a new run is effectively:
+By default, each new foundation run warm-starts from the currently active
+foundation checkpoint:
 
 ```text
 new checkpoint = previous active foundation + new dataset training
 ```
 
-The active checkpoint is now the cumulative foundation file for both supported
-training sources:
+This is how knowledge carries forward:
 
-- RAW+XMP runs update the `SonnaEditor` slider-regression weights and carry any
-  existing image decoder forward.
-- RAW/DNG->TIFF runs update the ConvNeXt backbone plus image decoder and carry
-  existing slider heads forward.
+```text
+foundation-fivek-catalog-expert-c-001
+  -> foundation-sonna-raw-xmp-001
+  -> foundation-fivek-catalog-expert-c-002
+  -> foundation-sonna-raw-xmp-002
+```
 
-If the first foundation run is TIFF-only, the generated hybrid checkpoint marks
-`slider_heads_trained=false`; the next RAW+XMP warm start will initialise slider
-head priors from the RAW+XMP target medians before training. After RAW+XMP
-training, the checkpoint marks `slider_heads_trained=true`.
-
-The previous active checkpoint file stays untouched. If a bad new checkpoint is
-promoted, roll back by changing the active manifest pointer:
+Use `--no-warm-start` only for a deliberate scratch run. If a bad checkpoint is
+promoted, roll back the active manifest pointer instead of deleting files:
 
 ```powershell
 uv run python scripts\rollback_foundation.py --list
 uv run python scripts\rollback_foundation.py foundation-v3
 ```
 
-When the manifest points at a missing active checkpoint, the resolver falls back
-to the newest remaining checkpoint in that folder as a recovery guard. For a
-deliberate scratch foundation run that should not warm-start from the active
-checkpoint, pass `--no-warm-start`.
+## Copy-Paste Naming Rule
 
-## Personal AI Warm-Start Retention
-
-RAW+XMP Personal AI training and RAW+XMP foundation training can use three
-backbone unfreeze strategies:
-
-- `partial`: legacy behavior, stages 0 and 1 frozen initially.
-- `full`: full ConvNeXt backbone frozen until `--freeze-backbone-epochs`.
-- `progressive`: full backbone frozen first, then later stages unfreeze before
-  full fine-tuning.
-
-The frontend Personal AI route and RAW+XMP foundation CLI use `progressive` by
-default for foundation warm starts. This protects transferred foundation
-features while metadata, fusion layers, and slider heads adapt to the new
-RAW+XMP target distribution.
-
-After training a Personal AI candidate from a foundation checkpoint, measure
-feature retention with:
-
-```powershell
-uv run python scripts\analyse_backbone_drift.py `
-  --foundation-checkpoint SonnaEditorFoundation\checkpoints\foundation-v3.ckpt `
-  --personal-checkpoint v1_learning\model-v2.0.1.ckpt `
-  --output data\audits\foundation-v3-to-model-v2.0.1-backbone-drift.md
-```
-
-## FiveK Dataset Notes
-
-MIT-Adobe FiveK is good foundation-learning material because it contains broad
-scenes, lighting, RAW DNG inputs, and professional Lightroom-based retouches. It
-is not 25,000 independent RAW images. It is 5,000 DNG photos with 5 expert
-retouches, producing 25,000 edited TIFF renditions.
-
-FiveK does **not** provide XMP files directly. It may include Lightroom catalog
-metadata in `fivek.lrcat`, but reliable Lightroom slider extraction is a future
-investigation, not the default training path.
-
-Use FiveK for paired-image foundation learning:
+For every new foundation command, change both identifiers together:
 
 ```text
-RAW/DNG -> selected expert TIFF
+--run-name
+--version-stem
 ```
 
-Do not generate fake Lightroom slider labels from FiveK TIFFs. Multiple
-Lightroom slider combinations can create visually similar TIFF outputs, so
-forcing TIFF targets into fake XMP labels would add noisy supervision to the
-profile model.
-
-For the first image-supervised foundation run, use one expert target, commonly
-Expert C, so each source image has one target rendition. Later, an explicit
-expert/style-conditioned setup can use all five experts without conflicting
-labels.
-
-FiveK is research-licensed. Keep the downloaded data in a gitignored training
-source folder, or point the commands at an external drive if storage gets too
-large. Cite the dataset when used.
-
-## Training Source Layout
-
-Keep source photos separate from generated datasets and model outputs. The app
-auto-creates `data/training_sources/`, and each learning source should get its
-own child folder:
-
-```text
-data/training_sources/
-  fivek_expert_c/
-    raw_dng/
-    expert_tiff/
-    MITAdobeFiveK/
-  sonna_personal_001/
-    raw_xmp/
-  sonna_personal_002/
-    raw_xmp/
-```
-
-These folders are for local learning inputs only. They are under gitignored
-`data/`, so RAWs, TIFFs, XMPs, and downloaded datasets do not get committed.
-Generated datasets, thumbnails, and training summaries stay under
-`data/training_workspace/`. Promoted foundation checkpoints stay in
-`SonnaEditorFoundation/`, outside `data/` but inside the project root.
-
-`data\training_sources\` is part of the auto-created repo-local layout. You
-still need to place the actual FiveK files or Sonna RAW+XMP folders there
-yourself. Commands below use explicit paths so no shell environment setup is
-required.
-
-## FiveK Image-To-Image Foundation Training
-
-This is the recommended FiveK foundation direction. The current implementation
-uses `scripts\train_foundation_model.py --raw-image-dir ... --target-tiff-dir ...`
-and saves an image-foundation checkpoint whose ConvNeXt backbone can warm-start
-Personal AI training or Lite profile carriers.
-
-The trainer:
-
-1. Read FiveK DNG inputs and one selected expert TIFF target per image.
-2. Build train/val/test splits by source photo, not by rendition.
-3. Train an image-supervised enhancement model with L1/MAE and SSIM loss.
-   LPIPS is documented as a future optional enhancement and is not enabled in
-   the current dependency set.
-4. Save a hybrid foundation checkpoint with updated ConvNeXt backbone weights
-   and image decoder state while preserving any existing slider heads.
-5. Use those weights to initialise the existing `SonnaEditor` XMP-regression
-   profile model.
-
-Do not use TIFF files as if they were XMP labels. Do not invent Lightroom
-parameters unless running a clearly marked experiment whose results are kept out
-of production profile training.
+Keep them identical unless there is a deliberate reason not to.
 
 Example:
 
+```text
+foundation-fivek-catalog-expert-c-001
+foundation-fivek-catalog-expert-c-002
+```
+
+Do not reuse an old `--version-stem`. The command will fail at promotion time
+because checkpoint overwrites are blocked. If you are unsure, omit
+`--version-stem` and let the system allocate `foundation-vN`.
+
+## FiveK Catalog Foundation Path
+
+The inspected FiveK folder is:
+
+```text
+C:\Users\vikas.DESKTOP-61LEE8B\Downloads\fivek_dataset\fivek_dataset
+```
+
+The usable catalog path is:
+
+```text
+C:\Users\vikas.DESKTOP-61LEE8B\Downloads\fivek_dataset\fivek_dataset\raw_photos\fivek.lrcat
+```
+
+Catalog review found:
+
+```text
+Adobe_images:                         60,000 rows
+Unique source files / AgLibraryFile:   5,000 DNGs
+Adobe_imageDevelopSettings:           96,458 rows
+Active non-empty develop settings:    60,000 rows
+Each DNG has:                         12 catalog image rows / virtual copies
+Expert collections A/B/C/D/E:          5,000 rows each
+```
+
+Use one expert collection first, normally `C`, so the plain slider-regression
+model sees one target recipe per DNG. Do not mix A/B/C/D/E in one unconditioned
+model unless expert/style conditioning is added.
+
+Close Lightroom Classic before running catalog commands. The catalog is opened
+read-only; RAW files are only read for previews, metadata, histograms, and
+AsShot white-balance input features.
+
+### Build Expert C Splits
+
+```powershell
+uv run python scripts\build_dataset_from_catalog.py `
+  --catalog-path "C:\Users\vikas.DESKTOP-61LEE8B\Downloads\fivek_dataset\fivek_dataset\raw_photos\fivek.lrcat" `
+  --output-dir "data\training_workspace\fivek_expert_c_catalog_dataset" `
+  --profile-name "fivek_expert_c_catalog" `
+  --collection-name "C" `
+  --include-unedited-looking `
+  --limit 5000 `
+  --workers 8 `
+  --split `
+  --val-ratio 0.107 `
+  --test-ratio 0.139 `
+  --splits-dir-name splits_v2_stratified
+```
+
+`--include-unedited-looking` is intentional for FiveK. Its catalog develop blobs
+are sparse, and many default sliders are absent. Do not use this flag for
+ordinary Sonna catalogs unless the dataset has been audited.
+
+### Audit Expert C Splits
+
+```powershell
+uv run python scripts\audit_catalog.py `
+  --parquet-path "data\training_workspace\fivek_expert_c_catalog_dataset\dataset.parquet" `
+  --output-dir "data\training_workspace\fivek_expert_c_catalog_dataset\audit"
+```
+
+```powershell
+uv run python scripts\audit_dataset_diversity.py `
+  --parquet "data\training_workspace\fivek_expert_c_catalog_dataset\dataset.parquet" `
+  --output "data\training_workspace\fivek_expert_c_catalog_dataset\dataset_diversity.md"
+```
+
+### Train FiveK Catalog Foundation
+
 ```powershell
 uv run python scripts\train_foundation_model.py `
-  --raw-image-dir "$PWD\data\training_sources\fivek_expert_c\raw_dng" `
-  --target-tiff-dir "$PWD\data\training_sources\fivek_expert_c\expert_tiff" `
-  --workspace-dir "$PWD\data\training_workspace" `
+  --splits-dir "data\training_workspace\fivek_expert_c_catalog_dataset\splits_v2_stratified" `
+  --workspace-dir "data\training_workspace" `
   --foundation-repo "SonnaEditorFoundation" `
-  --profile-name "Sonna FiveK Image Foundation Expert C" `
-  --run-name "foundation-fivek-image-expert-c-001" `
-  --version-stem "foundation-fivek-image-expert-c-001" `
-  --image-resolution 512 `
+  --profile-name "Sonna FiveK Catalog Foundation Expert C" `
+  --run-name "foundation-fivek-catalog-expert-c-001" `
+  --version-stem "foundation-fivek-catalog-expert-c-001" `
   --max-epochs 100 `
   --batch-size 8 `
-  --workers 8 `
-  --l1-weight 1.0 `
-  --ssim-weight 0.2
+  --workers 8
 ```
 
 Expected outputs:
 
 ```text
-<project>\data\training_workspace\foundation_runs\foundation-fivek-image-expert-c-001\
-<project>\data\training_workspace\foundation_runs\foundation-fivek-image-expert-c-001\training\model.ckpt
-<project>\SonnaEditorFoundation\checkpoints\foundation-vN.ckpt
-<project>\SonnaEditorFoundation\foundation_manifest.json
+data\training_workspace\foundation_runs\foundation-fivek-catalog-expert-c-001\
+data\training_workspace\foundation_runs\foundation-fivek-catalog-expert-c-001\training\model.ckpt
+SonnaEditorFoundation\checkpoints\foundation-fivek-catalog-expert-c-001.ckpt
+SonnaEditorFoundation\foundation_manifest.json
 ```
 
-The promoted checkpoint is not a full Lightroom slider-regression checkpoint.
-It contains image-foundation backbone weights. Personal AI warm-start and Lite
-profile creation know how to copy those backbone weights into a fresh
-`SonnaEditor` model while keeping the RAW+XMP profile training contract intact.
+### Audit The Trained Checkpoint
 
-## RAW+XMP Foundation Data Prep And Training
+```powershell
+uv run python scripts\analyse_prediction_collapse.py `
+  --model-path "SonnaEditorFoundation\checkpoints\foundation-fivek-catalog-expert-c-001.ckpt" `
+  --parquet "data\training_workspace\fivek_expert_c_catalog_dataset\splits_v2_stratified\val.parquet" `
+  --output "data\audits\foundation-fivek-catalog-expert-c-001-collapse.md" `
+  --limit 200 `
+  --batch-size 16
+```
 
-Use this when your foundation material is edited Sonna-style RAW/DNG files with
-matching Lightroom `.xmp` sidecars. This is parameter-supervised training for
-the existing `SonnaEditor` slider-regression model. It is not the FiveK TIFF
-workflow. RAW+XMP remains fully supported for internal Sonna foundation data.
+## RAW+XMP Foundation Path
 
-The foundation CLI can build the dataset internally from `--raw-xmp-dir`. For
-important runs, use the script-based data-prep pass first so the dataset and
-splits can be inspected before training.
+Use this for Sonna-owned foundation material where edited RAW/DNG files have
+matching Lightroom `.xmp` sidecars.
 
-### Step 1: Export Lightroom Sidecars
+### Prepare Sidecars
 
 In Lightroom Classic:
 
 1. Select the edited training photos.
 2. Run `Metadata -> Save Metadata to File`.
 3. Confirm each RAW/DNG has a same-stem `.xmp` sidecar next to it.
-4. Keep Lightroom closed if you later use a catalog path.
 
-RAW-only folders are not valid for this path. The XMP sidecar provides the
-target Lightroom slider values.
-
-### Step 2: Put The Source Files In The Training Source Folder
-
-Copy exported RAW/DNG files and matching `.xmp` sidecars into:
+Recommended source folder:
 
 ```text
 data\training_sources\sonna_foundation_001\raw_xmp\
 ```
 
-The dataset script creates its output folders automatically and skips RAW files
-without matching XMP labels. You can also point `--input-dir` at an external
-drive. Never move or overwrite original RAW files just to satisfy this layout.
-
-### Step 3: Build Inspectable Dataset Splits
-
-This explicit prep route writes a dataset you can audit before the foundation
-run:
+### Build RAW+XMP Splits
 
 ```powershell
 uv run python scripts\build_dataset.py `
@@ -323,39 +211,10 @@ uv run python scripts\build_dataset.py `
   --splits-dir-name splits_v2_stratified
 ```
 
-Expected prep outputs:
+### Train From RAW+XMP Splits
 
-```text
-<project>\data\training_workspace\sonna_foundation_001_dataset\dataset.parquet
-<project>\data\training_workspace\sonna_foundation_001_dataset\thumbnails\
-<project>\data\training_workspace\sonna_foundation_001_dataset\splits_v2_stratified\train.parquet
-<project>\data\training_workspace\sonna_foundation_001_dataset\splits_v2_stratified\val.parquet
-<project>\data\training_workspace\sonna_foundation_001_dataset\splits_v2_stratified\test.parquet
-```
-
-### Step 4: Audit Before Training
-
-Run both the general data-quality audit and the scene/edit diversity audit:
-
-```powershell
-uv run python scripts\audit_catalog.py `
-  --parquet-path "data\training_workspace\sonna_foundation_001_dataset\dataset.parquet" `
-  --output-dir "data\training_workspace\sonna_foundation_001_dataset\audit"
-```
-
-```powershell
-uv run python scripts\audit_dataset_diversity.py `
-  --parquet "data\training_workspace\sonna_foundation_001_dataset\dataset.parquet" `
-  --output "data\training_workspace\sonna_foundation_001_dataset\dataset_diversity.md"
-```
-
-Stop and fix the source set if the audit shows missing labels, too few shoots,
-large unedited clusters, broken thumbnails, or narrow exposure/WB coverage.
-
-### Step 5A: Train From Prepared Splits
-
-Use this route for serious foundation runs because the split files are already
-visible and audited:
+Do not pass `--no-warm-start` if this run should inherit the active FiveK
+foundation checkpoint.
 
 ```powershell
 uv run python scripts\train_foundation_model.py `
@@ -370,10 +229,9 @@ uv run python scripts\train_foundation_model.py `
   --workers 8
 ```
 
-### Step 5B: Direct Train From RAW+XMP
+### Direct RAW+XMP Shortcut
 
-Use this shortcut for quick runs. It builds the dataset inside the run folder,
-then trains and promotes the checkpoint:
+This builds the dataset inside the run folder, then trains and promotes:
 
 ```powershell
 uv run python scripts\train_foundation_model.py `
@@ -388,121 +246,58 @@ uv run python scripts\train_foundation_model.py `
   --workers 8
 ```
 
-Expected outputs:
-
-```text
-<project>\data\training_workspace\foundation_runs\foundation-sonna-raw-xmp-001\
-<project>\data\training_workspace\foundation_runs\foundation-sonna-raw-xmp-001\training\model.ckpt
-<project>\SonnaEditorFoundation\checkpoints\foundation-vN.ckpt
-<project>\SonnaEditorFoundation\foundation_manifest.json
-```
-
-Unless `--no-warm-start` is supplied, either RAW+XMP route starts from the
-active foundation checkpoint and writes a new versioned foundation checkpoint.
-The previous active foundation checkpoint is kept.
-
-## Future FiveK Catalog Investigation
-
-FiveK includes `fivek.lrcat`, which may contain edit metadata and slider
-histories. Investigate this later as a separate read-only research task. If
-Lightroom slider values can be recovered reliably, then a secondary dataset can
-be created:
-
-```text
-RAW/DNG + derived Lightroom edit parameters
-```
-
-That dataset should be evaluated against the image-supervised foundation
-approach before it affects production profile training. Until then, do not make
-FiveK catalog extraction the primary foundation route.
-
-For reference, the existing catalog dataset builder can read Lightroom catalogs
-read-only when target slider values are known to be useful:
-
-```powershell
-uv run python scripts\build_dataset_from_catalog.py `
-  --catalog-path "$PWD\data\training_sources\fivek_expert_c\MITAdobeFiveK\fivek.lrcat" `
-  --output-dir "$PWD\data\training_workspace\fivek_expert_c_dataset" `
-  --profile-name "fivek_expert_c" `
-  --limit 5000 `
-  --workers 8 `
-  --split
-```
-
-If that experiment produces trusted parameter splits, train and promote a
-separate experimental checkpoint from those prepared splits:
-
-```powershell
-uv run python scripts\train_foundation_model.py `
-  --splits-dir "$PWD\data\training_workspace\fivek_expert_c_dataset\splits_v2_stratified" `
-  --workspace-dir "$PWD\data\training_workspace" `
-  --foundation-repo "SonnaEditorFoundation" `
-  --profile-name "Sonna Foundation FiveK Expert C" `
-  --run-name "foundation-fivek-expert-c-001" `
-  --version-stem "foundation-fivek-expert-c-001" `
-  --max-epochs 100 `
-  --batch-size 8 `
-  --workers 8
-```
-
 ## Resume Interrupted Foundation Training
 
 If a run stops before promotion, resume the underlying profile trainer from the
-last native or Lightning checkpoint, then promote manually after it finishes.
+last Lightning checkpoint, then promote manually after it finishes.
 
 ```powershell
 uv run python scripts\train_profile.py `
-  --train-parquet "$PWD\data\training_workspace\sonna_parameter_dataset\splits_v2_stratified\train.parquet" `
-  --val-parquet "$PWD\data\training_workspace\sonna_parameter_dataset\splits_v2_stratified\val.parquet" `
-  --test-parquet "$PWD\data\training_workspace\sonna_parameter_dataset\splits_v2_stratified\test.parquet" `
-  --output-dir "$PWD\data\training_workspace\foundation_runs\foundation-sonna-parameter-001\training" `
-  --resume-from-checkpoint "$PWD\data\training_workspace\foundation_runs\foundation-sonna-parameter-001\training\checkpoints\last.ckpt" `
+  --train-parquet "data\training_workspace\sonna_foundation_001_dataset\splits_v2_stratified\train.parquet" `
+  --val-parquet "data\training_workspace\sonna_foundation_001_dataset\splits_v2_stratified\val.parquet" `
+  --test-parquet "data\training_workspace\sonna_foundation_001_dataset\splits_v2_stratified\test.parquet" `
+  --output-dir "data\training_workspace\foundation_runs\foundation-sonna-raw-xmp-001\training" `
+  --resume-from-checkpoint "data\training_workspace\foundation_runs\foundation-sonna-raw-xmp-001\training\checkpoints\last.ckpt" `
   --max-epochs 100 `
   --batch-size 8 `
   --num-workers 8 `
   --no-publish `
-  --profile-name "Sonna Parameter Foundation"
+  --profile-name "Sonna RAW XMP Foundation"
 ```
 
-Promote the resumed final checkpoint:
+Promote the resumed final checkpoint with a new version stem:
 
 ```powershell
-uv run python -c "from pathlib import Path; from sonna_editor.foundation import promote_foundation_checkpoint; promote_foundation_checkpoint(source_ckpt=Path(r'$PWD\data\training_workspace\foundation_runs\foundation-sonna-parameter-001\training\model.ckpt'), display_name='Sonna Parameter Foundation', version_stem='foundation-sonna-parameter-001', source_run_dir=Path(r'$PWD\data\training_workspace\foundation_runs\foundation-sonna-parameter-001'))"
+uv run python -c "from pathlib import Path; from sonna_editor.foundation import promote_foundation_checkpoint; promote_foundation_checkpoint(source_ckpt=Path(r'data\training_workspace\foundation_runs\foundation-sonna-raw-xmp-001\training\model.ckpt'), display_name='Sonna RAW XMP Foundation', version_stem='foundation-sonna-raw-xmp-001-resumed', source_run_dir=Path(r'data\training_workspace\foundation_runs\foundation-sonna-raw-xmp-001'))"
 ```
 
 ## Retrain Foundation Model
 
-Never overwrite an existing foundation checkpoint. Retrain into a new run and
-new version stem:
+Retrain into a new run and new version stem:
 
 ```powershell
 uv run python scripts\train_foundation_model.py `
-  --splits-dir "$PWD\data\training_workspace\sonna_parameter_dataset\splits_v2_stratified" `
-  --workspace-dir "$PWD\data\training_workspace" `
+  --splits-dir "data\training_workspace\sonna_foundation_001_dataset\splits_v2_stratified" `
+  --workspace-dir "data\training_workspace" `
   --foundation-repo "SonnaEditorFoundation" `
-  --profile-name "Sonna Parameter Foundation" `
-  --run-name "foundation-sonna-parameter-002" `
-  --version-stem "foundation-sonna-parameter-002" `
+  --profile-name "Sonna RAW XMP Foundation 002" `
+  --run-name "foundation-sonna-raw-xmp-002" `
+  --version-stem "foundation-sonna-raw-xmp-002" `
   --max-epochs 150 `
   --batch-size 8 `
   --workers 8
 ```
 
-The manifest will point Lite and foundation-based profile creation at the newest
-promoted checkpoint.
-
-On CUDA machines with limited VRAM, the foundation CLI automatically retries
-RAW+XMP slider-regression training with smaller batch sizes after a CUDA memory
-failure. The Windows RTX 3050 workstation should start foundation runs at
-`--batch-size 8`.
+On CUDA machines with limited VRAM, start foundation runs at `--batch-size 8`.
+The foundation CLI automatically retries with smaller batch sizes after CUDA
+memory failures.
 
 ## Use Foundation For Profiles
 
-- **Personal AI / Mode A:** train user-facing profiles from Sonna RAW+XMP data.
-  The backend resolves the hidden foundation checkpoint and warm-starts training
-  from it, then publishes only the Personal AI profile into `v1_learning/`.
-  Mode A remains RAW+XMP slider regression.
-- **Lite / Mode B:** create a `mode_b_initial` profile from the foundation
-  checkpoint plus preset plus six-question survey. Initial processing preserves
-  preset look sliders and dynamically adjusts Exposure, Temperature, and Tint.
-  Later fine-tuning can move the profile through normal model inference.
+- **Personal AI / Mode A:** frontend training resolves the active hidden
+  foundation checkpoint, warm-starts from it, then publishes only the Personal
+  AI profile into `v1_learning\`.
+- **Lite / Mode B:** Lite profile creation resolves the active hidden foundation
+  checkpoint and builds a `mode_b_initial` profile from that checkpoint plus the
+  preset and six-question survey. Later fine-tuning uses the normal training
+  path.

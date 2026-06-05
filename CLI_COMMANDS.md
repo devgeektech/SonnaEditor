@@ -27,22 +27,18 @@ RAW+XMP data preparation and foundation training are not the same thing.
 
 - **RAW+XMP dataset build:** reads edited photos, extracts previews/metadata/slider labels, and writes Parquet splits. This is just data preparation.
 - **Personal AI profile training:** trains from those splits, warm-starting from the configured hidden foundation checkpoint in the frontend flow, and publishes a frontend-visible profile into `v1_learning/`.
-- **Current parameter-supervised foundation training:** trains from real Lightroom
+- **Foundation training:** trains from real Lightroom
   slider labels (`RAW+XMP` or catalog-derived settings), but promotes the final
   checkpoint into the repo-local hidden foundation folder. It does not publish
   to `v1_learning/`.
-- **TIFF/image foundation training:** uses paired images
-  (`RAW/DNG -> expert TIFF`) to learn general photographic enhancement. Do not
-  convert FiveK TIFF outputs into fake XMP labels.
 - **Lite profile creation:** does not train from photos. It combines the configured foundation checkpoint with a preset and survey answers.
 
 Foundation runs are versioned. By default a new foundation run warm-starts from
 the active foundation checkpoint, trains on the new dataset, saves a new
 checkpoint under `SonnaEditorFoundation\checkpoints\`, and makes that new
 checkpoint active in `foundation_manifest.json`. The active checkpoint is the
-cumulative foundation file: RAW+XMP runs update slider-regression weights and
-carry any image decoder forward; TIFF runs update the visual backbone/decoder
-and carry existing slider heads forward. The default foundation folder is the
+cumulative foundation file: catalog and RAW+XMP runs update the same native
+`SonnaEditor` slider-regression checkpoint. The default foundation folder is the
 repo-local `SonnaEditorFoundation/` child folder, not gitignored `data/`. That
 folder is tracked by the parent repo; checkpoint binaries are handled by Git
 LFS. Existing checkpoints are not overwritten. New runs auto-promote as
@@ -55,6 +51,18 @@ Personal AI and RAW+XMP foundation warm-starts now use the progressive backbone
 schedule by default: full backbone frozen first, later stages unfreezing before
 full fine-tuning.
 
+Foundation checkpoint naming rule for copy-paste commands:
+
+```text
+For every new foundation run, change BOTH --run-name and --version-stem.
+Keep them identical, for example:
+  foundation-fivek-catalog-expert-c-001
+  foundation-fivek-catalog-expert-c-002
+
+If you omit --version-stem, the system auto-allocates foundation-vN.
+Do not reuse a previous --version-stem; old checkpoints are never overwritten.
+```
+
 ## Project Flow
 
 1. Choose the training data source.
@@ -63,12 +71,10 @@ full fine-tuning.
    - **Fine-tune captures:** previous Saha predictions plus final user-edited XMPs.
    - **Lite preset:** a foundation checkpoint + Lightroom preset + style survey can create an initial checkpoint, but this is not supervised model training from photos.
 
-   Keep each source in its own folder so FiveK image-pair data, Sonna Personal
+   Keep each source in its own folder so FiveK catalog builds, Sonna Personal
    AI runs, and future learning sets do not get mixed:
 
    ```text
-   data/training_sources/fivek_expert_c/raw_dng/
-   data/training_sources/fivek_expert_c/expert_tiff/
    data/training_sources/sonna_personal_001/raw_xmp/
    data/training_sources/sonna_personal_002/raw_xmp/
    ```
@@ -102,14 +108,13 @@ full fine-tuning.
 
 - **Personal AI profile:** built from RAW files plus matching Lightroom XMP sidecars. This is the normal profile-training path for operators and is now started from the Saha frontend. The backend resolves the configured foundation checkpoint, uses the same dataset builder and `sonna_editor.training.profile_runner.train_profile()` recipe as the CLI, warm-starts from that foundation, then publishes a versioned profile into `v1_learning/`.
 - **Lite profile:** built from the configured foundation checkpoint plus a Lightroom preset and the six-question Lite survey. It does not depend on an active Personal AI profile. The first Lite processing pass dynamically adjusts Exposure, Temperature, and Tint because the preset owns the look sliders; all six survey answers are still stored in the profile package for calibration metadata and future fine-tuning.
-- **Foundation model:** CLI-only and hidden from the UI. Use `FOUNDATION_TRAINING.md` for the complete train, resume, retrain, promotion, and FiveK guidance. The foundation CLI supports both parameter-supervised RAW+XMP training and image-supervised TIFF training.
+- **Foundation model:** CLI-only and hidden from the UI. Use `FOUNDATION_TRAINING.md` for the complete train, resume, retrain, promotion, and FiveK guidance. The foundation CLI supports RAW+XMP folders and prepared Lightroom-parameter splits, including catalog-derived FiveK splits.
 
 ## Important Paths
 
 | Purpose | Path | Notes |
 |---|---|---|
 | Source training RAW + XMP folder | Separate gitignored source folders, for example `data/training_sources/sonna_personal_001/raw_xmp/` | Edited RAW/DNG files plus same-stem `.xmp` sidecars |
-| FiveK image-pair source folders | `data/training_sources/fivek_expert_c/raw_dng/` and `data/training_sources/fivek_expert_c/expert_tiff/` | Image-to-image foundation training only |
 | Source Lightroom catalog | Any `.lrcat` path, opened read-only | Lightroom should be closed for catalog reads |
 | Personal AI dataset output root | `v1_learning/dataset/` or frontend job workspace | Used for frontend-visible profile training |
 | Foundation training workspace | `SONNA_TRAINING_WORKSPACE` or `data/training_workspace/` | Generated foundation datasets and run folders |
@@ -135,7 +140,7 @@ full fine-tuning.
 | RAW files only, never edited | No | Nothing. RAW pixels/metadata are inputs only, not labels. | Not supported |
 | RAW files + matching `.xmp` sidecars | Yes | Lightroom sidecar slider values | `scripts/build_dataset.py` then `scripts/train_profile.py` |
 | Lightroom Classic catalog `.lrcat` + accessible RAW files | Yes | Catalog develop-settings blobs | `scripts/build_dataset_from_catalog.py` then `scripts/train_profile.py` |
-| FiveK DNG + expert TIFF pairs | Foundation only | Edited TIFF image target, not slider labels | `scripts/train_foundation_model.py --raw-image-dir ... --target-tiff-dir ...` |
+| FiveK Lightroom catalog collection | Yes | Catalog develop-settings blobs from one expert collection, normally `C` first | `scripts/build_dataset_from_catalog.py` then `scripts/train_foundation_model.py --splits-dir ...` |
 | Lightroom preset only | Not supervised training | Preset supplies fixed baseline values | `scripts/process_shoot_preset.py` |
 | Foundation checkpoint + preset + style survey | Creates Lite initial profile | Foundation checkpoint supplies reusable model shell; preset + survey supply style baseline; initial processing adds per-photo auto corrections | `scripts/build_mode_b_checkpoint.py` |
 | New shoot processed by Saha, then user edits XMPs | Yes, fine-tuning only | Final user-edited XMP compared against `sonna_predictions.json` | `scripts/finetune_profile.py` |
@@ -474,6 +479,23 @@ Foundation training, resume, retrain, promotion, and FiveK-specific guidance
 live in `FOUNDATION_TRAINING.md`. Keep the foundation checkpoint in the separate
 foundation folder, not in `v1_learning/`, so it stays hidden from the frontend.
 
+The current FiveK download was inspected at:
+
+```text
+C:\Users\vikas.DESKTOP-61LEE8B\Downloads\fivek_dataset\fivek_dataset
+```
+
+It currently contains 5,000 DNG source files, `raw_photos\fivek.lrcat`,
+Lightroom preview-cache files, and text/license metadata. The catalog is now
+the supported FiveK training source; separate rendered target folders are not
+used.
+
+The Lightroom catalog itself contains 60,000 catalog image rows over the same
+5,000 DNGs: 12 virtual-copy/recipe variants per source file. Expert collections
+`A`, `B`, `C`, `D`, and `E` each contain 5,000 rows. Use one collection first,
+normally `C`, rather than mixing all variants in one plain slider-regression
+model.
+
 For RAW+XMP foundation training, first export Lightroom metadata to sidecars,
 keep the source files in a dedicated folder, build/audit inspectable splits, and
 then train from those splits:
@@ -509,25 +531,86 @@ uv run python scripts\train_foundation_model.py `
   --workers 8
 ```
 
-TIFF/image foundation training uses paired folders matched by file stem:
+FiveK catalog foundation training first builds Expert C splits:
+
+```powershell
+uv run python scripts\build_dataset_from_catalog.py `
+  --catalog-path "C:\Users\vikas.DESKTOP-61LEE8B\Downloads\fivek_dataset\fivek_dataset\raw_photos\fivek.lrcat" `
+  --output-dir data\training_workspace\fivek_expert_c_catalog_dataset `
+  --profile-name "fivek_expert_c_catalog" `
+  --collection-name "C" `
+  --include-unedited-looking `
+  --limit 5000 `
+  --workers 8 `
+  --split `
+  --val-ratio 0.107 `
+  --test-ratio 0.139 `
+  --splits-dir-name splits_v2_stratified
+```
+
+Then train and promote a native foundation checkpoint from the prepared splits:
 
 ```powershell
 uv run python scripts\train_foundation_model.py `
-  --raw-image-dir data\training_sources\fivek_expert_c\raw_dng `
-  --target-tiff-dir data\training_sources\fivek_expert_c\expert_tiff `
+  --splits-dir data\training_workspace\fivek_expert_c_catalog_dataset\splits_v2_stratified `
   --workspace-dir data\training_workspace `
   --foundation-repo SonnaEditorFoundation `
-  --profile-name "Sonna FiveK Image Foundation Expert C" `
-  --run-name foundation-fivek-image-expert-c-001 `
-  --version-stem foundation-fivek-image-expert-c-001 `
-  --image-resolution 512 `
+  --profile-name "Sonna FiveK Catalog Foundation Expert C" `
+  --run-name foundation-fivek-catalog-expert-c-001 `
+  --version-stem foundation-fivek-catalog-expert-c-001 `
   --max-epochs 100 `
   --batch-size 8 `
   --workers 8
 ```
 
-Mode A still trains from RAW+XMP. The TIFF path creates a foundation backbone
-checkpoint, not direct Lightroom slider labels.
+For the next copy-paste run, change both names together:
+
+```text
+--run-name foundation-fivek-catalog-expert-c-002
+--version-stem foundation-fivek-catalog-expert-c-002
+```
+
+Do not reuse `--version-stem`; the checkpoint promoter refuses overwrites.
+
+Use `--include-unedited-looking` for FiveK because its catalog develop blobs are
+sparse: many default sliders are absent, not proof that the expert edit is
+unedited. Do not use that flag for ordinary Sonna catalogs unless the dataset
+has been audited.
+
+For an ordinary Sonna catalog, use the same catalog builder without the FiveK
+collection flag unless you intentionally want one Lightroom collection:
+
+```powershell
+uv run python scripts\build_dataset_from_catalog.py `
+  --catalog-path "D:\Lightroom\Sonna Catalog.lrcat" `
+  --output-dir data\training_workspace\sonna_catalog_dataset `
+  --profile-name "sonna_catalog" `
+  --workers 8 `
+  --split `
+  --val-ratio 0.107 `
+  --test-ratio 0.139 `
+  --splits-dir-name splits_v2_stratified
+```
+
+Then train from the prepared Sonna catalog splits:
+
+```powershell
+uv run python scripts\train_foundation_model.py `
+  --splits-dir data\training_workspace\sonna_catalog_dataset\splits_v2_stratified `
+  --workspace-dir data\training_workspace `
+  --foundation-repo SonnaEditorFoundation `
+  --profile-name "Sonna Catalog Foundation 001" `
+  --run-name foundation-sonna-catalog-001 `
+  --version-stem foundation-sonna-catalog-001 `
+  --max-epochs 100 `
+  --batch-size 8 `
+  --workers 8
+```
+
+After FiveK training, run RAW+XMP foundation training without `--no-warm-start`
+so it starts from the active FiveK checkpoint and writes a new cumulative
+foundation checkpoint. The same works in reverse later: another FiveK catalog
+run starts from the active RAW+XMP-updated checkpoint.
 
 On the Windows RTX 3050 workstation, start foundation runs at `--batch-size 8`.
 The RAW+XMP foundation CLI will automatically retry with smaller batch sizes if

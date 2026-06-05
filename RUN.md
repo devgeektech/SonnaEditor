@@ -108,24 +108,27 @@ for supervised training. Use one of these dataset sources:
 Preset + survey creates a Lite initial checkpoint from the configured foundation
 checkpoint, but it is not supervised training from photos.
 
-Foundation has two implemented CLI paths:
-
-- `scripts/train_foundation_model.py` currently trains the existing
-  slider-regression model from real Lightroom parameters, then promotes the
-  checkpoint into the hidden repo-local foundation folder.
-- MIT-Adobe FiveK-style training uses an image-to-image foundation trainer from
-  `RAW/DNG -> expert TIFF`. Do not turn FiveK TIFF outputs into fake XMP labels.
+Foundation training uses `scripts/train_foundation_model.py` to train the
+existing slider-regression model from real Lightroom parameters, then promotes
+the checkpoint into the hidden repo-local foundation folder. Targets can come
+from RAW+XMP sidecars or prepared catalog-derived splits.
 
 Every foundation run is versioned. By default, it warm-starts from the active
 foundation checkpoint, trains on the new dataset, writes a new checkpoint under
 `SonnaEditorFoundation\checkpoints\`, and makes that checkpoint active in
 `foundation_manifest.json`. The active foundation checkpoint is cumulative:
-RAW+XMP runs update the SonnaEditor slider model and preserve any image decoder;
-TIFF runs update the visual backbone/decoder and preserve existing slider heads.
-Older checkpoints are kept. New runs auto-promote as `foundation-vN` unless a
+catalog and RAW+XMP runs update the same native SonnaEditor slider-regression
+model. Older checkpoints are kept. New runs auto-promote as `foundation-vN` unless a
 version stem is supplied. If a bad run is promoted, roll back the active
 manifest pointer with `scripts\rollback_foundation.py` rather than deleting
 checkpoints. Use `--no-warm-start` only for a deliberate scratch run.
+
+When copying foundation commands, change both `--run-name` and `--version-stem`
+for every new run. Keep them the same, for example
+`foundation-fivek-catalog-expert-c-001` then
+`foundation-fivek-catalog-expert-c-002`. Reusing an old version stem is expected
+to fail because foundation checkpoints are never overwritten. Omit
+`--version-stem` if you want the system to auto-allocate `foundation-vN`.
 
 Dataset preparation code paths:
 
@@ -159,26 +162,47 @@ uv run python scripts\train_foundation_model.py `
   --workers 4
 ```
 
-For TIFF/image foundation training, use paired folders matched by file stem:
+For FiveK, build Expert C catalog splits first:
+
+```powershell
+uv run python scripts\build_dataset_from_catalog.py `
+  --catalog-path "C:\Users\vikas.DESKTOP-61LEE8B\Downloads\fivek_dataset\fivek_dataset\raw_photos\fivek.lrcat" `
+  --output-dir data\training_workspace\fivek_expert_c_catalog_dataset `
+  --profile-name "fivek_expert_c_catalog" `
+  --collection-name "C" `
+  --include-unedited-looking `
+  --limit 5000 `
+  --workers 8 `
+  --split `
+  --splits-dir-name splits_v2_stratified
+```
+
+Then train from those prepared splits:
 
 ```powershell
 uv run python scripts\train_foundation_model.py `
-  --raw-image-dir data\training_sources\fivek_expert_c\raw_dng `
-  --target-tiff-dir data\training_sources\fivek_expert_c\expert_tiff `
+  --splits-dir data\training_workspace\fivek_expert_c_catalog_dataset\splits_v2_stratified `
   --workspace-dir data\training_workspace `
   --foundation-repo SonnaEditorFoundation `
-  --profile-name "Sonna FiveK Image Foundation Expert C" `
-  --run-name foundation-fivek-image-expert-c-001 `
-  --version-stem foundation-fivek-image-expert-c-001 `
-  --image-resolution 512 `
+  --profile-name "Sonna FiveK Catalog Foundation Expert C" `
+  --run-name foundation-fivek-catalog-expert-c-001 `
+  --version-stem foundation-fivek-catalog-expert-c-001 `
   --max-epochs 100 `
   --batch-size 8 `
   --workers 8
 ```
 
-This produces a hybrid foundation checkpoint. Mode A still trains from RAW+XMP;
-the TIFF path trains visual backbone/decoder state, not direct Lightroom slider
-labels.
+For the next run, change both `--run-name` and `--version-stem`, for example
+`foundation-fivek-catalog-expert-c-002`. Do not reuse an old version stem.
+
+The inspected FiveK download at
+`C:\Users\vikas.DESKTOP-61LEE8B\Downloads\fivek_dataset\fivek_dataset`
+contains the 5,000 DNG source files and `raw_photos\fivek.lrcat`. The Lightroom
+catalog contains usable slider targets as virtual-copy
+develop settings: 60,000 catalog rows over 5,000 DNGs, with collections `A` to
+`E` holding the five expert variants. For a first catalog-based slider
+foundation experiment, build only Expert C. Do not mix all 60,000 FiveK catalog
+rows in one unconditioned slider model.
 
 On the Windows RTX 3050 workstation, start foundation runs at `--batch-size 8`.
 The RAW+XMP foundation CLI automatically retries with smaller batch sizes after
@@ -287,6 +311,14 @@ uv run python scripts\build_dataset_from_catalog.py `
   --val-ratio 0.107 `
   --test-ratio 0.139 `
   --splits-dir-name splits_v2_stratified
+```
+
+Optional flags:
+
+```text
+--collection-name "C"            Include only one Lightroom collection.
+--include-unedited-looking       Keep sparse catalog rows that look unedited.
+                                 Use for FiveK expert collections, not normal Sonna catalogs.
 ```
 
 ### Train from prepared splits

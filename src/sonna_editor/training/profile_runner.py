@@ -359,14 +359,6 @@ def _training_target_priors(train_parquet: Path, slider_set_version: str) -> dic
     return priors
 
 
-def _is_image_foundation_warm_start(checkpoint_path: Path | None) -> bool:
-    if checkpoint_path is None:
-        return False
-    from sonna_editor.foundation import foundation_requires_slider_prior_initialisation
-
-    return foundation_requires_slider_prior_initialisation(checkpoint_path)
-
-
 def _trainer_log_every_n_steps(num_train_batches: int, preferred: int = 10) -> int:
     """Pick a Lightning log interval that stays valid on tiny datasets."""
     if num_train_batches <= 0:
@@ -389,39 +381,6 @@ def _warm_start_model_from_checkpoint(
     and skip categorical embedding tables while copying shared visual/metadata
     layers and heads.
     """
-    from sonna_editor.foundation import is_image_foundation_checkpoint
-
-    if is_image_foundation_checkpoint(checkpoint_path):
-        log.info("Warm-starting from image-to-image foundation backbone")
-        model = model_cls(
-            registry=registry,
-            freeze_backbone=True,
-            _pretrained_backbone=False,
-            arch_version=3,
-            slider_set_version=slider_set_version,
-            use_wb_metadata_skip=True,
-        )
-        ckpt = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
-        state: dict[str, torch.Tensor] = ckpt["model_state"]
-        current_state = model.state_dict()
-        filtered_state = {
-            key: value
-            for key, value in state.items()
-            if key.startswith("backbone_features.")
-            and key in current_state
-            and current_state[key].shape == value.shape
-        }
-        missing, unexpected = model.load_state_dict(filtered_state, strict=False)
-        log.info(
-            "Warm-start copied %d image-foundation backbone tensors from %s; "
-            "skipped %d missing and %d unexpected tensors",
-            len(filtered_state),
-            checkpoint_path,
-            len(missing),
-            len(unexpected),
-        )
-        return model
-
     ckpt = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
     state: dict[str, torch.Tensor] = ckpt["model_state"]
     arch_config = ckpt.get("arch_config", {}) or {}
@@ -479,22 +438,6 @@ def _foundation_provenance(checkpoint_path: Path | None) -> dict[str, Any] | Non
     from sonna_editor.foundation import describe_foundation_checkpoint
 
     return describe_foundation_checkpoint(checkpoint_path)
-
-
-def _initialise_image_foundation_output_priors(
-    *,
-    model: Any,
-    base_model_checkpoint: Path | None,
-    train_parquet: Path,
-    slider_set_version: str,
-    disabled: bool,
-) -> dict[str, float] | None:
-    """Initialise random slider heads after an image-foundation warm start."""
-    if disabled or not _is_image_foundation_warm_start(base_model_checkpoint):
-        return None
-    priors = _training_target_priors(train_parquet, slider_set_version)
-    model.initialise_output_priors(priors)
-    return priors
 
 
 def _publish_profile_checkpoint(
@@ -622,21 +565,6 @@ def train_profile(args: argparse.Namespace) -> dict:
             raise ValueError(
                 f"--slider-set-version={args.slider_set_version!r} does not match "
                 f"checkpoint slider_set_version={model._slider_set_version!r}"
-            )
-        priors = _initialise_image_foundation_output_priors(
-            model=model,
-            base_model_checkpoint=base_model_checkpoint if not resume_checkpoint else None,
-            train_parquet=args.train_parquet,
-            slider_set_version=args.slider_set_version,
-            disabled=args.no_target_prior_init,
-        )
-        if priors is not None:
-            log.info(
-                "Initialised image-foundation warm-start heads from training target "
-                "medians (Exposure2012=%0.3f, Temperature=%0.0f, Tint=%0.2f)",
-                priors.get("Exposure2012", 0.0),
-                priors.get("Temperature", 0.0),
-                priors.get("Tint", 0.0),
             )
     else:
         model = SonnaEditor(

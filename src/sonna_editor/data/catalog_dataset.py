@@ -152,7 +152,9 @@ def build_dataset_from_catalog(
     thumbnail_dir: Path,
     limit: int = 30_000,
     max_workers: int = 4,
-) -> tuple[pd.DataFrame, dict[str, int]]:
+    collection_name: str | None = None,
+    skip_unedited: bool = True,
+) -> tuple[pd.DataFrame, dict[str, int | str]]:
     """Build a Parquet training dataset from a Lightroom catalog.
 
     Selects the most recent `limit` photos that have develop settings and pass
@@ -168,7 +170,7 @@ def build_dataset_from_catalog(
     conn = connect_catalog(catalog_path)
     try:
         logger.info("Querying catalog for all photos with develop settings...")
-        all_photos = find_edited_photos(conn)
+        all_photos = find_edited_photos(conn, collection_name=collection_name)
     except Exception:
         conn.close()
         raise
@@ -190,9 +192,12 @@ def build_dataset_from_catalog(
     edited_desc = sorted(edited_deduped, key=lambda p: p["capture_time"] or "", reverse=True)
 
     logger.info(
-        "Catalog: %d total photos, %d with develop settings, %d after virtual-copy dedup"
+        "Catalog: %d total photos%s, %d with develop settings, %d after virtual-copy dedup"
         " — scanning most recent first",
-        len(all_photos), len(edited), len(edited_deduped),
+        len(all_photos),
+        f" in collection {collection_name!r}" if collection_name else "",
+        len(edited),
+        len(edited_deduped),
     )
 
     selected: list[tuple[dict, dict]] = []
@@ -216,7 +221,7 @@ def build_dataset_from_catalog(
             skip_parse_error += 1
             continue
 
-        if _is_unedited_dict(sliders):
+        if skip_unedited and _is_unedited_dict(sliders):
             skip_unedited += 1
             continue
 
@@ -287,7 +292,7 @@ def build_dataset_from_catalog(
     df.to_parquet(output_path, index=False)
     logger.info("Wrote %d rows to %s", len(df), output_path)
 
-    stats: dict[str, int] = {
+    stats: dict[str, int | str] = {
         "total_in_catalog": len(all_photos),
         "total_with_develop_settings": len(edited),
         "skip_virtual_copy": n_virtual_copies_removed,
@@ -297,4 +302,7 @@ def build_dataset_from_catalog(
         "skip_extraction_error": failures,
         "included": len(rows),
     }
+    if collection_name is not None:
+        stats["collection_name"] = collection_name
+    stats["skip_unedited_filter_enabled"] = int(skip_unedited)
     return df, stats

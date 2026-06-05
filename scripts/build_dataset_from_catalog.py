@@ -42,6 +42,23 @@ def main() -> None:
         help="Number of parallel thumbnail/metadata workers.",
     )
     parser.add_argument(
+        "--collection-name",
+        default=None,
+        help=(
+            "Optional Lightroom collection name to include. Useful for FiveK, "
+            "where collections A/B/C/D/E are expert virtual-copy targets."
+        ),
+    )
+    parser.add_argument(
+        "--include-unedited-looking",
+        action="store_true",
+        help=(
+            "Keep sparse catalog rows that look unedited because most sliders are "
+            "absent/default. Use this for FiveK expert collections; do not use it "
+            "for ordinary Sonna catalogs unless you have audited the rows."
+        ),
+    )
+    parser.add_argument(
         "--split", action="store_true",
         help="Also produce train/val/test splits after building.",
     )
@@ -72,6 +89,10 @@ def main() -> None:
     print(f"Profile:  {args.profile_name}")
     print(f"Limit:    {args.limit}")
     print(f"Workers:  {args.workers}")
+    if args.collection_name:
+        print(f"Collection: {args.collection_name}")
+    if args.include_unedited_looking:
+        print("Unedited-looking filter: disabled")
     print()
 
     try:
@@ -82,6 +103,8 @@ def main() -> None:
             thumbnail_dir=thumbnail_dir,
             limit=args.limit,
             max_workers=args.workers,
+            collection_name=args.collection_name,
+            skip_unedited=not args.include_unedited_looking,
         )
     except CatalogError as exc:
         print(f"Catalog error: {exc}", file=sys.stderr)
