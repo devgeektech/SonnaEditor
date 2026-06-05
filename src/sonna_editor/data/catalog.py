@@ -124,6 +124,16 @@ WHERE COALESCE(ai.pick, 0) > -1
 ORDER BY ai.captureTime ASC, ai.id_local ASC
 """
 
+_COLLECTION_FILTER_SQL = """
+  AND EXISTS (
+      SELECT 1
+      FROM AgLibraryCollectionImage AS ci
+      JOIN AgLibraryCollection AS c ON c.id_local = ci.collection
+      WHERE ci.image = ai.id_local
+        AND c.name = :collection_name
+  )
+"""
+
 _DEVELOP_SETTINGS_SQL_V2 = """
 SELECT ids.text FROM Adobe_imageDevelopSettings ids
 JOIN Adobe_images ai ON ids.id_local = ai.developSettingsIDCache
@@ -301,6 +311,7 @@ def find_edited_photos(
     min_color_label: str | None = None,
     min_rating: int = 0,
     min_flag: int | None = None,
+    collection_name: str | None = None,
 ) -> list[dict[str, Any]]:
     """Return photo rows from the catalog matching the given filters.
 
@@ -312,8 +323,11 @@ def find_edited_photos(
         "min_rating": min_rating,
         "min_flag": min_flag,
         "min_color_label": min_color_label,
+        "collection_name": collection_name,
     }
     sql = _FIND_PHOTOS_SQL_V2 if _detect_schema_version(conn) == "v2" else _FIND_PHOTOS_SQL_V1
+    if collection_name is not None:
+        sql = sql.replace("ORDER BY", _COLLECTION_FILTER_SQL + "ORDER BY")
     cur = conn.execute(sql, params)
     out: list[dict[str, Any]] = []
     for row in cur:

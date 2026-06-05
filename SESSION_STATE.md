@@ -1,7 +1,7 @@
 # Session State - Sonna Editor
 
-**Saved:** 2026-06-04 local time
-**Current phase/task:** Foundation model and Lite profile architecture cleanup.
+**Saved:** 2026-06-05 local time
+**Current phase/task:** FiveK catalog foundation dataset support and runbook cleanup.
 
 ## Current Workspace
 
@@ -38,9 +38,27 @@ The earlier `GPU available: False` training issue was caused by a CPU-only PyTor
 
 ## What Changed This Session
 
+- Reviewed the local MIT-Adobe FiveK download at `C:\Users\vikas.DESKTOP-61LEE8B\Downloads\fivek_dataset\fivek_dataset`.
+- Confirmed the extracted FiveK tree contains 5,000 `.dng` source files under `raw_photos\HQa*`, `raw_photos\fivek.lrcat`, Lightroom preview/helper/catalog-data folders, and text/license/category files.
+- Inspected `raw_photos\fivek.lrcat` read-only through SQLite. It has 60,000 `Adobe_images` rows, 5,000 unique source DNGs, 96,458 develop-settings rows, and 60,000 active non-empty develop-setting blobs. Each DNG has 12 virtual-copy/recipe variants.
+- Confirmed expert collections `A`, `B`, `C`, `D`, and `E` each have 5,000 linked rows. Collection `C` has 5,000 rows, all with develop settings and all pointing to existing DNGs.
+- Added exact Lightroom collection filtering to `src\sonna_editor\data\catalog.py` and surfaced it through `scripts\build_dataset_from_catalog.py --collection-name`.
+- Added `--include-unedited-looking` to `scripts\build_dataset_from_catalog.py` because FiveK develop blobs are sparse; many default sliders are absent, so the generic unedited-row filter would skip valid expert edits.
+- Verified the project catalog reader can parse Collection `C`. A 250-row sample had about 55 populated slider fields per row; absent sliders remain `NaN` and are masked by the existing loss.
+- Ran a 20-row real FiveK Collection C catalog smoke into `data\training_workspace\fivek_expert_c_catalog_smoke_nosplit`; dataset creation succeeded. A separate 20-row smoke with `--split` wrote the dataset but failed splitting because the tiny sample had too few shoot groups, so use full 5,000-row builds for real split generation.
+- Updated `FOUNDATION_TRAINING.md`, `CLI_COMMANDS.md`, and `RUN.md` with the inspected FiveK path, catalog row analysis, Expert C catalog commands, cumulative foundation training order, and checkpoint naming instructions.
+- Updated `project_knowledge.md` and `HANDOVER.md` with the FiveK catalog route and source-map changes.
+- Upgraded foundation lineage management to schema-v2 manifests. `foundation_manifest.json` now records `active_version`, `versions[]`, checkpoint SHA256, foundation type, capabilities, and training-source tags while retaining compatibility fields such as `active_checkpoint` and `history`.
+- Foundation promotion now auto-allocates `foundation-vN` when no explicit version stem is supplied, still refuses to overwrite existing checkpoints, and keeps older versions available for rollback.
+- Added `scripts\rollback_foundation.py` with `--list` and explicit version activation so bad foundation runs can be rolled back by changing the manifest pointer instead of deleting checkpoint files.
+- Personal AI training sidecars and summaries now record foundation provenance for foundation warm starts: version, checkpoint path, SHA256, foundation type, capabilities, and training-source tags.
+- Foundation warm starts now use native SonnaEditor checkpoints only. The previous paired-image warm-start path has been removed.
+- Added progressive backbone warm-start training. Frontend Personal AI and RAW+XMP foundation runs now freeze the full ConvNeXt backbone first, then unfreeze later stages in phases before full fine-tuning. The legacy partial strategy remains available as `--backbone-unfreeze-strategy partial`.
+- Added `scripts\analyse_backbone_drift.py` to compare ConvNeXt backbone tensor drift between a foundation checkpoint and a final Personal AI checkpoint, reporting per-stage relative deltas, cosine similarity, and the largest drifting tensors.
+- Removed the paired-image foundation training path. Foundation checkpoints are now native `SonnaEditor` slider-regression checkpoints trained from catalog-derived splits or RAW+XMP sidecars.
 - Moved transient app state to repo-local `.saha\` instead of `~\.saha\`. Active profile, recent folders, queued job snapshots, Personal AI training workspaces, and fine-tune scratch runs now resolve from the project root by default.
 - Added `config.ensure_runtime_directories()` and wired it into backend/server and CLI entrypoints so a fresh clone auto-creates `data\training_sources\`, `data\raw\`, `data\raw\sonna_training\`, `data\datasets\`, `data\dng\`, `data\parquet\`, `data\captures\`, `data\audits\`, `data\dbg\`, `v1_learning\`, and `.saha\` before use.
-- Split local learning inputs from generated outputs. Source photos now belong under separate gitignored child folders such as `data\training_sources\sonna_personal_001\raw_xmp\`; future FiveK image-pair inputs should use folders such as `data\training_sources\fivek_expert_c\raw_dng\` and `data\training_sources\fivek_expert_c\expert_tiff\`. Generated Parquet/checkpoint run outputs remain under `data\training_workspace\`.
+- Split local learning inputs from generated outputs. Source photos now belong under separate gitignored child folders such as `data\training_sources\sonna_personal_001\raw_xmp\`. Generated Parquet/checkpoint run outputs, including FiveK catalog datasets, remain under `data\training_workspace\`.
 - `SONNA_TRAINING_WORKSPACE` defaults to `data\training_workspace\`. `SONNA_FOUNDATION_REPO` defaults to the repo-local `SonnaEditorFoundation\` folder so promoted foundation checkpoints stay inside the SonnaEditor workspace while remaining outside gitignored `data\`. Runtime directories are auto-created on startup unless the operator overrides them.
 - Updated `scripts\process_shoot_model.py` so the default model path resolves to the newest published `v1_learning\model-v*.ckpt` instead of a stale hardcoded legacy checkpoint path. If no published profile exists yet, the CLI now fails with a clear instruction.
 
@@ -88,8 +106,8 @@ The earlier `GPU available: False` training issue was caused by a CPU-only PyTor
 - Updated docs so Personal AI and Lite training/execution are frontend flows, while foundation training is CLI-only through `scripts/train_foundation_model.py`.
 - Renamed `TRAINING_COMMANDS.md` to `CLI_COMMANDS.md` and created `FOUNDATION_TRAINING.md` for foundation train, resume, retrain, promotion, and FiveK guidance.
 - Updated frontend Personal AI backend flow so RAW+XMP profile training resolves the configured hidden foundation checkpoint and warm-starts model weights from it before publishing a user-facing checkpoint into `v1_learning/`. Warm-start now uses `base_model_checkpoint` rather than Lightning resume state, keeps the new training registry, and skips categorical embedding-table copies.
-- Verified MIT-Adobe FiveK is suitable foundation material, with the caveat that it is 5,000 DNG inputs plus five expert renditions/catalog edits, not 25,000 independent RAW inputs. Use one expert target style first.
-- Implemented the TIFF/image foundation path. `scripts\train_foundation_model.py` now accepts `--raw-image-dir` plus `--target-tiff-dir` for paired `RAW/DNG/image -> edited TIFF` training, saving an `image_to_image_v1` checkpoint in the foundation folder. Personal AI warm-start and Lite profile creation can copy the image-foundation ConvNeXt backbone into a fresh `SonnaEditor`; Mode A remains RAW+XMP slider regression.
+- Verified MIT-Adobe FiveK is suitable foundation material through its Lightroom catalog, with the caveat that it is 5,000 DNG inputs plus expert catalog edit variants, not 25,000 independent RAW inputs. Use one expert collection first.
+- Removed the previous paired-image foundation implementation and commands. `scripts\train_foundation_model.py` now accepts only `--raw-xmp-dir` or `--splits-dir`.
 - Updated foundation training semantics so each new foundation run warm-starts from the active foundation checkpoint by default, writes a new versioned checkpoint, promotes it as the active default, and keeps previous checkpoints untouched. If the active checkpoint file is removed after a bad run, resolution falls back to the newest remaining checkpoint in the foundation folder.
 - Updated the foundation and operator docs so RAW+XMP foundation training uses direct script commands only: Lightroom metadata export/source-folder expectation, inspectable dataset/split build, audits, training from prepared splits, and the direct `--raw-xmp-dir` shortcut. Operator-facing stale references to repo-local `data\foundation_repo\`, old local dataset presence, and old Lite profile artifacts were cleaned up.
 - Added `matplotlib` to the base project dependencies and refreshed `uv.lock` so dataset audit plots generate without optional-import warnings. `scripts\audit_catalog.py` now prints ASCII `OK`/`WARN`/`STOP` status labels so Windows PowerShell does not fail on emoji encoding.
@@ -225,8 +243,10 @@ The earlier `GPU available: False` training issue was caused by a CPU-only PyTor
 
 ## Next Suggested Step
 
+For immediate FiveK foundation training, build the Expert C catalog dataset with `scripts\build_dataset_from_catalog.py --collection-name "C" --include-unedited-looking`, audit it, then train from prepared splits with `scripts\train_foundation_model.py --splits-dir ...`. Do not mix all 60,000 FiveK virtual-copy rows in one unconditioned model.
+
 Add the fresh RAW+XMP dataset, start the backend/Electron app, and create a Personal AI profile from the frontend. Use Lite profile creation from the frontend after a foundation checkpoint is configured in `SONNA_FOUNDATION_CHECKPOINT`, `SONNA_FOUNDATION_REPO/foundation_manifest.json`, or `SONNA_FOUNDATION_REPO/foundation.ckpt`.
 
-For current parameter-supervised foundation model work, use `scripts\train_foundation_model.py --raw-xmp-dir ...` or `--splits-dir ...` so the checkpoint is promoted to `SonnaEditorFoundation\` and stays out of the frontend profile list. It will warm-start from the active foundation checkpoint unless `--no-warm-start` is supplied. For MIT-Adobe FiveK, use `scripts\train_foundation_model.py --raw-image-dir ... --target-tiff-dir ...`; do not push FiveK TIFF targets through the existing RAW+XMP pipeline.
+For current foundation model work, use `scripts\train_foundation_model.py --raw-xmp-dir ...` or `--splits-dir ...` so the checkpoint is promoted to `SonnaEditorFoundation\` and stays out of the frontend profile list. It will warm-start from the active foundation checkpoint unless `--no-warm-start` is supplied. For MIT-Adobe FiveK, use catalog-derived splits from `build_dataset_from_catalog.py`.
 
 Before relying on live RAW/XMP extraction coverage, restore the local fixture files under `tests/fixtures/`. The normal full suite now skips those local-data checks when the fixtures are missing or unreadable.

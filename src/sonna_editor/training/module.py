@@ -42,12 +42,20 @@ class SonnaLightningModule(pl.LightningModule):
         lr: float = 3e-4,
         weight_decay: float = 1e-4,
         freeze_backbone_epochs: int = 10,
+        backbone_unfreeze_strategy: str = "partial",
     ) -> None:
         super().__init__()
+        if backbone_unfreeze_strategy not in {"partial", "full", "progressive"}:
+            raise ValueError(
+                "backbone_unfreeze_strategy must be one of: partial, full, progressive"
+            )
         self.model = model
         self.lr = lr
         self.weight_decay = weight_decay
         self.freeze_backbone_epochs = freeze_backbone_epochs
+        self.backbone_unfreeze_strategy = backbone_unfreeze_strategy
+        if backbone_unfreeze_strategy in {"full", "progressive"}:
+            self.model.freeze_entire_backbone()
 
         self.loss_fn = WeightedSliderLoss(
             slider_set_version=model._slider_set_version,
@@ -68,7 +76,30 @@ class SonnaLightningModule(pl.LightningModule):
     # ------------------------------------------------------------------
 
     def on_train_epoch_start(self) -> None:
-        if self.current_epoch == self.freeze_backbone_epochs:
+        if self.backbone_unfreeze_strategy == "partial":
+            if self.current_epoch == self.freeze_backbone_epochs:
+                self.model.unfreeze_backbone()
+                self._log_metric("backbone_unfrozen_epoch", float(self.current_epoch))
+            return
+
+        if self.backbone_unfreeze_strategy == "full":
+            if self.current_epoch == self.freeze_backbone_epochs:
+                self.model.unfreeze_backbone()
+                self._log_metric("backbone_unfrozen_epoch", float(self.current_epoch))
+            return
+
+        # Progressive foundation warm-start schedule:
+        #   epoch 0-4:   full backbone frozen
+        #   epoch 5-9:   stages 6-7 trainable
+        #   epoch 10-14: stages 4-7 trainable
+        #   epoch 15+:   all stages trainable
+        if self.current_epoch == 5:
+            self.model.unfreeze_backbone_from_stage(6)
+            self._log_metric("backbone_unfrozen_from_stage", 6.0)
+        elif self.current_epoch == 10:
+            self.model.unfreeze_backbone_from_stage(4)
+            self._log_metric("backbone_unfrozen_from_stage", 4.0)
+        elif self.current_epoch == 15:
             self.model.unfreeze_backbone()
             self._log_metric("backbone_unfrozen_epoch", float(self.current_epoch))
 

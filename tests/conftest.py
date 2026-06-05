@@ -118,6 +118,20 @@ CREATE TABLE Adobe_imageDevelopSettings (
     beforeDigest TEXT,
     developSettings TEXT
 );
+
+CREATE TABLE AgLibraryCollection (
+    id_local INTEGER PRIMARY KEY,
+    name TEXT,
+    imageCount REAL
+);
+
+CREATE TABLE AgLibraryCollectionImage (
+    id_local INTEGER PRIMARY KEY,
+    collection INTEGER,
+    image INTEGER,
+    pick REAL,
+    positionInCollection REAL
+);
 """
 
 
@@ -287,6 +301,33 @@ def _build_synthetic_catalog(lrcat_path: Path, photos_root: Path) -> None:
             capture_time="2024-01-01T19:00:00",
             rating=4.0, color_label="", pick=0.0,
             has_develop_settings=1, develop_settings=_make_all_fields_xmp(),
+        )
+
+        conn.execute(
+            "INSERT INTO AgLibraryCollection (id_local, name, imageCount) VALUES (?, ?, ?)",
+            (1, "C", 2),
+        )
+        conn.execute(
+            "INSERT INTO AgLibraryCollection (id_local, name, imageCount) VALUES (?, ?, ?)",
+            (2, "A", 1),
+        )
+        conn.execute(
+            "INSERT INTO AgLibraryCollectionImage "
+            "(id_local, collection, image, pick, positionInCollection) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (1, 1, PHOTO_A_EDITED_XMP, 0, 1),
+        )
+        conn.execute(
+            "INSERT INTO AgLibraryCollectionImage "
+            "(id_local, collection, image, pick, positionInCollection) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (2, 1, PHOTO_B_EDITED_LUA, 0, 2),
+        )
+        conn.execute(
+            "INSERT INTO AgLibraryCollectionImage "
+            "(id_local, collection, image, pick, positionInCollection) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (3, 2, PHOTO_G_RED_LABEL, 0, 1),
         )
 
         conn.commit()

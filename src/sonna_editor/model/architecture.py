@@ -511,6 +511,29 @@ class SonnaEditor(nn.Module):
         for p in self.backbone_features[1].parameters():
             p.requires_grad = False
 
+    def freeze_entire_backbone(self) -> None:
+        """Freeze all ConvNeXt feature stages and the classifier norm."""
+        for p in self.backbone_features.parameters():
+            p.requires_grad = False
+        for p in self.backbone_norm.parameters():
+            p.requires_grad = False
+
+    def unfreeze_backbone_from_stage(self, first_trainable_stage: int) -> None:
+        """Unfreeze ConvNeXt stages from `first_trainable_stage` onward.
+
+        Stages before the threshold stay frozen. The classifier norm is
+        trainable whenever any feature stage is trainable.
+        """
+        n_stages = len(self.backbone_features)
+        first = max(0, min(first_trainable_stage, n_stages))
+        for idx, stage in enumerate(self.backbone_features):
+            trainable = idx >= first
+            for p in stage.parameters():
+                p.requires_grad = trainable
+        norm_trainable = first < n_stages
+        for p in self.backbone_norm.parameters():
+            p.requires_grad = norm_trainable
+
     def unfreeze_backbone(self) -> None:
         """
         Unfreeze all backbone parameters.

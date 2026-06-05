@@ -26,9 +26,8 @@ sidecars for new shoots.
   neutral white highlights do not shift pink/red from channel-curve endpoint
   drift.
 - Foundation model training is CLI-only. `scripts/train_foundation_model.py`
-  supports both parameter-supervised training from real Lightroom labels and
-  image-supervised MIT-Adobe FiveK-style training from `RAW/DNG -> expert TIFF`.
-  The TIFF path learns foundation backbone weights, not fake XMP labels.
+  trains native `SonnaEditor` slider-regression checkpoints from real Lightroom
+  labels: RAW+XMP sidecars or catalog-derived splits such as FiveK Expert C.
 - Foundation runs are versioned and warm-start from the active foundation
   checkpoint by default. A successful run promotes the new checkpoint as active
   while keeping older checkpoints available for fallback.
@@ -100,8 +99,8 @@ photos. See `CLI_COMMANDS.md` for operator commands and
 
 Local learning photos should be kept in separate child folders under
 `data/training_sources/`, for example `sonna_personal_001/raw_xmp/` for
-RAW+XMP profile data, and `fivek_expert_c/raw_dng/` plus
-`fivek_expert_c/expert_tiff/` for future FiveK image-pair foundation data. The
+RAW+XMP profile data. FiveK foundation training is built from the Lightroom
+catalog into `data/training_workspace/fivek_expert_c_catalog_dataset/`. The
 whole `data/` tree is gitignored, so those photos stay local.
 
 ## Lite Profiles

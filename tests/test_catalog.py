@@ -170,6 +170,13 @@ def test_find_filter_color_label(synthetic_catalog: Path) -> None:
     assert ids == {PHOTO_G_RED_LABEL}
 
 
+def test_find_filter_collection_name(synthetic_catalog: Path) -> None:
+    conn = connect_catalog(synthetic_catalog)
+    photos = find_edited_photos(conn, collection_name="C")
+    ids = {p["image_id"] for p in photos}
+    assert ids == {PHOTO_A_EDITED_XMP, PHOTO_B_EDITED_LUA}
+
+
 def test_find_orders_by_capture_time(synthetic_catalog: Path) -> None:
     conn = connect_catalog(synthetic_catalog)
     photos = find_edited_photos(conn)
