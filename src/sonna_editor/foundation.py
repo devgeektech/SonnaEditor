@@ -184,29 +184,47 @@ def _next_foundation_version(manifest: dict[str, Any] | None = None) -> str:
 
 def _legacy_versions_from_history(manifest: dict[str, Any]) -> list[dict[str, Any]]:
     versions: list[dict[str, Any]] = []
-    for entry in manifest.get("history") or []:
-        if not isinstance(entry, dict):
-            continue
+
+    def add_entry(entry: dict[str, Any], *, fallback_display_name: str | None = None) -> None:
         checkpoint = entry.get("checkpoint")
         if not checkpoint:
-            continue
+            return
         checkpoint_str = str(checkpoint)
         version = Path(checkpoint_str).stem
+        if any(existing.get("version") == version for existing in versions):
+            return
+        foundation_type = str(entry.get("foundation_type") or DEFAULT_FOUNDATION_TYPE)
         versions.append({
             "version": version,
             "checkpoint": checkpoint_str,
             "sidecar": entry.get("sidecar"),
-            "display_name": entry.get("display_name") or version,
+            "display_name": entry.get("display_name") or fallback_display_name or version,
             "source_run_dir": entry.get("source_run_dir"),
             "created_at": entry.get("updated_at"),
-            "foundation_type": entry.get("foundation_type") or DEFAULT_FOUNDATION_TYPE,
-            "capabilities": _capabilities_for_foundation_type(
-                str(entry.get("foundation_type") or DEFAULT_FOUNDATION_TYPE)
-            ),
-            "trained_on": _trained_on_for_foundation_type(
-                str(entry.get("foundation_type") or DEFAULT_FOUNDATION_TYPE)
-            ),
+            "foundation_type": foundation_type,
+            "capabilities": _capabilities_for_foundation_type(foundation_type),
+            "trained_on": _trained_on_for_foundation_type(foundation_type),
         })
+
+    for entry in manifest.get("history") or []:
+        if not isinstance(entry, dict):
+            continue
+
+        add_entry(entry)
+
+    active_checkpoint = manifest.get("active_checkpoint")
+    if active_checkpoint:
+        add_entry(
+            {
+                "checkpoint": active_checkpoint,
+                "sidecar": manifest.get("active_sidecar"),
+                "display_name": manifest.get("display_name"),
+                "source_run_dir": manifest.get("source_run_dir"),
+                "updated_at": manifest.get("updated_at"),
+                "foundation_type": manifest.get("foundation_type"),
+            },
+            fallback_display_name=str(manifest.get("active_version") or ""),
+        )
     return versions
 
 

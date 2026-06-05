@@ -1,7 +1,7 @@
 # Session State - Sonna Editor
 
 **Saved:** 2026-06-05 local time
-**Current phase/task:** FiveK catalog foundation dataset support and runbook cleanup.
+**Current phase/task:** FiveK catalog foundation verification and runbook cleanup.
 
 ## Current Workspace
 
@@ -45,12 +45,14 @@ The earlier `GPU available: False` training issue was caused by a CPU-only PyTor
 - Added exact Lightroom collection filtering to `src\sonna_editor\data\catalog.py` and surfaced it through `scripts\build_dataset_from_catalog.py --collection-name`.
 - Added `--include-unedited-looking` to `scripts\build_dataset_from_catalog.py` because FiveK develop blobs are sparse; many default sliders are absent, so the generic unedited-row filter would skip valid expert edits.
 - Verified the project catalog reader can parse Collection `C`. A 250-row sample had about 55 populated slider fields per row; absent sliders remain `NaN` and are masked by the existing loss.
-- Ran a 20-row real FiveK Collection C catalog smoke into `data\training_workspace\fivek_expert_c_catalog_smoke_nosplit`; dataset creation succeeded. A separate 20-row smoke with `--split` wrote the dataset but failed splitting because the tiny sample had too few shoot groups, so use full 5,000-row builds for real split generation.
+- Ran a 20-row real FiveK Collection C catalog smoke into `data\training_workspace\fivek_catalog_verify_20260605`; dataset creation succeeded with 0 missing files, 0 parse errors, 20 generated thumbnails, and 20 Parquet rows. A separate earlier 20-row smoke with `--split` wrote the dataset but failed splitting because the tiny sample had too few shoot groups, so use full 5,000-row builds for real split generation.
+- Verified the FiveK catalog training policy: DNG previews and RAW metadata are model inputs, catalog develop settings are slider targets, absent catalog slider values are masked by the loss, and fresh/foundation output priors fall back to Lightroom defaults for fields with no labels.
 - Updated `FOUNDATION_TRAINING.md`, `CLI_COMMANDS.md`, and `RUN.md` with the inspected FiveK path, catalog row analysis, Expert C catalog commands, cumulative foundation training order, and checkpoint naming instructions.
 - Updated `project_knowledge.md` and `HANDOVER.md` with the FiveK catalog route and source-map changes.
 - Upgraded foundation lineage management to schema-v2 manifests. `foundation_manifest.json` now records `active_version`, `versions[]`, checkpoint SHA256, foundation type, capabilities, and training-source tags while retaining compatibility fields such as `active_checkpoint` and `history`.
 - Foundation promotion now auto-allocates `foundation-vN` when no explicit version stem is supplied, still refuses to overwrite existing checkpoints, and keeps older versions available for rollback.
 - Added `scripts\rollback_foundation.py` with `--list` and explicit version activation so bad foundation runs can be rolled back by changing the manifest pointer instead of deleting checkpoint files.
+- Fixed legacy foundation manifest listing so the active checkpoint is included even when the manifest predates schema-v2 `versions[]`. The current active checkpoint `foundation-sonna-raw-xmp-003.ckpt` now resolves and appears in `scripts\rollback_foundation.py --list` alongside `foundation-sonna-raw-xmp-001`.
 - Personal AI training sidecars and summaries now record foundation provenance for foundation warm starts: version, checkpoint path, SHA256, foundation type, capabilities, and training-source tags.
 - Foundation warm starts now use native SonnaEditor checkpoints only. The previous paired-image warm-start path has been removed.
 - Added progressive backbone warm-start training. Frontend Personal AI and RAW+XMP foundation runs now freeze the full ConvNeXt backbone first, then unfreeze later stages in phases before full fine-tuning. The legacy partial strategy remains available as `--backbone-unfreeze-strategy partial`.
@@ -120,6 +122,14 @@ The earlier `GPU available: False` training issue was caused by a CPU-only PyTor
 - Cleaned fixture-dependent RAW/XMP tests so missing/unreadable private fixtures skip cleanly instead of failing the full suite on this Windows workspace.
 
 ## Verification
+
+- Current foundation verification pass:
+  - `uv run python scripts\train_foundation_model.py --help` shows only `--raw-xmp-dir` and `--splits-dir`; obsolete rendered-image flags are absent.
+  - Real FiveK folder `C:\Users\vikas.DESKTOP-61LEE8B\Downloads\fivek_dataset\fivek_dataset` contains 5,000 `.dng` files and `raw_photos\fivek.lrcat`.
+  - `find_edited_photos(..., collection_name='C')` returns 5,000 rows; collections A/B/C/D/E each return 5,000 rows.
+  - `uv run python scripts\build_dataset_from_catalog.py --catalog-path "C:\Users\vikas.DESKTOP-61LEE8B\Downloads\fivek_dataset\fivek_dataset\raw_photos\fivek.lrcat" --output-dir "data\training_workspace\fivek_catalog_verify_20260605" --profile-name "fivek_catalog_verify_20260605" --collection-name "C" --include-unedited-looking --limit 20 --workers 1` passed.
+  - `uv run python scripts\rollback_foundation.py --list` now lists both `foundation-sonna-raw-xmp-001` and active `foundation-sonna-raw-xmp-003`.
+  - `uv run pytest tests\test_foundation.py -q` passed: 4 passed.
 
 - `uv run ruff check src\sonna_editor\foundation.py src\sonna_editor\api\routes\profiles.py src\sonna_editor\api\models.py scripts\train_foundation_model.py scripts\build_mode_b_checkpoint.py tests\test_foundation.py tests\api\test_profiles.py tests\api\conftest.py` passed.
 - Current repo-local foundation/Git LFS verification:

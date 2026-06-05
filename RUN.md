@@ -204,6 +204,11 @@ develop settings: 60,000 catalog rows over 5,000 DNGs, with collections `A` to
 foundation experiment, build only Expert C. Do not mix all 60,000 FiveK catalog
 rows in one unconditioned slider model.
 
+The FiveK path trains `RAW preview + metadata -> Lightroom slider values` from
+catalog develop settings. It does not use rendered target images. The verified
+local catalog has no blocking lock files, and a 20-row Expert C smoke build
+completed with 0 missing files and 0 parse errors.
+
 On the Windows RTX 3050 workstation, start foundation runs at `--batch-size 8`.
 The RAW+XMP foundation CLI automatically retries with smaller batch sizes after
 CUDA memory failures.

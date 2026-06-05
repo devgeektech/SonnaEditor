@@ -143,3 +143,46 @@ def test_foundation_auto_versions_and_explicit_rollback(
     assert provenance["foundation_version"] == "foundation-v1"
     assert provenance["foundation_checkpoint"] == str(promoted_first.resolve())
     assert provenance["foundation_sha256"] is not None
+
+
+def test_legacy_manifest_versions_include_active_checkpoint(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    repo = tmp_path / "foundation"
+    checkpoints = repo / "checkpoints"
+    checkpoints.mkdir(parents=True)
+    monkeypatch.setattr(config, "FOUNDATION_REPO_DIR", repo)
+    monkeypatch.delenv(config.FOUNDATION_REPO_ENV_VAR, raising=False)
+
+    (checkpoints / "foundation-old.ckpt").write_bytes(b"old")
+    (checkpoints / "foundation-active.ckpt").write_bytes(b"active")
+    (repo / "foundation_manifest.json").write_text(
+        json.dumps(
+            {
+                "active_checkpoint": "checkpoints/foundation-active.ckpt",
+                "active_sidecar": "checkpoints/foundation-active.json",
+                "display_name": "Active Foundation",
+                "source_run_dir": "data/training_workspace/foundation_runs/active",
+                "updated_at": "2026-06-05T00:00:00Z",
+                "foundation_type": "sonna_editor_slider_regression",
+                "history": [
+                    {
+                        "checkpoint": "checkpoints/foundation-old.ckpt",
+                        "sidecar": "checkpoints/foundation-old.json",
+                        "display_name": "Old Foundation",
+                        "source_run_dir": "data/training_workspace/foundation_runs/old",
+                        "updated_at": "2026-06-04T00:00:00Z",
+                        "foundation_type": "sonna_editor_slider_regression",
+                    }
+                ],
+            },
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+
+    assert [v["version"] for v in list_foundation_versions()] == [
+        "foundation-old",
+        "foundation-active",
+    ]

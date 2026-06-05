@@ -490,6 +490,16 @@ Lightroom preview-cache files, and text/license metadata. The catalog is now
 the supported FiveK training source; separate rendered target folders are not
 used.
 
+Verified on 2026-06-05:
+
+```text
+raw_photos:                 5,000 .dng files
+fivek.lrcat:                present, about 655 MB
+blocking lock files:        none
+expert collections A-E:     5,000 rows each
+Collection C smoke build:   20 rows succeeded, 0 missing files, 0 parse errors
+```
+
 The Lightroom catalog itself contains 60,000 catalog image rows over the same
 5,000 DNGs: 12 virtual-copy/recipe variants per source file. Expert collections
 `A`, `B`, `C`, `D`, and `E` each contain 5,000 rows. Use one collection first,
@@ -576,6 +586,11 @@ Use `--include-unedited-looking` for FiveK because its catalog develop blobs are
 sparse: many default sliders are absent, not proof that the expert edit is
 unedited. Do not use that flag for ordinary Sonna catalogs unless the dataset
 has been audited.
+
+FiveK teaches the model through DNG preview features plus catalog develop
+settings. It is not rendered-image training. Missing catalog slider values are
+masked out of the loss, while fresh/foundation output priors fall back to
+Lightroom defaults for fields with no labels.
 
 For an ordinary Sonna catalog, use the same catalog builder without the FiveK
 collection flag unless you intentionally want one Lightroom collection:

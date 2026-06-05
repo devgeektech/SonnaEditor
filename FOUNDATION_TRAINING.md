@@ -100,6 +100,17 @@ Each DNG has:                         12 catalog image rows / virtual copies
 Expert collections A/B/C/D/E:          5,000 rows each
 ```
 
+Verification on 2026-06-05:
+
+```text
+raw_photos file count:                 5,000 .dng files
+Catalog file:                          raw_photos\fivek.lrcat, about 655 MB
+Blocking lock files:                   none found (.lrcat-wal was 0 bytes; .lrcat-shm is harmless)
+Expert collection query:               A/B/C/D/E each returned 5,000 rows
+Collection C smoke build:              20 rows built successfully, 0 missing files, 0 parse errors
+Smoke output:                          data\training_workspace\fivek_catalog_verify_20260605\
+```
+
 Use one expert collection first, normally `C`, so the plain slider-regression
 model sees one target recipe per DNG. Do not mix A/B/C/D/E in one unconditioned
 model unless expert/style conditioning is added.
@@ -107,6 +118,21 @@ model unless expert/style conditioning is added.
 Close Lightroom Classic before running catalog commands. The catalog is opened
 read-only; RAW files are only read for previews, metadata, histograms, and
 AsShot white-balance input features.
+
+What the FiveK catalog teaches:
+
+```text
+DNG preview + RAW metadata + scene stats -> Lightroom develop settings
+```
+
+This is not rendered-image training. The model learns slider regression from
+real catalog develop settings while seeing the DNG preview as the image input.
+FiveK catalog blobs are sparse: absent slider values are stored as missing
+targets and masked out of the loss. Fresh/foundation output priors still fall
+back to Lightroom defaults for fields with no labels, so missing catalog fields
+do not become random heads. If later quality audits show FiveK should treat
+absent catalog sliders as explicit defaults, add that as a separate reviewed
+data-policy change before retraining production foundations.
 
 ### Build Expert C Splits
 
@@ -144,6 +170,9 @@ uv run python scripts\audit_dataset_diversity.py `
 ```
 
 ### Train FiveK Catalog Foundation
+
+Only run this after the full 5,000-row split build and audits pass. Do not train
+from the 20-row smoke dataset.
 
 ```powershell
 uv run python scripts\train_foundation_model.py `
@@ -199,6 +228,9 @@ data\training_sources\sonna_foundation_001\raw_xmp\
 
 ### Build RAW+XMP Splits
 
+Use this route for serious RAW+XMP foundation training because the generated
+dataset and splits can be audited before training.
+
 ```powershell
 uv run python scripts\build_dataset.py `
   --input-dir "data\training_sources\sonna_foundation_001\raw_xmp" `
@@ -214,7 +246,11 @@ uv run python scripts\build_dataset.py `
 ### Train From RAW+XMP Splits
 
 Do not pass `--no-warm-start` if this run should inherit the active FiveK
-foundation checkpoint.
+foundation checkpoint. This is the intended continuation path:
+
+```text
+FiveK catalog foundation -> Sonna RAW+XMP foundation -> later FiveK/Sonna runs
+```
 
 ```powershell
 uv run python scripts\train_foundation_model.py `
