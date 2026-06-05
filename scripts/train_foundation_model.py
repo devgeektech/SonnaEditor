@@ -77,6 +77,52 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--max-epochs", type=int, default=100)
     parser.add_argument("--batch-size", type=int, default=8)
     parser.add_argument("--image-resolution", type=int, default=config.IMAGE_RESOLUTION)
+    parser.add_argument(
+        "--min-foundation-train-rows",
+        type=int,
+        default=1000,
+        help=(
+            "Minimum train split size required for normal foundation promotion "
+            "(default: 1000). Use --allow-small-foundation-dataset only for "
+            "deliberate smoke/ablation runs."
+        ),
+    )
+    parser.add_argument(
+        "--allow-small-foundation-dataset",
+        action="store_true",
+        help=(
+            "Allow foundation training/promotion with fewer rows than "
+            "--min-foundation-train-rows. This is intended for smoke tests or "
+            "explicit ablations, not production foundation updates."
+        ),
+    )
+    parser.add_argument(
+        "--allow-quality-gate-failure",
+        action="store_true",
+        help=(
+            "Promote even when held-out test metrics are outside the foundation "
+            "quality gate. Use only after visual review."
+        ),
+    )
+    parser.add_argument(
+        "--backbone-unfreeze-strategy",
+        choices=("progressive", "custom", "full", "partial"),
+        default="progressive",
+        help=(
+            "Foundation backbone schedule. Default progressive starts from "
+            "--backbone-trainable-layers and expands at later epochs; custom "
+            "keeps that layer spec fixed."
+        ),
+    )
+    parser.add_argument(
+        "--backbone-trainable-layers",
+        default="stage:7",
+        help=(
+            "Initial ConvNeXt trainable layer spec for foundation training "
+            "(default: stage:7). Examples: block:7:2,stage:6; "
+            "block:7:1-2,stage:6; stage:7; none."
+        ),
+    )
     parser.add_argument("--val-ratio", type=float, default=0.107)
     parser.add_argument("--test-ratio", type=float, default=0.139)
     parser.add_argument(
@@ -133,6 +179,80 @@ def _clear_cuda_after_failure() -> None:
             pass
 
 
+def _parquet_row_count(path: Path) -> int:
+    try:
+        import pyarrow.parquet as pq
+
+        return int(pq.ParquetFile(path).metadata.num_rows)
+    except Exception as exc:
+        raise RuntimeError(f"Could not read parquet row count: {path}") from exc
+
+
+def _split_row_counts(splits_dir: Path) -> dict[str, int]:
+    return {
+        split: _parquet_row_count(splits_dir / f"{split}.parquet")
+        for split in ("train", "val", "test")
+    }
+
+
+def _validate_foundation_split_size(
+    *,
+    splits_dir: Path,
+    min_train_rows: int,
+    allow_small_dataset: bool,
+) -> dict[str, int]:
+    counts = _split_row_counts(splits_dir)
+    if counts["train"] < min_train_rows and not allow_small_dataset:
+        raise RuntimeError(
+            "Refusing to train/promote a production foundation checkpoint from "
+            f"only {counts['train']} train rows at {splits_dir}. Foundation "
+            "updates need enough scene/edit diversity to avoid overfitting the "
+            "base model. Add more data, lower --min-foundation-train-rows for "
+            "a reviewed run, or pass --allow-small-foundation-dataset for a "
+            "deliberate smoke/ablation."
+        )
+    return counts
+
+
+_FOUNDATION_METRIC_LIMITS: dict[str, tuple[float, str]] = {
+    "test_mae_temperature": (350.0, "Temperature"),
+    "test_mae_tint": (8.0, "Tint"),
+    "test_mae_exposure": (0.25, "Exposure2012"),
+    "test_mae_shadows": (8.0, "Shadows2012"),
+    "test_mae_highlights": (8.0, "Highlights2012"),
+    "test_mae_whites": (5.0, "Whites2012"),
+    "test_mae_blacks": (5.0, "Blacks2012"),
+    "test_mae_clarity": (5.0, "Clarity2012"),
+    "test_mae_vibrance": (5.0, "Vibrance"),
+    "test_mae_saturation": (5.0, "Saturation"),
+    "test_mae_hsl_avg": (10.0, "HSL average"),
+}
+
+
+def _foundation_quality_failures(summary: dict[str, Any]) -> list[str]:
+    failures: list[str] = []
+    best_val = summary.get("best_val_loss")
+    test_results = summary.get("test_results") or {}
+    test_loss = test_results.get("test_loss")
+    if (
+        isinstance(best_val, (int, float))
+        and not isinstance(best_val, bool)
+        and best_val > 0
+        and isinstance(test_loss, (int, float))
+        and not isinstance(test_loss, bool)
+        and test_loss > best_val * 1.25
+    ):
+        failures.append(
+            f"test_loss {test_loss:.6f} is more than 1.25x best_val_loss {best_val:.6f}"
+        )
+
+    for key, (limit, label) in _FOUNDATION_METRIC_LIMITS.items():
+        value = test_results.get(key)
+        if isinstance(value, (int, float)) and not isinstance(value, bool) and value > limit:
+            failures.append(f"{label} MAE {value:.4g} exceeds {limit:g}")
+    return failures
+
+
 def _train_profile_with_cuda_oom_retry(train_args: argparse.Namespace) -> dict[str, Any]:
     requested_batch_size = int(train_args.batch_size)
     last_error: Exception | None = None
@@ -164,7 +284,7 @@ def _train_profile_with_cuda_oom_retry(train_args: argparse.Namespace) -> dict[s
 def _active_foundation_or_none() -> Path | None:
     try:
         return resolve_foundation_checkpoint()
-    except FileNotFoundError:
+    except (FileNotFoundError, ValueError):
         return None
 
 
@@ -230,6 +350,17 @@ def main() -> None:
     base_foundation = None if args.no_warm_start else _active_foundation_or_none()
 
     splits_dir = _resolve_splits(args, run_dir)
+    split_counts = _validate_foundation_split_size(
+        splits_dir=splits_dir,
+        min_train_rows=args.min_foundation_train_rows,
+        allow_small_dataset=args.allow_small_foundation_dataset,
+    )
+    log.info(
+        "Foundation split rows: train=%d val=%d test=%d",
+        split_counts["train"],
+        split_counts["val"],
+        split_counts["test"],
+    )
 
     train_args = argparse.Namespace(
         train_parquet=splits_dir / "train.parquet",
@@ -241,7 +372,8 @@ def main() -> None:
         lr=1e-4,
         weight_decay=1e-4,
         freeze_backbone_epochs=3,
-        backbone_unfreeze_strategy="progressive",
+        backbone_unfreeze_strategy=args.backbone_unfreeze_strategy,
+        backbone_trainable_layers=args.backbone_trainable_layers,
         num_workers=args.workers,
         resume_from_checkpoint=None,
         base_model_checkpoint=base_foundation,
@@ -269,6 +401,16 @@ def main() -> None:
     final_model = summary.get("final_model")
     if not final_model:
         raise RuntimeError("Training did not produce a final model checkpoint")
+    quality_failures = _foundation_quality_failures(summary)
+    if quality_failures and not args.allow_quality_gate_failure:
+        formatted = "\n  - ".join(quality_failures)
+        raise RuntimeError(
+            "Refusing to promote foundation checkpoint because held-out metrics "
+            "failed the quality gate:\n  - "
+            f"{formatted}\n"
+            "Inspect the run, add more data or tune the recipe, then rerun. "
+            "Pass --allow-quality-gate-failure only after deliberate visual review."
+        )
 
     promoted = promote_foundation_checkpoint(
         source_ckpt=Path(final_model),

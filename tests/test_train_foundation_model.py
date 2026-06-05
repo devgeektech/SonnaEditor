@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+from pathlib import Path
 
 import pytest
 
@@ -56,3 +57,70 @@ def test_train_profile_with_cuda_oom_retry_does_not_hide_non_cuda_errors(monkeyp
 
     with pytest.raises(RuntimeError, match="bad parquet"):
         foundation_cli._train_profile_with_cuda_oom_retry(argparse.Namespace(batch_size=16))
+
+
+def test_foundation_parser_defaults_train_final_backbone_stage(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "train_foundation_model.py",
+            "--splits-dir",
+            "data/training_workspace/fivek/splits_v2_stratified",
+        ],
+    )
+
+    args = foundation_cli._parse_args()
+
+    assert args.backbone_unfreeze_strategy == "progressive"
+    assert args.backbone_trainable_layers == "stage:7"
+    assert args.min_foundation_train_rows == 1000
+    assert args.allow_small_foundation_dataset is False
+    assert args.allow_quality_gate_failure is False
+
+
+def test_validate_foundation_split_size_blocks_tiny_production_run(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setattr(
+        foundation_cli,
+        "_split_row_counts",
+        lambda splits_dir: {"train": 132, "val": 27, "test": 30},
+    )
+
+    with pytest.raises(RuntimeError, match="only 132 train rows"):
+        foundation_cli._validate_foundation_split_size(
+            splits_dir=tmp_path,
+            min_train_rows=1000,
+            allow_small_dataset=False,
+        )
+
+
+def test_validate_foundation_split_size_allows_explicit_small_ablation(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setattr(
+        foundation_cli,
+        "_split_row_counts",
+        lambda splits_dir: {"train": 132, "val": 27, "test": 30},
+    )
+
+    counts = foundation_cli._validate_foundation_split_size(
+        splits_dir=tmp_path,
+        min_train_rows=1000,
+        allow_small_dataset=True,
+    )
+
+    assert counts["train"] == 132
+
+
+def test_foundation_quality_gate_flags_overfit_and_bad_metrics() -> None:
+    summary = {
+        "best_val_loss": 0.017,
+        "test_results": {
+            "test_loss": 0.028,
+            "test_mae_exposure": 0.356,
+            "test_mae_shadows": 38.9,
+        },
+    }
+
+    failures = foundation_cli._foundation_quality_failures(summary)
+
+    assert any("test_loss" in failure for failure in failures)
+    assert any("Exposure2012" in failure for failure in failures)
+    assert any("Shadows2012" in failure for failure in failures)

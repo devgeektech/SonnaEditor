@@ -1,0 +1,15 @@
+{
+  "display_name": "Sonna FiveK Catalog Foundation Expert C",
+  "profile_type": "mode_a_trained",
+  "profile_id": "sonna-fivek-catalog-foundation-expert-c",
+  "checkpoint_path": "C:\\Users\\vikas.DESKTOP-61LEE8B\\Projects\\SonnaEditor\\data\\training_workspace\\foundation_runs\\foundation-fivek-catalog-expert-c-001\\training\\model.ckpt",
+  "date_iso": "2026-06-05T21:48:32.966348Z",
+  "resolution": 512,
+  "image_resolution": 512,
+  "slider_set_version": "v2",
+  "arch_version": 3,
+  "use_wb_metadata_skip": true,
+  "default_skip_fields": [],
+  "train_rows": 3769,
+  "val_loss": 0.0037103143986314535
+}

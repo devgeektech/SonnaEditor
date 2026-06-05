@@ -308,8 +308,11 @@ def resolve_foundation_checkpoint() -> Path:
             active_entry = _version_entry_by_name(str(manifest["active_version"]))
             active = active_entry.get("checkpoint")
         if not active:
-            raise ValueError(
-                f"Foundation manifest missing active_checkpoint: {foundation_manifest_path()}"
+            fallback = _latest_existing_checkpoint()
+            if fallback is not None:
+                return fallback
+            raise FileNotFoundError(
+                f"Foundation manifest has no active checkpoint: {foundation_manifest_path()}"
             )
         path = _resolve_relative_to_repo(str(active))
         if not path.exists():

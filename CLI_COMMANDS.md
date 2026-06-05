@@ -10,13 +10,15 @@ training, resume, and retrain commands live in `FOUNDATION_TRAINING.md`.
 - PyTorch is `2.11.0+cu128`; CUDA is verified on the local NVIDIA GeForce RTX 3050.
 - `uv sync --extra dev` now preserves CUDA PyTorch on Windows/Linux x86_64 through the pinned PyTorch CUDA 12.8 index in `pyproject.toml` / `uv.lock`.
 - Training/profile caches were intentionally cleared so a fresh dataset can be added.
-- `v1_learning\dataset\`, `data\models\`, `data\parquet\`, `data\captures\`, `data\thumbnails\`, `data\audits\`, `data\dbg\`, `data\raw\sonna_training\`, `.pytest_cache`, `.ruff_cache`, and `.saha\active_profile.txt` were removed or emptied.
+- `data\training_workspace\sonna_personal_001_dataset\`, `data\models\`, `data\parquet\`, `data\captures\`, `data\thumbnails\`, `data\audits\`, `data\dbg\`, `data\raw\sonna_training\`, `.pytest_cache`, `.ruff_cache`, and `.saha\active_profile.txt` were removed or emptied.
 - There is currently no guaranteed local frontend-visible checkpoint in `v1_learning\`. Add fresh RAW+XMP data and train a Personal AI profile from the UI, or configure the hidden foundation checkpoint using `FOUNDATION_TRAINING.md`.
 - Runtime directories are now created automatically from the project root. A fresh clone will bootstrap repo-local `data\training_sources\`, `data\raw\`, `data\raw\sonna_training\`, `v1_learning\`, and `.saha\` on backend or CLI startup.
 - Lite profile creation now uses the configured foundation checkpoint. It does not depend on whichever Personal AI profile is active in the frontend.
 - Raw training photos should live in separate repo-local child folders under `data/training_sources/` by default. Generated datasets and foundation runs default to `data/training_workspace/` unless you override `SONNA_TRAINING_WORKSPACE`.
 - `scripts\train_profile.py` now logs default recipe values as `Training recipe ...`; only values explicitly supplied as CLI flags are logged as `Override ...`.
 - Fresh training now initialises output-head biases from the training-set target medians. With the current split those priors are Exposure2012=0.22, Temperature=5191K, Tint=5. WB residual heads start at zero when AsShot WB skip is enabled.
+- Training startup now prints parameter counts, trainable percentage, dataset row counts, batches per epoch, estimated optimizer steps, effective learning rates, sampler/cap status, and a backbone freeze/unfreeze summary. The same payload is saved in `training_summary.json` as `startup_diagnostics`.
+- Foundation runs default to `--backbone-trainable-layers stage:7`, so the final ConvNeXt stage plus feature fusion/heads train from epoch 0. Use `--backbone-trainable-layers block:7:2,stage:6` for an ~8M trainable ablation, `block:7:1-2,stage:6` for ~12M, or `--backbone-unfreeze-strategy custom` to keep a spec fixed for the whole run.
 - Default image augmentation is geometry-only. Photometric jitter is disabled by default because changing input brightness/colour without changing XMP labels adds noise to Exposure and white-balance learning.
 - Fresh current-recipe models use the scene-stat architecture, adding six preview-derived luminance scene stats to the metadata path. Existing legacy checkpoints still load with their saved architecture version.
 - Validation logs key-slider distribution ratios (`val_dist_*_std_ratio`) so prediction collapse is visible during training.
@@ -47,9 +49,32 @@ back the active manifest pointer instead of deleting checkpoints:
 `uv run python scripts\rollback_foundation.py --list`, then
 `uv run python scripts\rollback_foundation.py foundation-vN`. Use
 `--no-warm-start` only for a deliberate scratch foundation run. Frontend
-Personal AI and RAW+XMP foundation warm-starts now use the progressive backbone
-schedule by default: full backbone frozen first, later stages unfreezing before
-full fine-tuning.
+Personal AI warm-starts use the progressive backbone schedule by default.
+Foundation training starts with the final ConvNeXt stage trainable and then uses
+the progressive schedule to expand later, unless a fixed custom strategy is
+requested.
+
+Foundation promotion is now guarded. Normal foundation runs need at least 1000
+train rows and must pass held-out quality checks before promotion. Tiny
+RAW+XMP sets can still be used for smoke tests or reviewed ablations with
+`--allow-small-foundation-dataset`, and quality-gate failures can be overridden
+only with `--allow-quality-gate-failure` after visual review. Do not use those
+flags for routine active foundation updates.
+
+Current triage note: `foundation-sonna-raw-xmp-001` was rejected as the active
+foundation because it trained from only 132 train rows, overfit, and collapsed
+Highlights/Shadows. The active foundation manifest was rolled back to
+`foundation-fivek-catalog-expert-c-001`.
+
+Fresh output-head prior initialisation is bias-only for the final linear layer
+of each slider head. It does not freeze the head and it does not hardcode the
+final prediction after training starts. The priors are derived from the current
+training parquet's target medians, with missing fields falling back to Lightroom
+defaults. When the direct AsShot WB skip is enabled, Temperature/Tint head
+residual biases are set to zero so the initial WB output starts at AsShot rather
+than the dataset median. Keep this enabled for fresh foundation and Personal AI
+training unless you are running a deliberate ablation with
+`--no-target-prior-init`.
 
 Foundation checkpoint naming rule for copy-paste commands:
 
@@ -116,7 +141,7 @@ Do not reuse a previous --version-stem; old checkpoints are never overwritten.
 |---|---|---|
 | Source training RAW + XMP folder | Separate gitignored source folders, for example `data/training_sources/sonna_personal_001/raw_xmp/` | Edited RAW/DNG files plus same-stem `.xmp` sidecars |
 | Source Lightroom catalog | Any `.lrcat` path, opened read-only | Lightroom should be closed for catalog reads |
-| Personal AI dataset output root | `v1_learning/dataset/` or frontend job workspace | Used for frontend-visible profile training |
+| Personal AI dataset output root | `data/training_workspace/sonna_personal_001_dataset/` or frontend job workspace | Generated Parquet/splits/thumbnails; not scanned by the frontend |
 | Foundation training workspace | `SONNA_TRAINING_WORKSPACE` or `data/training_workspace/` | Generated foundation datasets and run folders |
 | Foundation repo | `SONNA_FOUNDATION_REPO` or repo-local `SonnaEditorFoundation/` | Promoted hidden checkpoints, outside gitignored `data/` |
 | Foundation manifest | `<foundation_repo>/foundation_manifest.json` | Active foundation version, checkpoint pointer, version list, hashes, and capabilities |
@@ -124,7 +149,7 @@ Do not reuse a previous --version-stem; old checkpoints are never overwritten.
 | Personal AI training run outputs | `data/models/<run_name>/` or frontend job workspace | Non-foundation profile training artifacts |
 | Best native checkpoint for a run | `<run_output>/model.ckpt` | Best validation checkpoint exported by trainer |
 | Training summary | `<run_output>/training_summary.json` | Metrics and recipe record |
-| Frontend-visible profile directory | `v1_learning/` | Only this directory is scanned by the UI |
+| Frontend-visible profile directory | `v1_learning/` | Only model checkpoints/sidecars belong here; do not store generated datasets here |
 | Frontend-visible checkpoint pattern | `v1_learning/model-vX.Y.Z.ckpt` | Personal AI or fine-tuned profile |
 | Frontend-visible sidecar pattern | `v1_learning/model-vX.Y.Z.json` | Profile metadata for the UI |
 | Training source root | `data/training_sources/` | Local learning inputs only, one child folder per dataset/run |
@@ -296,7 +321,7 @@ data/training_sources/sonna_personal_001/raw_xmp/
 ```powershell
 uv run python scripts\build_dataset.py `
   --input-dir data\training_sources\sonna_personal_001\raw_xmp `
-  --output-dir v1_learning\dataset `
+  --output-dir data\training_workspace\sonna_personal_001_dataset `
   --profile-name "sonna_v2" `
   --workers 4 `
   --split `
@@ -308,11 +333,11 @@ uv run python scripts\build_dataset.py `
 Expected outputs:
 
 ```text
-v1_learning\dataset\dataset.parquet
-v1_learning\dataset\thumbnails\
-v1_learning\dataset\splits_v2_stratified\train.parquet
-v1_learning\dataset\splits_v2_stratified\val.parquet
-v1_learning\dataset\splits_v2_stratified\test.parquet
+data\training_workspace\sonna_personal_001_dataset\dataset.parquet
+data\training_workspace\sonna_personal_001_dataset\thumbnails\
+data\training_workspace\sonna_personal_001_dataset\splits_v2_stratified\train.parquet
+data\training_workspace\sonna_personal_001_dataset\splits_v2_stratified\val.parquet
+data\training_workspace\sonna_personal_001_dataset\splits_v2_stratified\test.parquet
 ```
 
 ## 3B. Build Dataset And Splits From Lightroom Catalog
@@ -322,7 +347,7 @@ Use this when edits are still inside Lightroom and you do not want to export XMP
 ```powershell
 uv run python scripts\build_dataset_from_catalog.py `
   --catalog-path "D:\Lightroom\Sonna Catalog.lrcat" `
-  --output-dir v1_learning\dataset `
+  --output-dir data\training_workspace\sonna_personal_001_dataset `
   --profile-name "sonna_v2" `
   --limit 30000 `
   --workers 4 `
@@ -335,7 +360,7 @@ uv run python scripts\build_dataset_from_catalog.py `
 Expected outputs are the same as the RAW + XMP path, plus:
 
 ```text
-v1_learning\dataset\catalog_build_stats.json
+data\training_workspace\sonna_personal_001_dataset\catalog_build_stats.json
 ```
 
 Important catalog behavior:
@@ -356,9 +381,9 @@ This is the recommended command for a Personal AI training run from prepared spl
 
 ```powershell
 uv run python scripts\train_profile.py `
-  --train-parquet v1_learning\dataset\splits_v2_stratified\train.parquet `
-  --val-parquet v1_learning\dataset\splits_v2_stratified\val.parquet `
-  --test-parquet v1_learning\dataset\splits_v2_stratified\test.parquet `
+  --train-parquet data\training_workspace\sonna_personal_001_dataset\splits_v2_stratified\train.parquet `
+  --val-parquet data\training_workspace\sonna_personal_001_dataset\splits_v2_stratified\val.parquet `
+  --test-parquet data\training_workspace\sonna_personal_001_dataset\splits_v2_stratified\test.parquet `
   --output-dir data\models\sonna-personal-run01 `
   --profile-name "Sonna Personal Run 01" `
   --max-epochs 50 `
@@ -448,7 +473,7 @@ uv run python scripts\quick_diagnostic.py
 ```powershell
 uv run python scripts\analyse_prediction_collapse.py `
   --model-path v1_learning\model-v2.0.0.ckpt `
-  --parquet v1_learning\dataset\splits_v2_stratified\val.parquet `
+  --parquet data\training_workspace\sonna_personal_001_dataset\splits_v2_stratified\val.parquet `
   --output data\audits\prediction_collapse.md `
   --limit 50 `
   --batch-size 16
@@ -458,7 +483,7 @@ uv run python scripts\analyse_prediction_collapse.py `
 
 ```powershell
 uv run python scripts\audit_dataset_diversity.py `
-  --parquet v1_learning\dataset\dataset.parquet `
+  --parquet data\training_workspace\sonna_personal_001_dataset\dataset.parquet `
   --output data\audits\dataset_diversity.md
 ```
 
@@ -469,7 +494,7 @@ uv run python scripts\audit_all_sliders_v1.2.3.py
 ```
 
 Notes:
-- `quick_diagnostic.py` now discovers training summary JSON files automatically under the project tree and can also list published checkpoints in `v1_learning/` for selection. If an older summary does not include row counts, it reads train/val/test counts from split parquet metadata, falling back to `v1_learning/dataset/splits_v2_stratified/`.
+- `quick_diagnostic.py` now discovers training summary JSON files automatically under the project tree and can also list published checkpoints in `v1_learning/` for selection. If an older summary does not include row counts, it reads train/val/test counts from split parquet metadata, falling back to `data/training_workspace/sonna_personal_001_dataset/splits_v2_stratified/`.
 - `audit_all_sliders_v1.2.3.py` now discovers published checkpoints under `v1_learning/model-v*.ckpt` and will prompt you to choose one if multiple are found.
 - Audit scripts (like `audit_all_sliders_v1.2.3.py`) are read-only analyses that load a published checkpoint and a test split; they may take longer and require the test parquet to exist. Output goes to `scripts/output/` — keep those reports under version control only when intended.
 
@@ -581,6 +606,10 @@ For the next copy-paste run, change both names together:
 ```
 
 Do not reuse `--version-stem`; the checkpoint promoter refuses overwrites.
+The promoted checkpoint becomes the default base model automatically because
+`SonnaEditorFoundation\foundation_manifest.json` is updated to point at it.
+Mode A Personal AI training and Mode B Lite creation both resolve that manifest
+unless `SONNA_FOUNDATION_CHECKPOINT` is explicitly set.
 
 Use `--include-unedited-looking` for FiveK because its catalog develop blobs are
 sparse: many default sliders are absent, not proof that the expert edit is
@@ -627,6 +656,20 @@ so it starts from the active FiveK checkpoint and writes a new cumulative
 foundation checkpoint. The same works in reverse later: another FiveK catalog
 run starts from the active RAW+XMP-updated checkpoint.
 
+After training and auditing a foundation checkpoint, push the default base model
+to GitHub through Git LFS:
+
+```powershell
+git status --short
+git add SonnaEditorFoundation\foundation_manifest.json SonnaEditorFoundation\checkpoints\<your-version>.ckpt SonnaEditorFoundation\checkpoints\<your-version>.json
+git commit -m "train foundation checkpoint <your-version>"
+git push origin main
+```
+
+Replace `<your-version>` with the exact `--version-stem` used during training.
+Do not commit `data\training_workspace\`; that folder contains local generated
+datasets and training runs.
+
 On the Windows RTX 3050 workstation, start foundation runs at `--batch-size 8`.
 The RAW+XMP foundation CLI will automatically retry with smaller batch sizes if
 CUDA runs out of memory.
@@ -637,9 +680,9 @@ Use this when you want a specific visible checkpoint name:
 
 ```powershell
 uv run python scripts\train_profile.py `
-  --train-parquet v1_learning\dataset\splits_v2_stratified\train.parquet `
-  --val-parquet v1_learning\dataset\splits_v2_stratified\val.parquet `
-  --test-parquet v1_learning\dataset\splits_v2_stratified\test.parquet `
+  --train-parquet data\training_workspace\sonna_personal_001_dataset\splits_v2_stratified\train.parquet `
+  --val-parquet data\training_workspace\sonna_personal_001_dataset\splits_v2_stratified\val.parquet `
+  --test-parquet data\training_workspace\sonna_personal_001_dataset\splits_v2_stratified\test.parquet `
   --output-dir data\models\sonna-personal-run02 `
   --profile-name "Sonna Personal Candidate 02" `
   --publish-version v2.0.2 `
@@ -655,9 +698,9 @@ Use this for experiments you do not want visible in Saha:
 
 ```powershell
 uv run python scripts\train_profile.py `
-  --train-parquet v1_learning\dataset\splits_v2_stratified\train.parquet `
-  --val-parquet v1_learning\dataset\splits_v2_stratified\val.parquet `
-  --test-parquet v1_learning\dataset\splits_v2_stratified\test.parquet `
+  --train-parquet data\training_workspace\sonna_personal_001_dataset\splits_v2_stratified\train.parquet `
+  --val-parquet data\training_workspace\sonna_personal_001_dataset\splits_v2_stratified\val.parquet `
+  --test-parquet data\training_workspace\sonna_personal_001_dataset\splits_v2_stratified\test.parquet `
   --output-dir data\models\scratch-run `
   --image-resolution 512 `
   --no-publish
@@ -723,8 +766,8 @@ Dry run:
 uv run python scripts\finetune_profile.py `
   --base-model v1_learning\model-v2.0.0.ckpt `
   --captures-dir data\captures `
-  --original-train-parquet v1_learning\dataset\splits_v2_stratified\train.parquet `
-  --val-parquet v1_learning\dataset\splits_v2_stratified\val.parquet `
+  --original-train-parquet data\training_workspace\sonna_personal_001_dataset\splits_v2_stratified\train.parquet `
+  --val-parquet data\training_workspace\sonna_personal_001_dataset\splits_v2_stratified\val.parquet `
   --dry-run
 ```
 
@@ -734,11 +777,12 @@ Actual fine-tune:
 uv run python scripts\finetune_profile.py `
   --base-model v1_learning\model-v2.0.0.ckpt `
   --captures-dir data\captures `
-  --original-train-parquet v1_learning\dataset\splits_v2_stratified\train.parquet `
-  --val-parquet v1_learning\dataset\splits_v2_stratified\val.parquet `
+  --original-train-parquet data\training_workspace\sonna_personal_001_dataset\splits_v2_stratified\train.parquet `
+  --val-parquet data\training_workspace\sonna_personal_001_dataset\splits_v2_stratified\val.parquet `
   --output-dir v1_learning `
   --max-epochs 30 `
   --batch-size 16
 ```
 
 The fine-tuned checkpoint is versioned under `v1_learning/`, so it becomes visible in the frontend after profile refresh.
+

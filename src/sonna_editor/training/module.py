@@ -43,19 +43,23 @@ class SonnaLightningModule(pl.LightningModule):
         weight_decay: float = 1e-4,
         freeze_backbone_epochs: int = 10,
         backbone_unfreeze_strategy: str = "partial",
+        backbone_trainable_layers: str | None = None,
     ) -> None:
         super().__init__()
-        if backbone_unfreeze_strategy not in {"partial", "full", "progressive"}:
+        if backbone_unfreeze_strategy not in {"partial", "full", "progressive", "custom"}:
             raise ValueError(
-                "backbone_unfreeze_strategy must be one of: partial, full, progressive"
+                "backbone_unfreeze_strategy must be one of: partial, full, progressive, custom"
             )
         self.model = model
         self.lr = lr
         self.weight_decay = weight_decay
         self.freeze_backbone_epochs = freeze_backbone_epochs
         self.backbone_unfreeze_strategy = backbone_unfreeze_strategy
+        self.backbone_trainable_layers = backbone_trainable_layers
         if backbone_unfreeze_strategy in {"full", "progressive"}:
             self.model.freeze_entire_backbone()
+        if backbone_trainable_layers:
+            self.model.set_trainable_backbone_layers(backbone_trainable_layers)
 
         self.loss_fn = WeightedSliderLoss(
             slider_set_version=model._slider_set_version,
@@ -76,6 +80,9 @@ class SonnaLightningModule(pl.LightningModule):
     # ------------------------------------------------------------------
 
     def on_train_epoch_start(self) -> None:
+        if self.backbone_unfreeze_strategy == "custom":
+            return
+
         if self.backbone_unfreeze_strategy == "partial":
             if self.current_epoch == self.freeze_backbone_epochs:
                 self.model.unfreeze_backbone()

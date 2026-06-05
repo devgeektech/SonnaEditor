@@ -94,7 +94,7 @@ from sonna_editor.training.unfreeze_callback import ResetEarlyStoppingOnUnfreeze
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 log = logging.getLogger(__name__)
 
-SPLITS_DIR    = PROJECT_ROOT / "v1_learning" / "dataset" / "splits_v2_stratified"
+SPLITS_DIR    = PROJECT_ROOT / "data" / "training_workspace" / "sonna_personal_001_dataset" / "splits_v2_stratified"
 TRAIN_PARQUET = SPLITS_DIR / "train.parquet"
 VAL_PARQUET   = SPLITS_DIR / "val.parquet"
 TEST_PARQUET  = SPLITS_DIR / "test.parquet"

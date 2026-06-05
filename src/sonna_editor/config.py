@@ -638,5 +638,12 @@ CONFIDENCE_NORM_STDS: dict[str, float] = {
 }
 
 # Path to the original training split. The /api/finetune endpoint reads this
-# when building the combined fine-tune parquet.
-ORIGINAL_TRAIN_PARQUET = CHECKPOINTS_DIR / "dataset" / "splits_v2_stratified" / "train.parquet"
+# when building the combined fine-tune parquet. Generated datasets live under
+# data/training_workspace; v1_learning is reserved for frontend-visible
+# profile checkpoints and sidecars only.
+ORIGINAL_TRAIN_PARQUET = (
+    TRAINING_WORKSPACE_DIR
+    / "sonna_personal_001_dataset"
+    / "splits_v2_stratified"
+    / "train.parquet"
+)

@@ -518,6 +518,11 @@ class SonnaEditor(nn.Module):
         for p in self.backbone_norm.parameters():
             p.requires_grad = False
 
+    def freeze_backbone_pool(self) -> None:
+        """Keep the ConvNeXt adaptive pool frozen for accounting consistency."""
+        for p in self.backbone_pool.parameters():
+            p.requires_grad = False
+
     def unfreeze_backbone_from_stage(self, first_trainable_stage: int) -> None:
         """Unfreeze ConvNeXt stages from `first_trainable_stage` onward.
 
@@ -533,6 +538,93 @@ class SonnaEditor(nn.Module):
         norm_trainable = first < n_stages
         for p in self.backbone_norm.parameters():
             p.requires_grad = norm_trainable
+
+    def set_trainable_backbone_layers(self, spec: str) -> None:
+        """Configure trainable ConvNeXt stages/blocks from a compact spec.
+
+        ``spec`` accepts comma-separated tokens:
+        - ``none``: freeze all ConvNeXt feature stages and norm.
+        - ``all``: unfreeze the full ConvNeXt feature extractor and norm.
+        - ``from:N``: unfreeze stages N and later.
+        - ``stage:N``: unfreeze one full stage.
+        - ``block:S:I`` or ``block:S:I-J``: unfreeze block(s) inside a stage.
+
+        Examples:
+        - ``block:7:2,stage:6`` -> final ConvNeXt block plus stage-6 downsample.
+        - ``block:7:1-2,stage:6`` -> about 12.6M trainable params on v2.
+        - ``stage:7`` -> final ConvNeXt stage plus trainable fusion/heads.
+        """
+        cleaned = (spec or "").strip().lower()
+        if not cleaned:
+            raise ValueError("backbone trainable layer spec must not be empty")
+        tokens = [token.strip() for token in cleaned.split(",") if token.strip()]
+        if not tokens:
+            raise ValueError("backbone trainable layer spec must not be empty")
+
+        self.freeze_entire_backbone()
+        self.freeze_backbone_pool()
+
+        if tokens == ["none"]:
+            return
+        if tokens == ["all"]:
+            self.unfreeze_backbone()
+            return
+
+        n_stages = len(self.backbone_features)
+        for token in tokens:
+            if token == "norm":
+                for p in self.backbone_norm.parameters():
+                    p.requires_grad = True
+                continue
+            if token.startswith("from:"):
+                stage = int(token.split(":", 1)[1])
+                first = max(0, min(stage, n_stages))
+                for idx, module in enumerate(self.backbone_features):
+                    if idx >= first:
+                        for p in module.parameters():
+                            p.requires_grad = True
+                continue
+            if token.startswith("stage:"):
+                stage = int(token.split(":", 1)[1])
+                if stage < 0 or stage >= n_stages:
+                    raise ValueError(f"Backbone stage out of range: {stage}")
+                for p in self.backbone_features[stage].parameters():
+                    p.requires_grad = True
+                continue
+            if token.startswith("block:"):
+                parts = token.split(":")
+                if len(parts) != 3:
+                    raise ValueError(f"Invalid backbone block token: {token!r}")
+                stage = int(parts[1])
+                if stage < 0 or stage >= n_stages:
+                    raise ValueError(f"Backbone stage out of range: {stage}")
+                stage_module = self.backbone_features[stage]
+                block_ids = self._parse_block_ids(parts[2])
+                children = list(stage_module.children())
+                for block_id in block_ids:
+                    if block_id < 0 or block_id >= len(children):
+                        raise ValueError(
+                            f"Backbone block {block_id} out of range for stage {stage}"
+                        )
+                    for p in children[block_id].parameters():
+                        p.requires_grad = True
+                continue
+            raise ValueError(f"Unknown backbone trainable layer token: {token!r}")
+
+        if any(p.requires_grad for p in self.backbone_features.parameters()):
+            for p in self.backbone_norm.parameters():
+                p.requires_grad = True
+
+    @staticmethod
+    def _parse_block_ids(raw: str) -> list[int]:
+        if "-" in raw:
+            start_s, end_s = raw.split("-", 1)
+            start = int(start_s)
+            end = int(end_s)
+            if end < start:
+                raise ValueError(f"Invalid descending block range: {raw!r}")
+            return list(range(start, end + 1))
+        return [int(raw)]
 
     def unfreeze_backbone(self) -> None:
         """

@@ -46,6 +46,34 @@ def _format_float(value: float) -> str:
     return f"{value:.4f}"
 
 
+def _resolve_parquet_path(parquet: Path) -> Path:
+    """Return an existing parquet path or raise with nearby split suggestions."""
+    if parquet.exists():
+        return parquet
+
+    suggestions: list[Path] = []
+    search_roots = [
+        parquet.parent.parent if parquet.parent.parent != parquet.parent else parquet.parent,
+        Path("data/training_workspace"),
+    ]
+    seen: set[Path] = set()
+    for root in search_roots:
+        if not root.exists() or root in seen:
+            continue
+        seen.add(root)
+        for candidate in sorted(root.glob(f"**/{parquet.name}")):
+            if candidate not in suggestions:
+                suggestions.append(candidate)
+            if len(suggestions) >= 10:
+                break
+
+    message = f"Parquet file not found: {parquet}"
+    if suggestions:
+        formatted = "\n".join(f"  - {path}" for path in suggestions[:10])
+        message += f"\n\nFound possible matches:\n{formatted}"
+    raise FileNotFoundError(message)
+
+
 def _run_predictions(
     model: SonnaEditor,
     parquet: Path,
@@ -54,6 +82,7 @@ def _run_predictions(
     batch_size: int,
     device: str,
 ) -> tuple[pd.DataFrame, torch.Tensor, torch.Tensor]:
+    parquet = _resolve_parquet_path(parquet)
     df = pd.read_parquet(parquet)
     if limit > 0:
         df = df.head(min(limit, len(df))).copy()

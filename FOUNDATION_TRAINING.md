@@ -18,6 +18,83 @@ Foundation training is now **Lightroom-parameter supervised only**:
 slider-regression checkpoint and promotes it into `SonnaEditorFoundation\`.
 Every run creates a new checkpoint. Old checkpoints are never overwritten.
 
+## Backbone Capacity And Diagnostics
+
+Foundation training now starts with the final ConvNeXt stage trainable by
+default:
+
+```text
+--backbone-unfreeze-strategy progressive
+--backbone-trainable-layers stage:7
+```
+
+That means the startup state is no longer heads-only. The output heads,
+metadata encoder, feature fusion MLP, WB metadata skip, ConvNeXt stage 7, and
+backbone norm train from epoch 0. The progressive schedule then expands to
+larger backbone sections at later epochs unless you switch to
+`--backbone-unfreeze-strategy custom`.
+
+Measured v2 trainable-capacity presets:
+
+| Trainable layer spec | Trainable params | Notes |
+|---|---:|---|
+| `none` | 1.92M | Fusion/metadata/heads only; previous heads-only foundation startup. |
+| `block:7:2` | 6.68M | Last ConvNeXt block plus fusion/heads. |
+| `block:7:2,stage:6` | 7.86M | Closest practical 8M preset. |
+| `block:7:1-2,stage:6` | 12.63M | Closest practical 12M preset. |
+| `stage:7` | 16.21M | Final ConvNeXt stage; closest practical 15M preset and foundation default. |
+| `from:6` | 17.39M | Stage 6 downsample plus all of stage 7. |
+
+Training startup logs now print total/trainable/frozen parameters, trainable
+percentage, per-stage backbone state, train/val/test row counts, batches per
+epoch, estimated optimizer steps, sampler type, max_steps and
+limit_train_batches status, and effective learning rates. The same diagnostic
+payload is written into `training_summary.json` under `startup_diagnostics`.
+
+VRAM and speed expectations on the RTX 3050:
+
+- `none`: lowest VRAM, fastest; only about 6.5% of the model learns.
+- `block:7:2,stage:6`: modest activation/gradient increase, roughly the
+  practical 8M setting.
+- `block:7:1-2,stage:6`: medium VRAM and speed cost, roughly the practical 12M
+  setting.
+- `stage:7`: highest default capacity, roughly 54.5% trainable. Expect more
+  gradient memory and slower epochs than heads-only; keep foundation batch size
+  at 8 and let CUDA OOM retry reduce it if needed.
+
+If you want a fixed-capacity ablation, combine the spec with:
+
+```powershell
+--backbone-unfreeze-strategy custom
+```
+
+## Output Head Prior Initialisation
+
+Fresh training logs a line like:
+
+```text
+Initialised fresh output heads from training target medians
+(Exposure2012=0.000, Temperature=4900, Tint=3.00)
+```
+
+This is expected. It is a bias-only initialisation on the final linear layer of
+each output head. It gives a fresh model a sensible first prediction before
+gradient descent, especially on small or sparse datasets. It does not freeze
+the heads and it does not keep forcing those values after training starts.
+
+The values come from the current training parquet's target medians. Missing
+slider columns or all-missing targets fall back to Lightroom defaults. With the
+direct AsShot WB skip enabled, Temperature/Tint head residuals initialise to
+zero so the model initially predicts AsShot WB plus learned residual, rather
+than a fixed dataset-median WB.
+
+This behavior should remain enabled for fresh foundation and Personal AI
+training. Disable it only for a deliberate ablation:
+
+```powershell
+--no-target-prior-init
+```
+
 ## Versioning And Cumulative Training
 
 Every promoted foundation checkpoint is written under:
@@ -53,6 +130,44 @@ uv run python scripts\rollback_foundation.py --list
 uv run python scripts\rollback_foundation.py foundation-v3
 ```
 
+## Promotion Guardrails
+
+Foundation training now has production guardrails because a tiny Sonna RAW+XMP
+continuation can overfit and damage the broader foundation.
+
+Default behavior:
+
+```text
+minimum train rows for normal foundation promotion: 1000
+quality gate: held-out test loss plus key MAE limits
+```
+
+If the train split has fewer than 1000 rows, `scripts\train_foundation_model.py`
+refuses to train/promote unless you explicitly pass:
+
+```powershell
+--allow-small-foundation-dataset
+```
+
+Use that only for a smoke test, a private ablation, or a deliberately reviewed
+run. Do not use it for normal active foundation updates.
+
+After training, promotion is blocked when held-out metrics fail the quality
+gate. Override only after visual review:
+
+```powershell
+--allow-quality-gate-failure
+```
+
+The rejected example was `foundation-sonna-raw-xmp-001`: it used only 132 train
+rows, trained 16.2M parameters, overfit, and collapsed Highlights/Shadows. The
+active manifest was rolled back to `foundation-fivek-catalog-expert-c-001`.
+
+Future `training_summary.json` files embed train/val/test row counts, parquet
+paths, train-batch count, and all-slider `test_per_field_mae`. Run
+`scripts\quick_diagnostic.py` after training to see both the critical metrics
+and the all-parameter MAE check.
+
 ## Copy-Paste Naming Rule
 
 For every new foundation command, change both identifiers together:
@@ -74,6 +189,59 @@ foundation-fivek-catalog-expert-c-002
 Do not reuse an old `--version-stem`. The command will fail at promotion time
 because checkpoint overwrites are blocked. If you are unsure, omit
 `--version-stem` and let the system allocate `foundation-vN`.
+
+## Clean Start Before New Foundation Training
+
+Use this only when you intentionally want to remove previous local trained
+profiles and foundation checkpoints before a new foundation run. This does not
+delete source RAWs, FiveK data, or generated FiveK catalog datasets.
+
+```powershell
+$root = Resolve-Path "."
+Get-ChildItem -LiteralPath "$root\v1_learning" -File -Filter "model-v*.ckpt" -ErrorAction SilentlyContinue |
+  Remove-Item -Force
+Get-ChildItem -LiteralPath "$root\v1_learning" -File -Filter "model-v*.json" -ErrorAction SilentlyContinue |
+  Remove-Item -Force
+Get-ChildItem -LiteralPath "$root\v1_learning" -File -Filter "model-v*-preset.xmp" -ErrorAction SilentlyContinue |
+  Remove-Item -Force
+Get-ChildItem -LiteralPath "$root\v1_learning" -File -Filter "model-v*-survey.json" -ErrorAction SilentlyContinue |
+  Remove-Item -Force
+Get-ChildItem -LiteralPath "$root\SonnaEditorFoundation\checkpoints" -File -Filter "*.ckpt" -ErrorAction SilentlyContinue |
+  Remove-Item -Force
+Get-ChildItem -LiteralPath "$root\SonnaEditorFoundation\checkpoints" -File -Filter "*.json" -ErrorAction SilentlyContinue |
+  Remove-Item -Force
+Remove-Item -LiteralPath "$root\data\training_workspace\foundation_runs" -Recurse -Force -ErrorAction SilentlyContinue
+```
+
+Reset the foundation manifest to an empty version list:
+
+```powershell
+@'
+{
+  "schema_version": 2,
+  "active_version": null,
+  "active_checkpoint": null,
+  "active_sidecar": null,
+  "display_name": null,
+  "source_run_dir": null,
+  "updated_at": null,
+  "foundation_type": "sonna_editor_slider_regression",
+  "capabilities": [
+    "backbone_features",
+    "metadata_encoder",
+    "slider_regression"
+  ],
+  "trained_on": [],
+  "versions": [],
+  "history": []
+}
+'@ | Set-Content -LiteralPath "$root\SonnaEditorFoundation\foundation_manifest.json" -Encoding UTF8
+```
+
+After this cleanup, `resolve_foundation_checkpoint()` is expected to fail until
+the next foundation run promotes a new checkpoint. That is normal. Once the new
+run finishes, `foundation_manifest.json` becomes the default base-model pointer
+for both Mode A and Mode B.
 
 ## FiveK Catalog Foundation Path
 
@@ -196,6 +364,12 @@ SonnaEditorFoundation\checkpoints\foundation-fivek-catalog-expert-c-001.ckpt
 SonnaEditorFoundation\foundation_manifest.json
 ```
 
+The promoted checkpoint becomes the default base model automatically because
+`foundation_manifest.json` is updated to point at this new version. Frontend
+Personal AI / Mode A training and Lite / Mode B profile creation resolve the
+active foundation checkpoint from that manifest unless `SONNA_FOUNDATION_CHECKPOINT`
+overrides it.
+
 ### Audit The Trained Checkpoint
 
 ```powershell
@@ -206,6 +380,39 @@ uv run python scripts\analyse_prediction_collapse.py `
   --limit 200 `
   --batch-size 16
 ```
+
+### Push The Foundation Checkpoint To GitHub
+
+Checkpoint binaries are tracked through Git LFS. The parent repo already has:
+
+```text
+SonnaEditorFoundation/checkpoints/*.ckpt filter=lfs diff=lfs merge=lfs -text
+```
+
+After training and audit, confirm the manifest points to the checkpoint you want:
+
+```powershell
+uv run python scripts\rollback_foundation.py --list
+uv run python -c "from sonna_editor.foundation import resolve_foundation_checkpoint; print(resolve_foundation_checkpoint())"
+```
+
+Then commit and push the new checkpoint, sidecar, and manifest:
+
+```powershell
+git status --short
+git add SonnaEditorFoundation\foundation_manifest.json `
+        SonnaEditorFoundation\checkpoints\foundation-fivek-catalog-expert-c-001.ckpt `
+        SonnaEditorFoundation\checkpoints\foundation-fivek-catalog-expert-c-001.json `
+        FOUNDATION_TRAINING.md CLI_COMMANDS.md RUN.md README.md HANDOVER.md SESSION_STATE.md project_knowledge.md
+git status --short
+git commit -m "train FiveK catalog foundation checkpoint"
+git push origin main
+```
+
+If you used a different `--version-stem`, replace the two checkpoint filenames
+in the `git add` command with the actual new `.ckpt` and `.json` names. Do not
+commit files under `data\training_workspace\`; those are local generated runs
+and datasets.
 
 ## RAW+XMP Foundation Path
 

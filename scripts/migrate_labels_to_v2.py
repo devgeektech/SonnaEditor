@@ -15,8 +15,8 @@ Usage:
   uv run python scripts/migrate_labels_to_v2.py
   uv run python scripts/migrate_labels_to_v2.py --dry-run --limit 100
   uv run python scripts/migrate_labels_to_v2.py \\
-      --input-dir v1_learning/dataset/splits_v2_stratified \\
-      --output-dir v1_learning/dataset/splits_v2_stratified.lockedwide147 \\
+      --input-dir data/training_workspace/sonna_personal_001_dataset/splits_v2_stratified \\
+      --output-dir data/training_workspace/sonna_personal_001_dataset/splits_v2_stratified.lockedwide147 \\
       --splits train,val,test \\
       --workers 8
 """
@@ -37,8 +37,8 @@ from sonna_editor.data.xmp import read_xmp
 _logger = logging.getLogger("migrate_labels_to_v2")
 
 V2_EXTENSION_FIELDS: list[str] = list(config.SLIDER_FIELDS[135:])  # 12 fields
-DEFAULT_INPUT_DIR = Path("v1_learning/dataset/splits_v2_stratified")
-DEFAULT_OUTPUT_DIR = Path("v1_learning/dataset/splits_v2_stratified.lockedwide147")
+DEFAULT_INPUT_DIR = Path("data/training_workspace/sonna_personal_001_dataset/splits_v2_stratified")
+DEFAULT_OUTPUT_DIR = Path("data/training_workspace/sonna_personal_001_dataset/splits_v2_stratified.lockedwide147")
 DEFAULT_SPLITS = ("train", "val", "test", "train_3k_stratified")
 
 

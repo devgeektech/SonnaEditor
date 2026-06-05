@@ -186,3 +186,33 @@ def test_legacy_manifest_versions_include_active_checkpoint(
         "foundation-old",
         "foundation-active",
     ]
+
+
+def test_empty_manifest_reports_no_foundation_checkpoint(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    repo = tmp_path / "foundation"
+    repo.mkdir()
+    monkeypatch.setattr(config, "FOUNDATION_REPO_DIR", repo)
+    monkeypatch.delenv(config.FOUNDATION_REPO_ENV_VAR, raising=False)
+    monkeypatch.delenv(config.FOUNDATION_CHECKPOINT_ENV_VAR, raising=False)
+    (repo / "foundation_manifest.json").write_text(
+        json.dumps(
+            {
+                "schema_version": 2,
+                "active_version": None,
+                "active_checkpoint": None,
+                "versions": [],
+                "history": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    try:
+        resolve_foundation_checkpoint()
+    except FileNotFoundError as exc:
+        assert "no active checkpoint" in str(exc)
+    else:
+        raise AssertionError("Expected FileNotFoundError for empty foundation manifest")

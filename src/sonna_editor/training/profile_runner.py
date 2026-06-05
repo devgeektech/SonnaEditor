@@ -14,6 +14,7 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import math
 import re
 import shutil
 import sys
@@ -39,6 +40,7 @@ from pytorch_lightning.loggers import TensorBoardLogger
 
 import sonna_editor.config as config
 from sonna_editor.runtime import preferred_lightning_accelerator
+from sonna_editor.slider_set import fields_for_version
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 log = logging.getLogger(__name__)
@@ -90,12 +92,21 @@ def _parse_args() -> argparse.Namespace:
                    help="Number of epochs to keep backbone frozen (default: 3)")
     p.add_argument(
         "--backbone-unfreeze-strategy",
-        choices=("partial", "full", "progressive"),
+        choices=("partial", "full", "progressive", "custom"),
         default="partial",
         help=(
             "Backbone freeze schedule: partial preserves legacy stage-0/1 freeze; "
             "full freezes all stages until --freeze-backbone-epochs; progressive "
-            "freezes all stages then unfreezes upper/mid/all stages at epochs 5/10/15."
+            "freezes all stages then unfreezes upper/mid/all stages at epochs 5/10/15; "
+            "custom keeps --backbone-trainable-layers fixed for the full run."
+        ),
+    )
+    p.add_argument(
+        "--backbone-trainable-layers",
+        default=None,
+        help=(
+            "Optional initial ConvNeXt trainable layer spec. Examples: none, "
+            "stage:7, block:7:2,stage:6, block:7:1-2,stage:6, from:6, all."
         ),
     )
     p.add_argument("--num-workers",   type=int,   default=4)
@@ -366,6 +377,175 @@ def _trainer_log_every_n_steps(num_train_batches: int, preferred: int = 10) -> i
     return max(1, min(preferred, num_train_batches))
 
 
+def _log_startup_diagnostics(
+    *,
+    model: Any,
+    dm: Any,
+    train_loader: Any,
+    args: argparse.Namespace,
+) -> dict[str, Any]:
+    from sonna_editor.training.diagnostics import (
+        backbone_freeze_summary,
+        dataloader_diagnostics,
+        estimate_optimizer_steps,
+        format_parameter_count,
+        parameter_counts,
+        trainable_parameter_breakdown,
+    )
+
+    counts = parameter_counts(model)
+    loader_diag = dataloader_diagnostics(train_loader)
+    max_steps = getattr(args, "max_steps", None)
+    limit_train_batches = getattr(args, "limit_train_batches", None)
+    accumulate_grad_batches = int(getattr(args, "accumulate_grad_batches", 1) or 1)
+    estimated_steps = estimate_optimizer_steps(
+        batches_per_epoch=int(loader_diag["batches_per_epoch"]),
+        max_epochs=int(args.max_epochs),
+        max_steps=max_steps,
+        limit_train_batches=limit_train_batches,
+        accumulate_grad_batches=accumulate_grad_batches,
+    )
+
+    log.info("Training startup diagnostics:")
+    log.info(
+        "  Parameters: total=%s  trainable=%s  frozen=%s  trainable=%0.1f%%",
+        format_parameter_count(int(counts["total"])),
+        format_parameter_count(int(counts["trainable"])),
+        format_parameter_count(int(counts["frozen"])),
+        float(counts["trainable_pct"]),
+    )
+    log.info(
+        "  Dataset images: train=%d  val=%d  test=%d  total=%d",
+        len(dm._train_ds),
+        len(dm._val_ds),
+        len(dm._test_ds),
+        len(dm._train_ds) + len(dm._val_ds) + len(dm._test_ds),
+    )
+    log.info(
+        "  Training samples: %d  batch_size=%d  batches_per_epoch=%d",
+        len(dm._train_ds),
+        args.batch_size,
+        loader_diag["batches_per_epoch"],
+    )
+    log.info(
+        "  Effective optimizer steps: %d  max_epochs=%d  max_steps=%s  "
+        "limit_train_batches=%s  accumulate_grad_batches=%d",
+        estimated_steps,
+        args.max_epochs,
+        max_steps if max_steps is not None else "not set",
+        limit_train_batches if limit_train_batches is not None else "not set",
+        accumulate_grad_batches,
+    )
+    log.info(
+        "  Sampler: %s  batch_sampler=%s  drop_last=%s",
+        loader_diag["sampler"],
+        loader_diag["batch_sampler"],
+        loader_diag["drop_last"],
+    )
+    log.info(
+        "  Learning rates: backbone=%g  fusion/metadata/heads=%g",
+        args.lr / 10,
+        args.lr,
+    )
+    log.info(
+        "  Backbone strategy: %s  trainable_layers=%s",
+        getattr(args, "backbone_unfreeze_strategy", "partial"),
+        getattr(args, "backbone_trainable_layers", None) or "default",
+    )
+    for row in trainable_parameter_breakdown(model):
+        log.info(
+            "    %-30s trainable=%s / total=%s",
+            row.name,
+            format_parameter_count(row.trainable),
+            format_parameter_count(row.total),
+        )
+    for stage in backbone_freeze_summary(model):
+        block_states = ", ".join(
+            f"{block['block']}:{block['state']}"
+            for block in stage["blocks"]
+        )
+        suffix = f" ({block_states})" if block_states else ""
+        log.info(
+            "    backbone stage %-4s %s trainable=%s / total=%s%s",
+            stage["stage"],
+            stage["state"],
+            format_parameter_count(stage["trainable"]),
+            format_parameter_count(stage["total"]),
+            suffix,
+        )
+
+    return {
+        "parameter_counts": counts,
+        "dataset": {
+            "train_rows": len(dm._train_ds),
+            "val_rows": len(dm._val_ds),
+            "test_rows": len(dm._test_ds),
+            "total_rows": len(dm._train_ds) + len(dm._val_ds) + len(dm._test_ds),
+        },
+        "dataloader": loader_diag,
+        "estimated_optimizer_steps": estimated_steps,
+        "max_steps": max_steps,
+        "limit_train_batches": limit_train_batches,
+        "accumulate_grad_batches": accumulate_grad_batches,
+        "backbone_freeze_summary": backbone_freeze_summary(model),
+        "trainable_parameter_breakdown": [
+            {
+                "name": row.name,
+                "total": row.total,
+                "trainable": row.trainable,
+                "frozen": row.frozen,
+            }
+            for row in trainable_parameter_breakdown(model)
+        ],
+    }
+
+
+def _dataset_summary_payload(
+    *,
+    args: argparse.Namespace,
+    dm: Any,
+    num_train_batches: int,
+) -> dict[str, Any]:
+    train_path = Path(args.train_parquet)
+    val_path = Path(args.val_parquet)
+    test_path = Path(args.test_parquet)
+    splits_dir: str | None = None
+    if train_path.parent == val_path.parent == test_path.parent:
+        splits_dir = str(train_path.parent)
+    return {
+        "train_rows": len(dm._train_ds),
+        "val_rows": len(dm._val_ds),
+        "test_rows": len(dm._test_ds),
+        "total_rows": len(dm._train_ds) + len(dm._val_ds) + len(dm._test_ds),
+        "train_parquet": str(train_path),
+        "val_parquet": str(val_path),
+        "test_parquet": str(test_path),
+        "splits_dir": splits_dir,
+        "num_train_batches": num_train_batches,
+    }
+
+
+def _aggregate_mae_outputs(
+    outputs: list[dict[str, float]],
+    *,
+    slider_set_version: str,
+) -> dict[str, float]:
+    """Average per-batch MAE dictionaries without dropping unlogged sliders."""
+    fields = fields_for_version(slider_set_version)
+    aggregated: dict[str, float] = {}
+    for field in fields:
+        values = [
+            float(row[field])
+            for row in outputs
+            if field in row and not math.isnan(float(row[field]))
+        ]
+        if values:
+            aggregated[field] = sum(values) / len(values)
+        else:
+            aggregated[field] = float("nan")
+    return aggregated
+
+
 def _warm_start_model_from_checkpoint(
     *,
     model_cls: type,
@@ -514,7 +694,13 @@ def train_profile(args: argparse.Namespace) -> dict:
         "Dataset: train=%d  val=%d  test=%d",
         len(dm._train_ds), len(dm._val_ds), len(dm._test_ds),
     )
-    num_train_batches = len(dm.train_dataloader())
+    train_loader = dm.train_dataloader()
+    num_train_batches = len(train_loader)
+    dataset_summary = _dataset_summary_payload(
+        args=args,
+        dm=dm,
+        num_train_batches=num_train_batches,
+    )
     log_every_n_steps = _trainer_log_every_n_steps(num_train_batches)
     if log_every_n_steps < 10:
         log.info(
@@ -596,6 +782,13 @@ def train_profile(args: argparse.Namespace) -> dict:
         weight_decay=args.weight_decay,
         freeze_backbone_epochs=args.freeze_backbone_epochs,
         backbone_unfreeze_strategy=getattr(args, "backbone_unfreeze_strategy", "partial"),
+        backbone_trainable_layers=getattr(args, "backbone_trainable_layers", None),
+    )
+    startup_diagnostics = _log_startup_diagnostics(
+        model=lightning_module.model,
+        dm=dm,
+        train_loader=train_loader,
+        args=args,
     )
 
     # -----------------------------------------------------------------------
@@ -655,6 +848,10 @@ def train_profile(args: argparse.Namespace) -> dict:
     if getattr(args, "cancel_event", None) is not None and args.cancel_event.is_set():
         summary = {
             "cancelled": True,
+            "dataset": dataset_summary,
+            "train_rows": dataset_summary["train_rows"],
+            "val_rows": dataset_summary["val_rows"],
+            "test_rows": dataset_summary["test_rows"],
             "best_val_loss": float(trainer.checkpoint_callback.best_model_score or 0.0),
             "best_checkpoint": trainer.checkpoint_callback.best_model_path,
             "final_model": None,
@@ -670,6 +867,9 @@ def train_profile(args: argparse.Namespace) -> dict:
                 "backbone_unfreeze_strategy": getattr(
                     args, "backbone_unfreeze_strategy", "partial"
                 ),
+                "backbone_trainable_layers": getattr(
+                    args, "backbone_trainable_layers", None
+                ),
                 "image_resolution": config.IMAGE_RESOLUTION,
                 "slider_set_version": args.slider_set_version,
                 "use_wb_metadata_skip": not args.no_wb_metadata_skip,
@@ -677,6 +877,7 @@ def train_profile(args: argparse.Namespace) -> dict:
                 "base_model_checkpoint": str(base_model_checkpoint) if base_model_checkpoint else None,
                 "foundation_provenance": foundation_provenance,
             },
+            "startup_diagnostics": startup_diagnostics,
         }
         summary_path = args.output_dir / "training_summary.json"
         summary_path.write_text(json.dumps(summary, indent=2))
@@ -692,6 +893,10 @@ def train_profile(args: argparse.Namespace) -> dict:
         test_results = trainer.test(lightning_module, datamodule=dm, ckpt_path=best_ckpt)
     else:
         test_results = trainer.test(lightning_module, datamodule=dm)
+    test_per_field_mae = _aggregate_mae_outputs(
+        lightning_module._test_mae_outputs,
+        slider_set_version=lightning_module.model._slider_set_version,
+    )
 
     # -----------------------------------------------------------------------
     # Save final model + summary
@@ -738,11 +943,16 @@ def train_profile(args: argparse.Namespace) -> dict:
         log.info("Published frontend-visible profile to %s", published)
 
     summary = {
+        "dataset": dataset_summary,
+        "train_rows": dataset_summary["train_rows"],
+        "val_rows": dataset_summary["val_rows"],
+        "test_rows": dataset_summary["test_rows"],
         "best_val_loss": best_val_loss,
         "best_checkpoint": best_ckpt,
         "final_model": str(final_model_path),
         "published_model": published_model_path,
         "test_results": test_results[0] if test_results else {},
+        "test_per_field_mae": test_per_field_mae,
         "epochs_trained": trainer.current_epoch,
         "hparams": {
             "arch_version": lightning_module.model._arch_version,
@@ -752,6 +962,9 @@ def train_profile(args: argparse.Namespace) -> dict:
             "freeze_backbone_epochs": args.freeze_backbone_epochs,
             "backbone_unfreeze_strategy": getattr(
                 args, "backbone_unfreeze_strategy", "partial"
+            ),
+            "backbone_trainable_layers": getattr(
+                args, "backbone_trainable_layers", None
             ),
             "image_resolution": config.IMAGE_RESOLUTION,
             "slider_set_version": args.slider_set_version,
@@ -768,6 +981,7 @@ def train_profile(args: argparse.Namespace) -> dict:
             "exposure_scene_loss_weight": args.exposure_scene_loss_weight,
             "sign_wrong_penalty_weight": args.sign_wrong_penalty_weight,
         },
+        "startup_diagnostics": startup_diagnostics,
     }
     summary_path = args.output_dir / "training_summary.json"
     summary_path.write_text(json.dumps(summary, indent=2))

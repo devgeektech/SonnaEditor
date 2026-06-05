@@ -1,17 +1,65 @@
 {
-  "active_checkpoint": "checkpoints/foundation-sonna-raw-xmp-003.ckpt",
-  "active_sidecar": "checkpoints/foundation-sonna-raw-xmp-003.json",
-  "display_name": "Sonna RAW XMP Foundation",
-  "source_run_dir": "C:\\Users\\vikas.DESKTOP-61LEE8B\\Projects\\SonnaEditor\\data\\training_workspace\\foundation_runs\\foundation-sonna-raw-xmp-003",
-  "updated_at": "2026-06-04T22:52:55.867611Z",
+  "schema_version": 2,
+  "active_version": "foundation-fivek-catalog-expert-c-001",
+  "active_checkpoint": "checkpoints/foundation-fivek-catalog-expert-c-001.ckpt",
+  "active_sidecar": "checkpoints/foundation-fivek-catalog-expert-c-001.json",
+  "display_name": "Sonna FiveK Catalog Foundation Expert C",
+  "source_run_dir": "C:\\Users\\vikas.DESKTOP-61LEE8B\\Projects\\SonnaEditor\\data\\training_workspace\\foundation_runs\\foundation-fivek-catalog-expert-c-001",
+  "updated_at": "2026-06-05T23:50:46.323059Z",
   "foundation_type": "sonna_editor_slider_regression",
-  "history": [
+  "capabilities": [
+    "backbone_features",
+    "metadata_encoder",
+    "slider_regression"
+  ],
+  "trained_on": [
+    "lightroom_parameters"
+  ],
+  "versions": [
     {
+      "version": "foundation-fivek-catalog-expert-c-001",
+      "checkpoint": "checkpoints/foundation-fivek-catalog-expert-c-001.ckpt",
+      "sidecar": "checkpoints/foundation-fivek-catalog-expert-c-001.json",
+      "display_name": "Sonna FiveK Catalog Foundation Expert C",
+      "source_run_dir": "C:\\Users\\vikas.DESKTOP-61LEE8B\\Projects\\SonnaEditor\\data\\training_workspace\\foundation_runs\\foundation-fivek-catalog-expert-c-001",
+      "created_at": "2026-06-05T21:48:33.050396Z",
+      "foundation_type": "sonna_editor_slider_regression",
+      "capabilities": [
+        "backbone_features",
+        "metadata_encoder",
+        "slider_regression"
+      ],
+      "trained_on": [
+        "lightroom_parameters"
+      ],
+      "sha256": "3a4ec41f3f472d7b42688d782b5c9bdb7619142e58f72c187b9f1022e51906af"
+    },
+    {
+      "version": "foundation-sonna-raw-xmp-001",
       "checkpoint": "checkpoints/foundation-sonna-raw-xmp-001.ckpt",
       "sidecar": "checkpoints/foundation-sonna-raw-xmp-001.json",
       "display_name": "Sonna RAW XMP Foundation",
       "source_run_dir": "C:\\Users\\vikas.DESKTOP-61LEE8B\\Projects\\SonnaEditor\\data\\training_workspace\\foundation_runs\\foundation-sonna-raw-xmp-001",
-      "updated_at": "2026-06-03T23:27:10.040674Z",
+      "created_at": "2026-06-05T23:28:35.880217Z",
+      "foundation_type": "sonna_editor_slider_regression",
+      "capabilities": [
+        "backbone_features",
+        "metadata_encoder",
+        "slider_regression"
+      ],
+      "trained_on": [
+        "lightroom_parameters"
+      ],
+      "sha256": "fdd145e4dd4d54ede5040b70672a61688b008507bd42f4e1d90530a4aa14e5cf"
+    }
+  ],
+  "history": [
+    {
+      "checkpoint": "checkpoints/foundation-fivek-catalog-expert-c-001.ckpt",
+      "sidecar": "checkpoints/foundation-fivek-catalog-expert-c-001.json",
+      "display_name": "Sonna FiveK Catalog Foundation Expert C",
+      "source_run_dir": "C:\\Users\\vikas.DESKTOP-61LEE8B\\Projects\\SonnaEditor\\data\\training_workspace\\foundation_runs\\foundation-fivek-catalog-expert-c-001",
+      "updated_at": "2026-06-05T21:48:33.050396Z",
       "foundation_type": "sonna_editor_slider_regression"
     }
   ]

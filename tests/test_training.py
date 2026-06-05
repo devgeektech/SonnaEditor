@@ -22,6 +22,11 @@ from sonna_editor.training.datamodule import (
     _safe_float,
     build_registry,
 )
+from sonna_editor.training.diagnostics import (
+    estimate_optimizer_steps,
+    parameter_counts,
+    trainable_parameter_breakdown,
+)
 from sonna_editor.training.module import SonnaLightningModule
 from sonna_editor.training.profile_runner import _warm_start_model_from_checkpoint
 
@@ -338,6 +343,50 @@ def test_unfreeze_backbone_from_stage_keeps_lower_stages_frozen() -> None:
     assert any(p.requires_grad for p in model.backbone_features[6].parameters())
     assert any(p.requires_grad for p in model.backbone_features[7].parameters())
     assert any(p.requires_grad for p in model.backbone_norm.parameters())
+
+
+def test_custom_backbone_trainable_layer_spec_unfreezes_stage_blocks() -> None:
+    model = SonnaEditor(_pretrained_backbone=False)
+    module = SonnaLightningModule(
+        model=model,
+        backbone_unfreeze_strategy="custom",
+        backbone_trainable_layers="block:7:2,stage:6",
+    )
+
+    assert module.backbone_unfreeze_strategy == "custom"
+    assert any(p.requires_grad for p in model.backbone_features[6].parameters())
+    stage7_blocks = list(model.backbone_features[7].children())
+    assert not any(p.requires_grad for p in stage7_blocks[0].parameters())
+    assert not any(p.requires_grad for p in stage7_blocks[1].parameters())
+    assert any(p.requires_grad for p in stage7_blocks[2].parameters())
+    assert any(p.requires_grad for p in model.backbone_norm.parameters())
+
+
+def test_parameter_diagnostics_include_trainable_breakdown() -> None:
+    model = SonnaEditor(_pretrained_backbone=False)
+    model.set_trainable_backbone_layers("block:7:2,stage:6")
+
+    counts = parameter_counts(model)
+    breakdown = {row.name: row for row in trainable_parameter_breakdown(model)}
+
+    assert counts["trainable"] > 7_000_000
+    assert counts["trainable"] < 9_000_000
+    assert breakdown["backbone_features.6"].trainable == breakdown["backbone_features.6"].total
+    assert 0 < breakdown["backbone_features.7"].trainable < breakdown["backbone_features.7"].total
+
+
+def test_estimate_optimizer_steps_respects_epoch_and_step_caps() -> None:
+    assert estimate_optimizer_steps(batches_per_epoch=472, max_epochs=100) == 47_200
+    assert estimate_optimizer_steps(
+        batches_per_epoch=472,
+        max_epochs=100,
+        max_steps=500,
+    ) == 500
+    assert estimate_optimizer_steps(
+        batches_per_epoch=100,
+        max_epochs=10,
+        limit_train_batches=0.25,
+    ) == 250
 
 
 def test_loss_fn_is_weighted_slider_loss(module: SonnaLightningModule) -> None:
@@ -749,6 +798,49 @@ def test_train_profile_log_interval_adapts_to_small_dataset() -> None:
     assert _trainer_log_every_n_steps(9) == 9
     assert _trainer_log_every_n_steps(1) == 1
     assert _trainer_log_every_n_steps(32) == 10
+
+
+def test_dataset_summary_payload_records_rows_and_split_paths(tmp_path: Path) -> None:
+    from sonna_editor.training.profile_runner import _dataset_summary_payload
+
+    class _FakeDataModule:
+        _train_ds = [object()] * 3
+        _val_ds = [object()] * 2
+        _test_ds = [object()]
+
+    splits_dir = tmp_path / "splits"
+    args = type(
+        "Args",
+        (),
+        {
+            "train_parquet": splits_dir / "train.parquet",
+            "val_parquet": splits_dir / "val.parquet",
+            "test_parquet": splits_dir / "test.parquet",
+        },
+    )()
+
+    payload = _dataset_summary_payload(args=args, dm=_FakeDataModule(), num_train_batches=1)
+
+    assert payload["train_rows"] == 3
+    assert payload["val_rows"] == 2
+    assert payload["test_rows"] == 1
+    assert payload["splits_dir"] == str(splits_dir)
+    assert payload["num_train_batches"] == 1
+
+
+def test_aggregate_mae_outputs_keeps_all_slider_fields() -> None:
+    from sonna_editor.training.profile_runner import _aggregate_mae_outputs
+
+    outputs = [
+        {"Exposure2012": 0.2, "Temperature": 100.0},
+        {"Exposure2012": 0.4, "Temperature": float("nan")},
+    ]
+
+    result = _aggregate_mae_outputs(outputs, slider_set_version="v2")
+
+    assert result["Exposure2012"] == pytest.approx(0.3)
+    assert result["Temperature"] == pytest.approx(100.0)
+    assert set(result) == set(SLIDER_FIELDS)
 
 
 def test_v1_1_native_ckpt_backward_compat(tmp_path: Path) -> None:

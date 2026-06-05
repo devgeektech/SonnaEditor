@@ -123,6 +123,26 @@ version stem is supplied. If a bad run is promoted, roll back the active
 manifest pointer with `scripts\rollback_foundation.py` rather than deleting
 checkpoints. Use `--no-warm-start` only for a deliberate scratch run.
 
+Foundation training now starts with the final ConvNeXt stage trainable by
+default (`--backbone-trainable-layers stage:7`) plus the normal feature
+fusion/metadata/output-head layers. Startup logs print total/trainable/frozen
+parameters, dataset size, batches per epoch, estimated optimizer steps,
+learning rates, sampler/cap status, and the backbone freeze summary. Use
+`--backbone-trainable-layers block:7:2,stage:6` for an ~8M trainable ablation,
+`block:7:1-2,stage:6` for ~12M, or `--backbone-unfreeze-strategy custom` to
+keep a spec fixed for a full run.
+
+Foundation promotion has guardrails. The CLI refuses normal foundation
+training/promotion from fewer than 1000 train rows, and it refuses promotion
+when held-out metrics fail the quality gate. Overrides exist for deliberate
+reviewed experiments only: `--allow-small-foundation-dataset` and
+`--allow-quality-gate-failure`.
+
+Current active foundation note: `foundation-sonna-raw-xmp-001` was rolled back
+after diagnostics showed only 132 train rows, overfitting, and collapsed
+Highlights/Shadows. The active manifest now points to
+`foundation-fivek-catalog-expert-c-001`.
+
 When copying foundation commands, change both `--run-name` and `--version-stem`
 for every new run. Keep them the same, for example
 `foundation-fivek-catalog-expert-c-001` then
@@ -194,6 +214,9 @@ uv run python scripts\train_foundation_model.py `
 
 For the next run, change both `--run-name` and `--version-stem`, for example
 `foundation-fivek-catalog-expert-c-002`. Do not reuse an old version stem.
+The promoted checkpoint becomes the default base model through
+`SonnaEditorFoundation\foundation_manifest.json`; Mode A and Mode B use that
+active pointer unless an environment override is set.
 
 The inspected FiveK download at
 `C:\Users\vikas.DESKTOP-61LEE8B\Downloads\fivek_dataset\fivek_dataset`
@@ -212,6 +235,11 @@ completed with 0 missing files and 0 parse errors.
 On the Windows RTX 3050 workstation, start foundation runs at `--batch-size 8`.
 The RAW+XMP foundation CLI automatically retries with smaller batch sizes after
 CUDA memory failures.
+
+After a foundation checkpoint passes audit, commit and push
+`SonnaEditorFoundation\foundation_manifest.json` plus the matching
+`SonnaEditorFoundation\checkpoints\<version>.ckpt` and `.json` sidecar. The
+`.ckpt` file is handled by Git LFS. Do not push `data\training_workspace\`.
 
 ### Lite profile flow
 
@@ -289,10 +317,13 @@ Use `process_shoot_preset.py` when you want quick preset-derived XMPs without cr
 
 ### Build dataset from RAW + XMP sidecars
 
+Generated datasets belong under `data/training_workspace`. Keep `v1_learning`
+for frontend-visible checkpoint and sidecar files only.
+
 ```powershell
 uv run python scripts\build_dataset.py `
   --input-dir data\training_sources\sonna_personal_001\raw_xmp `
-  --output-dir v1_learning\dataset `
+  --output-dir data\training_workspace\sonna_personal_001_dataset `
   --profile-name "sonna_current" `
   --workers 4 `
   --split `
@@ -308,7 +339,7 @@ Lightroom Classic must be closed. The catalog is opened read-only.
 ```powershell
 uv run python scripts\build_dataset_from_catalog.py `
   --catalog-path "D:\Lightroom\Sonna Catalog.lrcat" `
-  --output-dir v1_learning\dataset `
+  --output-dir data\training_workspace\sonna_personal_001_dataset `
   --profile-name "sonna_current" `
   --limit 30000 `
   --workers 4 `
@@ -332,9 +363,9 @@ Use the stratified by-shoot splits and train a fresh Personal AI profile. The cu
 
 ```bash
 uv run python scripts/train_profile.py \
-  --train-parquet v1_learning/dataset/splits_v2_stratified/train.parquet \
-  --val-parquet v1_learning/dataset/splits_v2_stratified/val.parquet \
-  --test-parquet v1_learning/dataset/splits_v2_stratified/test.parquet \
+  --train-parquet data/training_workspace/sonna_personal_001_dataset/splits_v2_stratified/train.parquet \
+  --val-parquet data/training_workspace/sonna_personal_001_dataset/splits_v2_stratified/val.parquet \
+  --test-parquet data/training_workspace/sonna_personal_001_dataset/splits_v2_stratified/test.parquet \
   --output-dir data/models/sonna-personal-run01 \
   --profile-name "Sonna Personal Run 01" \
   --batch-size 16 \
@@ -345,9 +376,9 @@ Windows PowerShell uses the same command with backticks for line continuation:
 
 ```powershell
 uv run python scripts/train_profile.py `
-  --train-parquet v1_learning\dataset\splits_v2_stratified\train.parquet `
-  --val-parquet v1_learning\dataset\splits_v2_stratified\val.parquet `
-  --test-parquet v1_learning\dataset\splits_v2_stratified\test.parquet `
+  --train-parquet data\training_workspace\sonna_personal_001_dataset\splits_v2_stratified\train.parquet `
+  --val-parquet data\training_workspace\sonna_personal_001_dataset\splits_v2_stratified\val.parquet `
+  --test-parquet data\training_workspace\sonna_personal_001_dataset\splits_v2_stratified\test.parquet `
   --output-dir data\models\sonna-personal-run01 `
   --profile-name "Sonna Personal Run 01" `
   --batch-size 16 `
@@ -366,7 +397,7 @@ Use `--base-model-checkpoint <path>` when you want to initialise from the hidden
 The earlier diagnostic small dataset contained:
 
 ```text
-v1_learning/dataset/dataset.parquet: 189 rows
+data/training_workspace/sonna_personal_001_dataset/dataset.parquet: 189 rows
 splits_v2_stratified/train.parquet: 132 rows
 splits_v2_stratified/val.parquet: 27 rows
 splits_v2_stratified/test.parquet: 30 rows
@@ -385,3 +416,4 @@ Monitor training:
 ```bash
 uv run tensorboard --logdir data/models/sonna-personal-run01
 ```
+

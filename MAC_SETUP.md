@@ -136,6 +136,8 @@ train/publish one from the CLI.
 ## 7. Prepare Lightroom Data
 
 Training needs edited Lightroom targets. RAW files alone are not enough.
+Generated datasets belong under `data/training_workspace`. Keep `v1_learning`
+for frontend-visible checkpoint and sidecar files only.
 
 ### RAW + XMP
 
@@ -147,7 +149,7 @@ CLI equivalent:
 ```bash
 uv run python scripts/build_dataset.py \
   --input-dir /Volumes/Shoots/SonnaTraining \
-  --output-dir v1_learning/dataset \
+  --output-dir data/training_workspace/sonna_personal_001_dataset \
   --profile-name "sonna_v2" \
   --workers 4 \
   --split \
@@ -164,7 +166,7 @@ read-only and the RAW files referenced by the catalog must be accessible.
 ```bash
 uv run python scripts/build_dataset_from_catalog.py \
   --catalog-path "/Users/darshil/Pictures/Lightroom/Sonna Catalog.lrcat" \
-  --output-dir v1_learning/dataset \
+  --output-dir data/training_workspace/sonna_personal_001_dataset \
   --profile-name "sonna_v2" \
   --limit 30000 \
   --workers 4 \
@@ -177,11 +179,11 @@ uv run python scripts/build_dataset_from_catalog.py \
 Expected outputs:
 
 ```text
-v1_learning/dataset/dataset.parquet
-v1_learning/dataset/thumbnails/
-v1_learning/dataset/splits_v2_stratified/train.parquet
-v1_learning/dataset/splits_v2_stratified/val.parquet
-v1_learning/dataset/splits_v2_stratified/test.parquet
+data/training_workspace/sonna_personal_001_dataset/dataset.parquet
+data/training_workspace/sonna_personal_001_dataset/thumbnails/
+data/training_workspace/sonna_personal_001_dataset/splits_v2_stratified/train.parquet
+data/training_workspace/sonna_personal_001_dataset/splits_v2_stratified/val.parquet
+data/training_workspace/sonna_personal_001_dataset/splits_v2_stratified/test.parquet
 ```
 
 ## 8. Train A Personal AI Profile
@@ -195,9 +197,9 @@ CLI equivalent:
 
 ```bash
 uv run python scripts/train_profile.py \
-  --train-parquet v1_learning/dataset/splits_v2_stratified/train.parquet \
-  --val-parquet v1_learning/dataset/splits_v2_stratified/val.parquet \
-  --test-parquet v1_learning/dataset/splits_v2_stratified/test.parquet \
+  --train-parquet data/training_workspace/sonna_personal_001_dataset/splits_v2_stratified/train.parquet \
+  --val-parquet data/training_workspace/sonna_personal_001_dataset/splits_v2_stratified/val.parquet \
+  --test-parquet data/training_workspace/sonna_personal_001_dataset/splits_v2_stratified/test.parquet \
   --output-dir data/models/sonna-personal-run01 \
   --profile-name "Sonna Personal Run 01" \
   --max-epochs 50 \
@@ -215,9 +217,9 @@ Resume an interrupted training run:
 
 ```bash
 uv run python scripts/train_profile.py \
-  --train-parquet v1_learning/dataset/splits_v2_stratified/train.parquet \
-  --val-parquet v1_learning/dataset/splits_v2_stratified/val.parquet \
-  --test-parquet v1_learning/dataset/splits_v2_stratified/test.parquet \
+  --train-parquet data/training_workspace/sonna_personal_001_dataset/splits_v2_stratified/train.parquet \
+  --val-parquet data/training_workspace/sonna_personal_001_dataset/splits_v2_stratified/val.parquet \
+  --test-parquet data/training_workspace/sonna_personal_001_dataset/splits_v2_stratified/test.parquet \
   --output-dir data/models/sonna-personal-run01 \
   --profile-name "Sonna Personal Run 01" \
   --resume-from-checkpoint "data/models/sonna-personal-run01/checkpoints/epoch=...ckpt"
@@ -228,6 +230,11 @@ uv run python scripts/train_profile.py \
 This is CLI-only. It is not exposed in the frontend. The foundation checkpoint
 is promoted into the repo-local hidden `SonnaEditorFoundation/` folder and is
 used as the base for Lite profile creation.
+
+Foundation promotion is guarded. The CLI refuses normal foundation updates from
+fewer than 1000 train rows and blocks promotion when held-out metrics fail.
+Use `--allow-small-foundation-dataset` or `--allow-quality-gate-failure` only
+for deliberate reviewed experiments, not routine active foundation updates.
 
 For RAW+XMP foundation data, first export metadata from Lightroom and keep the
 edited RAW/DNG files plus same-stem `.xmp` sidecars in a dedicated source
@@ -350,8 +357,8 @@ CLI dry run:
 uv run python scripts/finetune_profile.py \
   --base-model v1_learning/model-v2.0.0.ckpt \
   --captures-dir data/captures \
-  --original-train-parquet v1_learning/dataset/splits_v2_stratified/train.parquet \
-  --val-parquet v1_learning/dataset/splits_v2_stratified/val.parquet \
+  --original-train-parquet data/training_workspace/sonna_personal_001_dataset/splits_v2_stratified/train.parquet \
+  --val-parquet data/training_workspace/sonna_personal_001_dataset/splits_v2_stratified/val.parquet \
   --dry-run
 ```
 
@@ -361,8 +368,8 @@ CLI actual fine-tune:
 uv run python scripts/finetune_profile.py \
   --base-model v1_learning/model-v2.0.0.ckpt \
   --captures-dir data/captures \
-  --original-train-parquet v1_learning/dataset/splits_v2_stratified/train.parquet \
-  --val-parquet v1_learning/dataset/splits_v2_stratified/val.parquet \
+  --original-train-parquet data/training_workspace/sonna_personal_001_dataset/splits_v2_stratified/train.parquet \
+  --val-parquet data/training_workspace/sonna_personal_001_dataset/splits_v2_stratified/val.parquet \
   --output-dir v1_learning \
   --max-epochs 30 \
   --batch-size 16
@@ -384,7 +391,7 @@ Prediction collapse audit:
 ```bash
 uv run python scripts/analyse_prediction_collapse.py \
   --model-path v1_learning/model-v2.0.0.ckpt \
-  --parquet v1_learning/dataset/splits_v2_stratified/val.parquet \
+  --parquet data/training_workspace/sonna_personal_001_dataset/splits_v2_stratified/val.parquet \
   --output data/audits/prediction_collapse.md \
   --limit 50 \
   --batch-size 16
@@ -394,7 +401,7 @@ Dataset diversity audit:
 
 ```bash
 uv run python scripts/audit_dataset_diversity.py \
-  --parquet v1_learning/dataset/dataset.parquet \
+  --parquet data/training_workspace/sonna_personal_001_dataset/dataset.parquet \
   --output data/audits/dataset_diversity.md
 ```
 
@@ -437,3 +444,4 @@ Python code in memory.
 - Use `data/models/` for hidden runs, diagnostics, and unpromoted candidates.
 - On Apple Silicon, the preferred device should be `mps`; CUDA is only expected
   on Windows/Linux NVIDIA machines.
+

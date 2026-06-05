@@ -10,6 +10,18 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
 
 MetricSpec = tuple[str, str, float | None, float | None, str, str]
+_FIELD_USABLE_LIMITS = {
+    "Temperature": 350.0,
+    "Tint": 8.0,
+    "Exposure2012": 0.25,
+    "Shadows2012": 8.0,
+    "Highlights2012": 8.0,
+    "Whites2012": 5.0,
+    "Blacks2012": 5.0,
+    "Clarity2012": 5.0,
+    "Vibrance": 5.0,
+    "Saturation": 5.0,
+}
 
 if hasattr(sys.stdout, "reconfigure"):
     cast(Any, sys.stdout).reconfigure(encoding="utf-8")
@@ -213,8 +225,9 @@ def _split_row_count(
 
     default_path = (
         PROJECT_ROOT
-        / "v1_learning"
-        / "dataset"
+        / "data"
+        / "training_workspace"
+        / "sonna_personal_001_dataset"
         / "splits_v2_stratified"
         / f"{split}.parquet"
     )
@@ -227,6 +240,15 @@ def _is_number(value: Any) -> bool:
     return isinstance(value, (float, int)) and not isinstance(value, bool)
 
 
+def _finite_number(value: Any) -> float | None:
+    if not _is_number(value):
+        return None
+    number = float(value)
+    if number != number:
+        return None
+    return number
+
+
 def _status_for_metric(value: Any, ideal: float | None, usable: float | None) -> str:
     if not _is_number(value):
         return "INFO"
@@ -235,6 +257,59 @@ def _status_for_metric(value: Any, ideal: float | None, usable: float | None) ->
     if ideal is not None:
         return "🟢 OK" if value <= ideal else "🔴 BAD"
     return "INFO"
+
+
+def _field_norm_mae(field: str, value: float) -> float:
+    if field == "Temperature":
+        return value / 350.0
+    try:
+        from sonna_editor.config import SLIDER_RANGES
+
+        lo, hi = SLIDER_RANGES[field]
+    except Exception:
+        return value
+    span = max(abs(float(hi) - float(lo)), 1e-9)
+    return value / span
+
+
+def _print_all_parameter_mae(summary: dict[str, Any]) -> None:
+    per_field = summary.get("test_per_field_mae")
+    if not isinstance(per_field, dict) or not per_field:
+        return
+
+    rows: list[tuple[str, float, float, str]] = []
+    failures: list[tuple[str, float, float, str]] = []
+    for field, raw_value in per_field.items():
+        value = _finite_number(raw_value)
+        if value is None:
+            continue
+        limit = _FIELD_USABLE_LIMITS.get(field)
+        status = "INFO"
+        if limit is not None:
+            status = "OK" if value <= limit else "BAD"
+            if value > limit:
+                failures.append((field, value, _field_norm_mae(field, value), status))
+        rows.append((field, value, _field_norm_mae(field, value), status))
+
+    if not rows:
+        return
+
+    print(f"\n{'ALL-PARAMETER MAE CHECK':^80}")
+    print(f"{'='*80}")
+    if failures:
+        print("  Fields outside usable limits:")
+        print(f"  {'Field':30} {'MAE':>10}   {'Limit':>10}")
+        print(f"  {'-'*30} {'-'*10}   {'-'*10}")
+        for field, value, _, _ in sorted(failures, key=lambda row: row[1], reverse=True):
+            print(f"  {field:30} {value:10.4f}   {_FIELD_USABLE_LIMITS[field]:10.4f}")
+    else:
+        print("  No stored key-field MAE exceeds the current usable limits.")
+
+    print("\n  Worst stored per-field MAE by normalized slider range:")
+    print(f"  {'Field':30} {'MAE':>10}   {'Norm MAE':>10}   Status")
+    print(f"  {'-'*30} {'-'*10}   {'-'*10}   {'-'*6}")
+    for field, value, norm_mae, status in sorted(rows, key=lambda row: row[2], reverse=True)[:20]:
+        print(f"  {field:30} {value:10.4f}   {norm_mae:10.4f}   {status}")
 
 
 def _target_text(ideal: float | None, usable: float | None, unit: str) -> str:
@@ -436,6 +511,8 @@ def main():
         print("\nAdditional test metrics:")
         for key in extra_keys:
             print(f"  {key:30} {_fmt_float(test_results[key], 4)}")
+
+    _print_all_parameter_mae(summary)
 
     # Training dynamics
     print(f"\n{'TRAINING DYNAMICS':^80}")

@@ -40,7 +40,9 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(mess
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_CKPT = Path("v1_learning/model-v1.2.3-prod256.ckpt")
-DEFAULT_TEST_PARQUET = Path("v1_learning/dataset/splits_v2_stratified/test.parquet")
+DEFAULT_TEST_PARQUET = Path(
+    "data/training_workspace/sonna_personal_001_dataset/splits_v2_stratified/test.parquet"
+)
 OUTPUT_DIR = Path("scripts/output")
 REPORT_PATH = OUTPUT_DIR / "all_slider_audit_v1.2.3.md"
 STATS_PATH = OUTPUT_DIR / "all_slider_audit_v1.2.3_stats.parquet"
@@ -618,7 +620,10 @@ def main() -> int:
     test_parquet = args.test_parquet or _locate_test_parquet(DEFAULT_TEST_PARQUET)
     if test_parquet is None or not test_parquet.exists():
         print("Test parquet file not found.")
-        print("Expected at v1_learning/dataset/splits_v2_stratified/test.parquet or discoverable under the project tree.")
+        print(
+            "Expected at data/training_workspace/sonna_personal_001_dataset/"
+            "splits_v2_stratified/test.parquet or discoverable under the project tree."
+        )
         return 1
 
     _logger.info("Loading model from %s", ckpt_path)

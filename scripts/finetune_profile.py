@@ -6,8 +6,8 @@ Usage examples:
   uv run scripts/finetune_profile.py \\
     --base-model v1_learning/model-v1.0.1.ckpt \\
     --captures-dir /tmp/sonna_capture_test \\
-    --original-train-parquet v1_learning/dataset/splits/train.parquet \\
-    --val-parquet v1_learning/dataset/splits/val.parquet \\
+    --original-train-parquet data/training_workspace/sonna_personal_001_dataset/splits_v2_stratified/train.parquet \\
+    --val-parquet data/training_workspace/sonna_personal_001_dataset/splits_v2_stratified/val.parquet \\
     --dry-run
 
   # List available checkpoints:
@@ -17,8 +17,8 @@ Usage examples:
   uv run scripts/finetune_profile.py \\
     --base-model v1_learning/model-v1.0.1.ckpt \\
     --captures-dir /path/to/captures \\
-    --original-train-parquet v1_learning/dataset/splits/train.parquet \\
-    --val-parquet v1_learning/dataset/splits/val.parquet
+    --original-train-parquet data/training_workspace/sonna_personal_001_dataset/splits_v2_stratified/train.parquet \\
+    --val-parquet data/training_workspace/sonna_personal_001_dataset/splits_v2_stratified/val.parquet
 """
 
 from __future__ import annotations

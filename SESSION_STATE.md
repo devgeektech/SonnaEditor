@@ -1,7 +1,7 @@
 # Session State - Sonna Editor
 
 **Saved:** 2026-06-05 local time
-**Current phase/task:** FiveK catalog foundation verification and runbook cleanup.
+**Current phase/task:** Foundation result triage and promotion guardrails after bad Sonna RAW+XMP continuation.
 
 ## Current Workspace
 
@@ -9,9 +9,10 @@
 - Branch: `main`, tracking `origin/main`
 - Recent committed history in this checkout: `aac360a feat: Enhance dataset building and training scripts` on top of four earlier commits.
 - Training/profile caches were intentionally cleared for a fresh dataset reset.
-- Cleared repo-local generated artifacts: `v1_learning\dataset`, `data\models`, `data\parquet`, `data\captures`, `data\thumbnails`, `data\audits`, `data\dbg`, `data\raw\sonna_training`, `.pytest_cache`, `.ruff_cache`.
+- Cleared repo-local generated artifacts: `data\training_workspace\sonna_personal_001_dataset`, `data\models`, `data\parquet`, `data\captures`, `data\thumbnails`, `data\audits`, `data\dbg`, `data\raw\sonna_training`, `.pytest_cache`, `.ruff_cache`.
 - Cleared frontend active-profile pointer: `.saha\active_profile.txt`.
-- `v1_learning\` is currently empty; there is no guaranteed frontend-visible profile until a fresh Personal AI profile is trained or a checkpoint is intentionally published.
+- `v1_learning\` currently has no trained profile checkpoint and no generated dataset folder; there is no frontend-visible profile until a fresh Personal AI/Lite profile is trained or intentionally published.
+- Previous foundation checkpoints were cleared from `SonnaEditorFoundation\checkpoints\`, and `foundation_manifest.json` is reset to an empty schema-v2 manifest. The next successful foundation training run will promote the new checkpoint and make it the default base for Mode A and Mode B.
 
 ## Environment
 
@@ -28,7 +29,7 @@ The earlier `GPU available: False` training issue was caused by a CPU-only PyTor
 ## Data And Models
 
 - Local training dataset was cleared. Add a fresh RAW+XMP dataset before training.
-- No current train/val/test split exists in `v1_learning\dataset`.
+- No current train/val/test split exists in `data\training_workspace\sonna_personal_001_dataset`.
 - The previous split was imbalanced for Exposure2012: train mean ~0.212 while val/test were ~0.480/~0.504. The regenerated split reduces that gap: train mean ~0.264, val ~0.379, test ~0.318.
 - Temperature labels in the current dataset mostly cool relative to AsShot WB, so a warmer model output points to training flow/initialisation/split issues rather than warmer target labels.
 - Tint labels are consistently positive/magenta relative to AsShot, so some magenta tendency is present in the labels.
@@ -38,6 +39,19 @@ The earlier `GPU available: False` training issue was caused by a CPU-only PyTor
 
 ## What Changed This Session
 
+- Diagnosed the pasted training diagnostics for the two foundation runs:
+  - `foundation-fivek-catalog-expert-c-001` trained on the full FiveK Expert C split (`3769/536/695` train/val/test rows in the current local `splits_v2_stratified_fiveK` folder). Collapse audit on 200 validation photos found `0` collapsed sliders, but Saturation/Vibrance and Temperature still need visual review before treating it as production-quality Mode A output.
+  - `foundation-sonna-raw-xmp-001` trained on only `132/27/30` train/val/test rows from `data\training_workspace\sonna_foundation_001_dataset\splits_v2_stratified` while starting with `stage:7` trainable (`16.2M` trainable params). It overfit (`test_loss / best_val_loss = 1.616x`) and failed key visual sliders: Exposure, Shadows, Highlights, Whites, Blacks, Vibrance, and Saturation. Collapse audit on its 27-row val split found collapsed `Highlights2012` and `Shadows2012`.
+- Rolled the active foundation manifest back from the bad Sonna continuation to `foundation-fivek-catalog-expert-c-001`. New Lite/Personal AI runs now resolve the FiveK checkpoint unless an environment override is set.
+- Added foundation promotion guardrails in `scripts\train_foundation_model.py`:
+  - foundation runs now refuse to train/promote from fewer than `1000` train rows unless `--allow-small-foundation-dataset` is explicitly passed
+  - promotion now fails if held-out metrics breach the quality gate (`test_loss` overfit ratio plus key MAE thresholds) unless `--allow-quality-gate-failure` is explicitly passed after visual review
+- Improved future training summaries in `src\sonna_editor\training\profile_runner.py`: summaries now store train/val/test row counts, split parquet paths, split directory, train-batch count, and `test_per_field_mae` for all sliders.
+- Improved `scripts\quick_diagnostic.py` so future summaries with `test_per_field_mae` show an all-parameter MAE check and worst normalized slider errors, instead of only the small critical-metric table.
+- Verification for this fix:
+  - `uv run ruff check scripts\train_foundation_model.py scripts\quick_diagnostic.py src\sonna_editor\training\profile_runner.py tests\test_train_foundation_model.py tests\test_training.py` passed.
+  - `uv run pytest tests\test_train_foundation_model.py tests\test_training.py::test_dataset_summary_payload_records_rows_and_split_paths tests\test_training.py::test_aggregate_mae_outputs_keeps_all_slider_fields tests\test_training.py::test_train_profile_log_interval_adapts_to_small_dataset -q` passed: `12 passed`.
+  - `uv run python -m py_compile scripts\train_foundation_model.py scripts\quick_diagnostic.py src\sonna_editor\training\profile_runner.py` passed.
 - Reviewed the local MIT-Adobe FiveK download at `C:\Users\vikas.DESKTOP-61LEE8B\Downloads\fivek_dataset\fivek_dataset`.
 - Confirmed the extracted FiveK tree contains 5,000 `.dng` source files under `raw_photos\HQa*`, `raw_photos\fivek.lrcat`, Lightroom preview/helper/catalog-data folders, and text/license/category files.
 - Inspected `raw_photos\fivek.lrcat` read-only through SQLite. It has 60,000 `Adobe_images` rows, 5,000 unique source DNGs, 96,458 develop-settings rows, and 60,000 active non-empty develop-setting blobs. Each DNG has 12 virtual-copy/recipe variants.
@@ -53,9 +67,32 @@ The earlier `GPU available: False` training issue was caused by a CPU-only PyTor
 - Foundation promotion now auto-allocates `foundation-vN` when no explicit version stem is supplied, still refuses to overwrite existing checkpoints, and keeps older versions available for rollback.
 - Added `scripts\rollback_foundation.py` with `--list` and explicit version activation so bad foundation runs can be rolled back by changing the manifest pointer instead of deleting checkpoint files.
 - Fixed legacy foundation manifest listing so the active checkpoint is included even when the manifest predates schema-v2 `versions[]`. The current active checkpoint `foundation-sonna-raw-xmp-003.ckpt` now resolves and appears in `scripts\rollback_foundation.py --list` alongside `foundation-sonna-raw-xmp-001`.
+- Cleared previous local trained profile/checkpoint artifacts before the new FiveK foundation run:
+  - removed `v1_learning\model-v0.1.0.*`
+  - removed `SonnaEditorFoundation\checkpoints\foundation-sonna-raw-xmp-001.*`
+  - removed `SonnaEditorFoundation\checkpoints\foundation-sonna-raw-xmp-003.*`
+  - removed old `data\training_workspace\foundation_runs\`
+  - reset `SonnaEditorFoundation\foundation_manifest.json` to an empty schema-v2 manifest.
+- Fixed clean-start behavior so an empty foundation manifest reports no active checkpoint and `scripts\train_foundation_model.py` starts from scratch automatically unless a new active checkpoint exists.
 - Personal AI training sidecars and summaries now record foundation provenance for foundation warm starts: version, checkpoint path, SHA256, foundation type, capabilities, and training-source tags.
 - Foundation warm starts now use native SonnaEditor checkpoints only. The previous paired-image warm-start path has been removed.
+- Removed the duplicate generated Personal AI dataset copy at `v1_learning\dataset`. Canonical generated datasets, splits, thumbnails, and run workspaces now live under `data\training_workspace\`; `v1_learning\` is reserved for frontend-visible published profile checkpoints and their sidecar/preset/survey files.
+- Updated active Personal AI/fine-tune/audit defaults that still pointed at `v1_learning\dataset`:
+  - `config.ORIGINAL_TRAIN_PARQUET`
+  - `scripts\quick_diagnostic.py`
+  - `scripts\finetune_profile.py`
+  - `scripts\audit_all_sliders_v1.2.3.py`
+  - `scripts\train_v1_2_0_full_production.py`
+  - `scripts\migrate_labels_to_v2.py`
+- Added a config regression test so the default original-train parquet stays under `data\training_workspace\sonna_personal_001_dataset\splits_v2_stratified\train.parquet`.
 - Added progressive backbone warm-start training. Frontend Personal AI and RAW+XMP foundation runs now freeze the full ConvNeXt backbone first, then unfreeze later stages in phases before full fine-tuning. The legacy partial strategy remains available as `--backbone-unfreeze-strategy partial`.
+- Added configurable ConvNeXt trainable-layer specs and training startup diagnostics for foundation-capacity work:
+  - `SonnaEditor.set_trainable_backbone_layers()` supports specs such as `none`, `stage:7`, `block:7:2,stage:6`, `block:7:1-2,stage:6`, `from:6`, and `all`.
+  - `scripts\train_foundation_model.py` now defaults to `--backbone-trainable-layers stage:7`, so foundation training starts with the final ConvNeXt stage plus feature fusion/metadata/output heads trainable from epoch 0.
+  - Measured v2 trainable counts: `none` 1.92M, `block:7:2` 6.68M, `block:7:2,stage:6` 7.86M, `block:7:1-2,stage:6` 12.63M, `stage:7` 16.21M, `from:6` 17.39M.
+  - `src\sonna_editor\training\diagnostics.py` now reports total/trainable/frozen params, trainable percentage, per-stage/block backbone state, split row counts, batches per epoch, estimated optimizer steps, effective learning rates, sampler type, max_steps, limit_train_batches, and gradient accumulation.
+  - `training_summary.json` now stores this under `startup_diagnostics`.
+- Fixed `scripts\analyse_prediction_collapse.py` missing-parquet handling after a FiveK audit command used `splits_v2_stratified\val.parquet` while the actual local split folder was `splits_v2_stratified_fiveK\val.parquet`. The script now raises a clearer `FileNotFoundError` with nearby matching parquet suggestions. A one-row smoke audit against `foundation-fivek-catalog-expert-c-001.ckpt` and the correct FiveK validation parquet completed successfully.
 - Added `scripts\analyse_backbone_drift.py` to compare ConvNeXt backbone tensor drift between a foundation checkpoint and a final Personal AI checkpoint, reporting per-stage relative deltas, cosine similarity, and the largest drifting tensors.
 - Removed the paired-image foundation training path. Foundation checkpoints are now native `SonnaEditor` slider-regression checkpoints trained from catalog-derived splits or RAW+XMP sidecars.
 - Moved transient app state to repo-local `.saha\` instead of `~\.saha\`. Active profile, recent folders, queued job snapshots, Personal AI training workspaces, and fine-tune scratch runs now resolve from the project root by default.
@@ -93,7 +130,7 @@ The earlier `GPU available: False` training issue was caused by a CPU-only PyTor
 - Fixed frontend Lite profile creation compatibility with current checkpoints. `src/sonna_editor/mode_b/checkpoint_builder.py` now loads the base checkpoint at its native slider set, writes the matching internal `slider_set_version` into the Lite sidecar, and preserves extension-head weights instead of down-converting.
 - Removed stale v2-rejection behavior from the Mode B tests and removed an unused test import. Added focused v2 coverage proving Lite creation from a v2 base succeeds and keeps extension heads intact.
 - Cleaned up noisy training console warnings. `scripts/train_profile.py` now chooses `log_every_n_steps` from the actual train-batch count so the 132-row local split uses 9 instead of tripping Lightning's default-10 warning. The training package, current trainer, legacy production trainer, and fine-tune path suppress the upstream Lightning `LeafSpec` deprecation and optional Torch Triton FLOP-counter warning.
-- Fixed `scripts/quick_diagnostic.py` so old training summaries that do not embed row counts still print dataset split row counts. It now checks nested summary fields first, then summary parquet path fields if present, then falls back to the canonical `v1_learning/dataset/splits_v2_stratified/*.parquet` metadata. It also replaced emoji status markers with ASCII `OK`/`BAD` labels so the script finishes cleanly in Windows PowerShell.
+- Fixed `scripts/quick_diagnostic.py` so old training summaries that do not embed row counts still print dataset split row counts. It now checks nested summary fields first, then summary parquet path fields if present, then falls back to the canonical `data/training_workspace/sonna_personal_001_dataset/splits_v2_stratified/*.parquet` metadata. It also replaced emoji status markers with ASCII `OK`/`BAD` labels so the script finishes cleanly in Windows PowerShell.
 - Fixed the Mode B/Lite overexposure source in the profile builder. `src/sonna_editor/mode_b/checkpoint_builder.py` now zeroes each output head's final linear weights and copies absolute preset+survey targets into final biases, so the profile carrier does not add the trained base model's own Exposure/colour predictions on top of the preset. For v2 bases, the direct `wb_metadata_skip` route is zeroed in Mode B initial checkpoints so AsShot WB is not secretly stacked on top of preset Temperature/Tint.
 - Fixed the actual UI/CLI Mode B processing flow. `src/sonna_editor/inference/pipeline.py` now detects checkpoint sidecars with `profile_type: "mode_b_initial"`, bypasses `InferenceEngine` for the initial Lite run, reloads the copied preset and survey, computes per-photo Exposure/WB corrections only through `sonna_editor.preset.adjuster`, writes those adjusted values to XMP, and records the adjusted baseline in `sonna_predictions.json`.
 - Fixed the second root cause in `src/sonna_editor/preset/adjuster.py`: the old auto-exposure heuristic used mean luminance only. On real event frames with black suits/dark rooms plus bright faces/signage, it could add too much positive Exposure. The new heuristic still uses mean luminance but guards it with 85th/95th percentile luminance targets so already-bright upper tones prevent over-lifting.
@@ -130,6 +167,16 @@ The earlier `GPU available: False` training issue was caused by a CPU-only PyTor
   - `uv run python scripts\build_dataset_from_catalog.py --catalog-path "C:\Users\vikas.DESKTOP-61LEE8B\Downloads\fivek_dataset\fivek_dataset\raw_photos\fivek.lrcat" --output-dir "data\training_workspace\fivek_catalog_verify_20260605" --profile-name "fivek_catalog_verify_20260605" --collection-name "C" --include-unedited-looking --limit 20 --workers 1` passed.
   - `uv run python scripts\rollback_foundation.py --list` now lists both `foundation-sonna-raw-xmp-001` and active `foundation-sonna-raw-xmp-003`.
   - `uv run pytest tests\test_foundation.py -q` passed: 4 passed.
+- Clean-start verification after checkpoint cleanup:
+  - `uv run pytest tests\test_foundation.py tests\test_train_foundation_model.py -q` passed: 10 passed.
+  - `uv run python -c "import scripts.train_foundation_model as t; print(t._active_foundation_or_none())"` printed `None`.
+  - `uv run ruff check src\sonna_editor\foundation.py scripts\train_foundation_model.py tests\test_foundation.py` passed.
+- Dataset-location cleanup verification:
+  - `v1_learning\dataset` was removed after path-boundary verification; source FiveK data and source RAW/XMP folders were not touched.
+  - `rg -n "v1_learning.*dataset|CHECKPOINTS_DIR.*dataset|dataset/splits" ...` now only finds active canonical `data\training_workspace\...` paths plus historical generated reports under `scripts\output\`.
+  - `uv run ruff check src\sonna_editor\config.py scripts\quick_diagnostic.py scripts\finetune_profile.py scripts\audit_all_sliders_v1.2.3.py scripts\train_v1_2_0_full_production.py scripts\migrate_labels_to_v2.py src\sonna_editor\foundation.py scripts\train_foundation_model.py tests\test_config.py tests\test_foundation.py` passed.
+  - `uv run python -m py_compile src\sonna_editor\config.py scripts\quick_diagnostic.py scripts\finetune_profile.py scripts\audit_all_sliders_v1.2.3.py scripts\train_v1_2_0_full_production.py scripts\migrate_labels_to_v2.py src\sonna_editor\foundation.py scripts\train_foundation_model.py` passed.
+  - `uv run pytest tests\test_config.py tests\test_foundation.py tests\test_train_foundation_model.py -q` passed: 36 passed.
 
 - `uv run ruff check src\sonna_editor\foundation.py src\sonna_editor\api\routes\profiles.py src\sonna_editor\api\models.py scripts\train_foundation_model.py scripts\build_mode_b_checkpoint.py tests\test_foundation.py tests\api\test_profiles.py tests\api\conftest.py` passed.
 - Current repo-local foundation/Git LFS verification:
@@ -192,7 +239,7 @@ The earlier `GPU available: False` training issue was caused by a CPU-only PyTor
 - `uv run python -m py_compile scripts\train_profile.py scripts\analyse_prediction_collapse.py scripts\audit_dataset_diversity.py` passed.
 - `uv run pytest tests\test_training.py tests\test_dataset.py tests\test_catalog_dataset.py tests\test_architecture.py -q` passed: 134 passed, 7 skipped.
 - `uv run pytest tests\test_extract.py::TestComputeSceneStatistics -q` passed: 3 passed.
-- `scripts\audit_dataset_diversity.py` ran on `v1_learning\dataset\dataset.parquet`: 189 photos / 35 shoots; brightness split dark=92, balanced=81, bright=16; WB split warm=66, daylight=114, cool=9.
+- `scripts\audit_dataset_diversity.py` ran on `data\training_workspace\sonna_personal_001_dataset\dataset.parquet`: 189 photos / 35 shoots; brightness split dark=92, balanced=81, bright=16; WB split warm=66, daylight=114, cool=9.
 - `scripts\analyse_prediction_collapse.py` ran on existing `model-v2.0.0`: 27 val photos, 14 collapsed sliders; Exposure2012 std_ratio=0.115, Temperature/Tint std_ratio ~1.0.
 - `scripts\analyse_prediction_collapse.py` ran on rejected scene-stats candidate: 27 val photos, 29 collapsed sliders; Exposure2012 std_ratio near zero, so the candidate was rejected despite lower test MAE.
 - Dark low-light output diagnosis on `0H5A4599`: the reference/training XMP has `Exposure2012=+1.11`, while active `model-v2.0.0` writes about `+0.105`, roughly one stop too dark. Other key tone/WB sliders and tone curves are close to the reference, so this is not an XMP writer or tone-curve endpoint issue. Root cause is Exposure2012 prediction collapse: across the 189-row dataset, target Exposure std is ~0.454 but model output std is ~0.061; in the darkest luminance quartile, targets average `+0.695` while predictions average only `+0.090`.
@@ -245,6 +292,8 @@ The earlier `GPU available: False` training issue was caused by a CPU-only PyTor
   - Sign-wrong penalty weight=0.2
   - WB metadata skip enabled
 - Fresh training defaults to target-prior output initialisation. On the previous 189-row diagnostic dataset, this could win validation loss while still producing collapsed predictions; always run collapse analysis before promoting a small-data candidate.
+- Fresh output-head target-prior initialisation is bias-only on final head layers. It is derived from the current training parquet's target medians, falls back to Lightroom defaults for missing fields, and does not freeze those heads after training starts. With the direct AsShot WB skip enabled, Temperature/Tint residual biases initialise to zero so the initial WB output starts at AsShot rather than the dataset median. Keep it enabled for fresh foundation and Personal AI runs unless doing an ablation.
+- A 5,000-photo FiveK split at batch size 8 should show about 472 train batches per epoch if the train split has roughly 3,770 rows. That is not a subset by itself. The new startup diagnostics explicitly print train/val/test image counts, batches per epoch, estimated optimizer steps, `max_steps`, `limit_train_batches`, and sampler type so suspiciously similar 200-photo vs 5,000-photo timings can be verified from logs.
 - The previous `model-v2.0.0` diagnostic profile under-brightened dark/low-light photos because its Exposure2012 head was nearly averaged. Example: `0H5A4599` mean luminance `0.126`, target `+1.11`, prediction about `+0.10`.
 - Default training augmentation is now geometry-only; photometric jitter remains configurable but disabled by default.
 - Training on tiny splits now logs once that it adjusted `log_every_n_steps` instead of letting Lightning warn. This is expected for the current 132-row train split, which has 9 batches at batch size 16.
@@ -260,3 +309,4 @@ Add the fresh RAW+XMP dataset, start the backend/Electron app, and create a Pers
 For current foundation model work, use `scripts\train_foundation_model.py --raw-xmp-dir ...` or `--splits-dir ...` so the checkpoint is promoted to `SonnaEditorFoundation\` and stays out of the frontend profile list. It will warm-start from the active foundation checkpoint unless `--no-warm-start` is supplied. For MIT-Adobe FiveK, use catalog-derived splits from `build_dataset_from_catalog.py`.
 
 Before relying on live RAW/XMP extraction coverage, restore the local fixture files under `tests/fixtures/`. The normal full suite now skips those local-data checks when the fixtures are missing or unreadable.
+
