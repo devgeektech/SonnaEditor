@@ -17,6 +17,7 @@ import argparse
 import gc
 import logging
 import os
+import sys
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -32,6 +33,13 @@ from sonna_editor.foundation import (
 from sonna_editor.training.profile_runner import train_profile
 
 log = logging.getLogger(__name__)
+
+_DEFAULT_MIN_FOUNDATION_TRAIN_ROWS = 75
+_SMALL_FOUNDATION_TRAIN_ROWS = 500
+_DEFAULT_FOUNDATION_BACKBONE_STRATEGY = "progressive"
+_DEFAULT_FOUNDATION_BACKBONE_LAYERS = "stage:7"
+_SMALL_FOUNDATION_BACKBONE_STRATEGY = "custom"
+_SMALL_FOUNDATION_BACKBONE_LAYERS = "none"
 
 
 def _parse_args() -> argparse.Namespace:
@@ -80,10 +88,11 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--min-foundation-train-rows",
         type=int,
-        default=1000,
+        default=_DEFAULT_MIN_FOUNDATION_TRAIN_ROWS,
         help=(
             "Minimum train split size required for normal foundation promotion "
-            "(default: 1000). Use --allow-small-foundation-dataset only for "
+            f"(default: {_DEFAULT_MIN_FOUNDATION_TRAIN_ROWS}). Use "
+            "--allow-small-foundation-dataset only for "
             "deliberate smoke/ablation runs."
         ),
     )
@@ -107,7 +116,7 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--backbone-unfreeze-strategy",
         choices=("progressive", "custom", "full", "partial"),
-        default="progressive",
+        default=_DEFAULT_FOUNDATION_BACKBONE_STRATEGY,
         help=(
             "Foundation backbone schedule. Default progressive starts from "
             "--backbone-trainable-layers and expands at later epochs; custom "
@@ -116,7 +125,7 @@ def _parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--backbone-trainable-layers",
-        default="stage:7",
+        default=_DEFAULT_FOUNDATION_BACKBONE_LAYERS,
         help=(
             "Initial ConvNeXt trainable layer spec for foundation training "
             "(default: stage:7). Examples: block:7:2,stage:6; "
@@ -229,6 +238,34 @@ _FOUNDATION_METRIC_LIMITS: dict[str, tuple[float, str]] = {
 }
 
 
+_FOUNDATION_METRIC_FIELD_FALLBACKS: dict[str, str] = {
+    "test_mae_temperature": "Temperature",
+    "test_mae_tint": "Tint",
+    "test_mae_exposure": "Exposure2012",
+    "test_mae_shadows": "Shadows2012",
+    "test_mae_highlights": "Highlights2012",
+    "test_mae_whites": "Whites2012",
+    "test_mae_blacks": "Blacks2012",
+    "test_mae_clarity": "Clarity2012",
+    "test_mae_vibrance": "Vibrance",
+    "test_mae_saturation": "Saturation",
+}
+
+
+def _foundation_metric_value(summary: dict[str, Any], key: str) -> float | None:
+    test_results = summary.get("test_results") or {}
+    value = test_results.get(key)
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        return float(value)
+
+    field = _FOUNDATION_METRIC_FIELD_FALLBACKS.get(key)
+    per_field = summary.get("test_per_field_mae") or {}
+    value = per_field.get(field) if field else None
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        return float(value)
+    return None
+
+
 def _foundation_quality_failures(summary: dict[str, Any]) -> list[str]:
     failures: list[str] = []
     best_val = summary.get("best_val_loss")
@@ -247,10 +284,45 @@ def _foundation_quality_failures(summary: dict[str, Any]) -> list[str]:
         )
 
     for key, (limit, label) in _FOUNDATION_METRIC_LIMITS.items():
-        value = test_results.get(key)
-        if isinstance(value, (int, float)) and not isinstance(value, bool) and value > limit:
+        value = _foundation_metric_value(summary, key)
+        if value is not None and value > limit:
             failures.append(f"{label} MAE {value:.4g} exceeds {limit:g}")
     return failures
+
+
+def _foundation_capacity_for_split(
+    *,
+    split_counts: dict[str, int],
+    requested_strategy: str,
+    requested_layers: str,
+) -> tuple[str, str]:
+    """Return a safer training capacity for the current foundation split.
+
+    Tiny RAW+XMP continuations have repeatedly overfit when allowed to train the
+    final ConvNeXt stage. Keep the broader default for catalog-scale datasets,
+    but reduce default small-data runs to metadata/fusion/output heads only.
+    Explicit non-default choices are left alone for deliberate ablations.
+    """
+    train_rows = split_counts["train"]
+    using_default_capacity = (
+        requested_strategy == _DEFAULT_FOUNDATION_BACKBONE_STRATEGY
+        and requested_layers == _DEFAULT_FOUNDATION_BACKBONE_LAYERS
+    )
+    if train_rows >= _SMALL_FOUNDATION_TRAIN_ROWS or not using_default_capacity:
+        return requested_strategy, requested_layers
+
+    log.warning(
+        "Small foundation split (%d train rows). Using safer backbone capacity "
+        "%s/%s instead of %s/%s to reduce overfitting and collapse. Pass explicit "
+        "--backbone-unfreeze-strategy and --backbone-trainable-layers for a "
+        "reviewed ablation.",
+        train_rows,
+        _SMALL_FOUNDATION_BACKBONE_STRATEGY,
+        _SMALL_FOUNDATION_BACKBONE_LAYERS,
+        requested_strategy,
+        requested_layers,
+    )
+    return _SMALL_FOUNDATION_BACKBONE_STRATEGY, _SMALL_FOUNDATION_BACKBONE_LAYERS
 
 
 def _train_profile_with_cuda_oom_retry(train_args: argparse.Namespace) -> dict[str, Any]:
@@ -361,6 +433,11 @@ def main() -> None:
         split_counts["val"],
         split_counts["test"],
     )
+    backbone_strategy, backbone_layers = _foundation_capacity_for_split(
+        split_counts=split_counts,
+        requested_strategy=args.backbone_unfreeze_strategy,
+        requested_layers=args.backbone_trainable_layers,
+    )
 
     train_args = argparse.Namespace(
         train_parquet=splits_dir / "train.parquet",
@@ -372,8 +449,8 @@ def main() -> None:
         lr=1e-4,
         weight_decay=1e-4,
         freeze_backbone_epochs=3,
-        backbone_unfreeze_strategy=args.backbone_unfreeze_strategy,
-        backbone_trainable_layers=args.backbone_trainable_layers,
+        backbone_unfreeze_strategy=backbone_strategy,
+        backbone_trainable_layers=backbone_layers,
         num_workers=args.workers,
         resume_from_checkpoint=None,
         base_model_checkpoint=base_foundation,
@@ -424,5 +501,18 @@ def main() -> None:
     print(f"Training run:                   {run_dir}")
 
 
+def run_cli() -> int:
+    try:
+        main()
+        return 0
+    except RuntimeError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        return 1
+    except Exception as exc:
+        log.exception("Unexpected foundation training failure")
+        print(f"Unexpected error: {exc}", file=sys.stderr)
+        return 1
+
+
 if __name__ == "__main__":
-    main()
+    sys.exit(run_cli())

@@ -16,9 +16,9 @@ training, resume, and retrain commands live in `FOUNDATION_TRAINING.md`.
 - Lite profile creation now uses the configured foundation checkpoint. It does not depend on whichever Personal AI profile is active in the frontend.
 - Raw training photos should live in separate repo-local child folders under `data/training_sources/` by default. Generated datasets and foundation runs default to `data/training_workspace/` unless you override `SONNA_TRAINING_WORKSPACE`.
 - `scripts\train_profile.py` now logs default recipe values as `Training recipe ...`; only values explicitly supplied as CLI flags are logged as `Override ...`.
-- Fresh training now initialises output-head biases from the training-set target medians. With the current split those priors are Exposure2012=0.22, Temperature=5191K, Tint=5. WB residual heads start at zero when AsShot WB skip is enabled.
+- Training now calibrates output-head biases from the training-set target medians. Fresh models zero the final head weights and set median biases; warm-started models keep learned final weights and only recenter the biases. With the current split those priors are Exposure2012=0.22, Temperature=5191K, Tint=5. WB residual heads start at zero when AsShot WB skip is enabled.
 - Training startup now prints parameter counts, trainable percentage, dataset row counts, batches per epoch, estimated optimizer steps, effective learning rates, sampler/cap status, and a backbone freeze/unfreeze summary. The same payload is saved in `training_summary.json` as `startup_diagnostics`.
-- Foundation runs default to `--backbone-trainable-layers stage:7`, so the final ConvNeXt stage plus feature fusion/heads train from epoch 0. Use `--backbone-trainable-layers block:7:2,stage:6` for an ~8M trainable ablation, `block:7:1-2,stage:6` for ~12M, or `--backbone-unfreeze-strategy custom` to keep a spec fixed for the whole run.
+- Foundation runs use adaptive capacity. Catalog-scale splits default to `--backbone-trainable-layers stage:7`, so the final ConvNeXt stage plus feature fusion/heads train from epoch 0. Splits below 500 train rows automatically use `--backbone-unfreeze-strategy custom --backbone-trainable-layers none` unless explicit backbone flags are supplied. Use `--backbone-trainable-layers block:7:2,stage:6` for an ~8M trainable ablation, `block:7:1-2,stage:6` for ~12M, or `--backbone-unfreeze-strategy custom` to keep a spec fixed for the whole run.
 - Default image augmentation is geometry-only. Photometric jitter is disabled by default because changing input brightness/colour without changing XMP labels adds noise to Exposure and white-balance learning.
 - Fresh current-recipe models use the scene-stat architecture, adding six preview-derived luminance scene stats to the metadata path. Existing legacy checkpoints still load with their saved architecture version.
 - Validation logs key-slider distribution ratios (`val_dist_*_std_ratio`) so prediction collapse is visible during training.
@@ -50,11 +50,12 @@ back the active manifest pointer instead of deleting checkpoints:
 `uv run python scripts\rollback_foundation.py foundation-vN`. Use
 `--no-warm-start` only for a deliberate scratch foundation run. Frontend
 Personal AI warm-starts use the progressive backbone schedule by default.
-Foundation training starts with the final ConvNeXt stage trainable and then uses
-the progressive schedule to expand later, unless a fixed custom strategy is
-requested.
+Foundation training starts with the final ConvNeXt stage trainable on larger
+splits and then uses the progressive schedule to expand later. Small splits
+below 500 train rows automatically use a heads/fusion-only custom schedule
+unless a fixed custom strategy is requested.
 
-Foundation promotion is now guarded. Normal foundation runs need at least 1000
+Foundation promotion is now guarded. Normal foundation runs need at least 75
 train rows and must pass held-out quality checks before promotion. Tiny
 RAW+XMP sets can still be used for smoke tests or reviewed ablations with
 `--allow-small-foundation-dataset`, and quality-gate failures can be overridden
@@ -66,14 +67,14 @@ foundation because it trained from only 132 train rows, overfit, and collapsed
 Highlights/Shadows. The active foundation manifest was rolled back to
 `foundation-fivek-catalog-expert-c-001`.
 
-Fresh output-head prior initialisation is bias-only for the final linear layer
-of each slider head. It does not freeze the head and it does not hardcode the
-final prediction after training starts. The priors are derived from the current
-training parquet's target medians, with missing fields falling back to Lightroom
-defaults. When the direct AsShot WB skip is enabled, Temperature/Tint head
-residual biases are set to zero so the initial WB output starts at AsShot rather
-than the dataset median. Keep this enabled for fresh foundation and Personal AI
-training unless you are running a deliberate ablation with
+Output-head prior initialisation is bias-only for warm-started runs and
+bias-plus-zero-final-weights for fresh runs. It does not freeze the head and it
+does not hardcode the final prediction after training starts. The priors are
+derived from the current training parquet's target medians, with missing fields
+falling back to Lightroom defaults. When the direct AsShot WB skip is enabled,
+Temperature/Tint head residual biases are set to zero so the initial WB output
+starts at AsShot rather than the dataset median. Keep this enabled for
+foundation and Personal AI training unless you are running a deliberate ablation with
 `--no-target-prior-init`.
 
 Foundation checkpoint naming rule for copy-paste commands:
@@ -431,7 +432,7 @@ target prior init=enabled
 photometric augmentation=disabled
 ```
 
-Use `--no-target-prior-init` only for an ablation. For the next quality evaluation, start fresh and do not resume the old unsatisfactory checkpoint, otherwise the new fresh-head initialisation and regenerated splits will not be evaluated cleanly.
+Use `--no-target-prior-init` only for an ablation. For the next quality evaluation, start fresh and do not resume the old unsatisfactory checkpoint, otherwise target-prior calibration, adaptive capacity, and regenerated splits will not be evaluated cleanly.
 
 Important small-data caution:
 

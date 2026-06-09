@@ -792,6 +792,30 @@ def test_output_prior_initialisation_sets_exposure_and_zero_wb_residual() -> Non
     assert torch.allclose(wb_final.bias, torch.zeros_like(wb_final.bias))
 
 
+def test_output_prior_initialisation_can_preserve_final_weights_for_warm_start() -> None:
+    model = SonnaEditor(
+        arch_version=1,
+        _pretrained_backbone=False,
+        slider_set_version="v2",
+        use_wb_metadata_skip=True,
+    )
+    tone_final = model.tone_head[-1]
+    assert isinstance(tone_final, torch.nn.Linear)
+    with torch.no_grad():
+        tone_final.weight.fill_(0.123)
+
+    model.initialise_output_priors(
+        {"Exposure2012": 0.42},
+        zero_final_weights=False,
+    )
+
+    assert tone_final.bias[0].item() == pytest.approx(0.42)
+    assert torch.allclose(
+        tone_final.weight,
+        torch.full_like(tone_final.weight, 0.123),
+    )
+
+
 def test_train_profile_log_interval_adapts_to_small_dataset() -> None:
     from scripts.train_profile import _trainer_log_every_n_steps
 

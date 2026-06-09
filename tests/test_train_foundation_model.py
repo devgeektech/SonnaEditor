@@ -73,7 +73,7 @@ def test_foundation_parser_defaults_train_final_backbone_stage(monkeypatch) -> N
 
     assert args.backbone_unfreeze_strategy == "progressive"
     assert args.backbone_trainable_layers == "stage:7"
-    assert args.min_foundation_train_rows == 1000
+    assert args.min_foundation_train_rows == 75
     assert args.allow_small_foundation_dataset is False
     assert args.allow_quality_gate_failure is False
 
@@ -82,13 +82,13 @@ def test_validate_foundation_split_size_blocks_tiny_production_run(monkeypatch, 
     monkeypatch.setattr(
         foundation_cli,
         "_split_row_counts",
-        lambda splits_dir: {"train": 132, "val": 27, "test": 30},
+        lambda splits_dir: {"train": 74, "val": 27, "test": 30},
     )
 
-    with pytest.raises(RuntimeError, match="only 132 train rows"):
+    with pytest.raises(RuntimeError, match="only 74 train rows"):
         foundation_cli._validate_foundation_split_size(
             splits_dir=tmp_path,
-            min_train_rows=1000,
+            min_train_rows=75,
             allow_small_dataset=False,
         )
 
@@ -124,3 +124,66 @@ def test_foundation_quality_gate_flags_overfit_and_bad_metrics() -> None:
     assert any("test_loss" in failure for failure in failures)
     assert any("Exposure2012" in failure for failure in failures)
     assert any("Shadows2012" in failure for failure in failures)
+
+
+def test_foundation_quality_gate_uses_all_slider_mae_fallback() -> None:
+    summary = {
+        "best_val_loss": 0.017,
+        "test_results": {"test_loss": 0.018},
+        "test_per_field_mae": {
+            "Exposure2012": 0.18,
+            "Temperature": 250.0,
+            "Vibrance": 7.2,
+        },
+    }
+
+    failures = foundation_cli._foundation_quality_failures(summary)
+
+    assert any("Vibrance" in failure for failure in failures)
+
+
+def test_small_foundation_split_uses_low_capacity_default() -> None:
+    strategy, layers = foundation_cli._foundation_capacity_for_split(
+        split_counts={"train": 132, "val": 27, "test": 30},
+        requested_strategy="progressive",
+        requested_layers="stage:7",
+    )
+
+    assert strategy == "custom"
+    assert layers == "none"
+
+
+def test_large_foundation_split_keeps_default_capacity() -> None:
+    strategy, layers = foundation_cli._foundation_capacity_for_split(
+        split_counts={"train": 3769, "val": 536, "test": 695},
+        requested_strategy="progressive",
+        requested_layers="stage:7",
+    )
+
+    assert strategy == "progressive"
+    assert layers == "stage:7"
+
+
+def test_explicit_small_foundation_capacity_is_respected() -> None:
+    strategy, layers = foundation_cli._foundation_capacity_for_split(
+        split_counts={"train": 132, "val": 27, "test": 30},
+        requested_strategy="custom",
+        requested_layers="block:7:2,stage:6",
+    )
+
+    assert strategy == "custom"
+    assert layers == "block:7:2,stage:6"
+
+
+def test_run_cli_handles_runtime_error_and_returns_nonzero(monkeypatch, capsys) -> None:
+    monkeypatch.setattr(
+        foundation_cli,
+        "main",
+        lambda: (_ for _ in ()).throw(RuntimeError("only 132 train rows")),
+    )
+
+    exit_code = foundation_cli.run_cli()
+
+    assert exit_code == 1
+    captured = capsys.readouterr()
+    assert "Error: only 132 train rows" in captured.err

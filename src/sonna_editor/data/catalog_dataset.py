@@ -202,7 +202,7 @@ def build_dataset_from_catalog(
 
     selected: list[tuple[dict, dict]] = []
     skip_missing = 0
-    skip_unedited = 0
+    skip_unedited_count = 0
     skip_parse_error = 0
 
     pbar = tqdm(edited_desc, desc="Scanning catalog", unit="photo", dynamic_ncols=True)
@@ -222,21 +222,21 @@ def build_dataset_from_catalog(
             continue
 
         if skip_unedited and _is_unedited_dict(sliders):
-            skip_unedited += 1
+            skip_unedited_count += 1
             continue
 
         selected.append((photo, sliders))
         pbar.set_postfix(
             selected=len(selected),
             miss=skip_missing,
-            uned=skip_unedited,
+            uned=skip_unedited_count,
         )
 
     conn.close()
 
     logger.info(
         "Selected %d photos | Skipped: %d missing, %d unedited, %d parse errors",
-        len(selected), skip_missing, skip_unedited, skip_parse_error,
+        len(selected), skip_missing, skip_unedited_count, skip_parse_error,
     )
 
     if not selected:
@@ -297,7 +297,7 @@ def build_dataset_from_catalog(
         "total_with_develop_settings": len(edited),
         "skip_virtual_copy": n_virtual_copies_removed,
         "skip_missing": skip_missing,
-        "skip_unedited": skip_unedited,
+        "skip_unedited": skip_unedited_count,
         "skip_parse_error": skip_parse_error,
         "skip_extraction_error": failures,
         "included": len(rows),

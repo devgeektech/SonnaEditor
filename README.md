@@ -20,8 +20,10 @@ sidecars for new shoots.
 - Training/profile caches were cleared on 2026-06-03 so a fresh dataset can be
   added. There is currently no guaranteed local dataset or visible checkpoint.
 - Current training defaults use geometry-only augmentation, Exposure loss
-  weight 5.0, and fresh output-head target-prior initialisation from the
-  training split to reduce brightness/WB drift on small datasets.
+  weight 5.0, and output-head target-prior calibration from the training split.
+  Fresh runs zero final head weights before applying priors; warm-started runs
+  keep learned weights and recenter final biases to reduce stale foundation
+  colour/exposure drift.
 - Inference stabilises RGB tone-curve endpoints before XMP write so
   neutral white highlights do not shift pink/red from channel-curve endpoint
   drift.
@@ -31,6 +33,10 @@ sidecars for new shoots.
 - Foundation runs are versioned and warm-start from the active foundation
   checkpoint by default. A successful run promotes the new checkpoint as active
   while keeping older checkpoints available for fallback.
+- Foundation promotion is guarded: normal runs need at least 75 train rows and
+  must pass held-out quality gates. Splits below 500 train rows automatically
+  use heads/fusion-only foundation capacity unless explicit backbone ablation
+  flags are supplied.
 
 ## Quick Start
 

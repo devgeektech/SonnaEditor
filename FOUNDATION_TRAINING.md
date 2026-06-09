@@ -20,8 +20,8 @@ Every run creates a new checkpoint. Old checkpoints are never overwritten.
 
 ## Backbone Capacity And Diagnostics
 
-Foundation training now starts with the final ConvNeXt stage trainable by
-default:
+Foundation training uses an adaptive capacity default. Catalog-scale runs start
+with the final ConvNeXt stage trainable:
 
 ```text
 --backbone-unfreeze-strategy progressive
@@ -33,6 +33,19 @@ metadata encoder, feature fusion MLP, WB metadata skip, ConvNeXt stage 7, and
 backbone norm train from epoch 0. The progressive schedule then expands to
 larger backbone sections at later epochs unless you switch to
 `--backbone-unfreeze-strategy custom`.
+
+For small foundation splits below 500 train rows, the CLI automatically switches
+the default capacity to:
+
+```text
+--backbone-unfreeze-strategy custom
+--backbone-trainable-layers none
+```
+
+This keeps the ConvNeXt backbone frozen and trains only metadata, fusion, and
+output heads. The rejected 132-row Sonna continuation overfit while 16.2M
+parameters were trainable, so this small-data default is intentionally safer.
+Explicit non-default backbone flags are still respected for reviewed ablations.
 
 Measured v2 trainable-capacity presets:
 
@@ -70,17 +83,26 @@ If you want a fixed-capacity ablation, combine the spec with:
 
 ## Output Head Prior Initialisation
 
-Fresh training logs a line like:
+Training logs a line like:
 
 ```text
 Initialised fresh output heads from training target medians
 (Exposure2012=0.000, Temperature=4900, Tint=3.00)
 ```
 
-This is expected. It is a bias-only initialisation on the final linear layer of
-each output head. It gives a fresh model a sensible first prediction before
-gradient descent, especially on small or sparse datasets. It does not freeze
-the heads and it does not keep forcing those values after training starts.
+or, for foundation warm starts:
+
+```text
+Recalibrated warm-start output biases from training target medians
+(Exposure2012=0.000, Temperature=4900, Tint=3.00)
+```
+
+This is expected. Fresh models zero the final output-head weights and set the
+final biases from the training targets. Warm-started models keep learned final
+weights and only recenter those final biases. That preserves useful foundation
+features while reducing stale output priors, such as a FiveK colour baseline
+carrying into a small Sonna continuation. It does not freeze the heads and it
+does not keep forcing those values after training starts.
 
 The values come from the current training parquet's target medians. Missing
 slider columns or all-missing targets fall back to Lightroom defaults. With the
@@ -138,11 +160,11 @@ continuation can overfit and damage the broader foundation.
 Default behavior:
 
 ```text
-minimum train rows for normal foundation promotion: 1000
+minimum train rows for normal foundation promotion: 75
 quality gate: held-out test loss plus key MAE limits
 ```
 
-If the train split has fewer than 1000 rows, `scripts\train_foundation_model.py`
+If the train split has fewer than 75 rows, `scripts\train_foundation_model.py`
 refuses to train/promote unless you explicitly pass:
 
 ```powershell

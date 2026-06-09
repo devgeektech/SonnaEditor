@@ -123,17 +123,20 @@ version stem is supplied. If a bad run is promoted, roll back the active
 manifest pointer with `scripts\rollback_foundation.py` rather than deleting
 checkpoints. Use `--no-warm-start` only for a deliberate scratch run.
 
-Foundation training now starts with the final ConvNeXt stage trainable by
-default (`--backbone-trainable-layers stage:7`) plus the normal feature
-fusion/metadata/output-head layers. Startup logs print total/trainable/frozen
-parameters, dataset size, batches per epoch, estimated optimizer steps,
-learning rates, sampler/cap status, and the backbone freeze summary. Use
-`--backbone-trainable-layers block:7:2,stage:6` for an ~8M trainable ablation,
-`block:7:1-2,stage:6` for ~12M, or `--backbone-unfreeze-strategy custom` to
-keep a spec fixed for a full run.
+Foundation training now uses adaptive capacity. Larger splits start with the
+final ConvNeXt stage trainable by default (`--backbone-trainable-layers
+stage:7`) plus the normal feature fusion/metadata/output-head layers. Small
+splits below 500 train rows automatically use `--backbone-unfreeze-strategy
+custom --backbone-trainable-layers none` unless explicit backbone flags are
+supplied. Startup logs print total/trainable/frozen parameters, dataset size,
+batches per epoch, estimated optimizer steps, learning rates, sampler/cap
+status, and the backbone freeze summary. Use `--backbone-trainable-layers
+block:7:2,stage:6` for an ~8M trainable ablation, `block:7:1-2,stage:6` for
+~12M, or `--backbone-unfreeze-strategy custom` to keep a spec fixed for a full
+run.
 
 Foundation promotion has guardrails. The CLI refuses normal foundation
-training/promotion from fewer than 1000 train rows, and it refuses promotion
+training/promotion from fewer than 75 train rows, and it refuses promotion
 when held-out metrics fail the quality gate. Overrides exist for deliberate
 reviewed experiments only: `--allow-small-foundation-dataset` and
 `--allow-quality-gate-failure`.

@@ -20,7 +20,8 @@ Install Homebrew if it is not already installed:
 Install the required developer tools:
 
 ```bash
-brew install git uv python@3.11 node
+brew install git git-lfs uv python@3.11 node
+git lfs install
 ```
 
 Check the tools:
@@ -31,6 +32,7 @@ uv --version
 python3.11 --version
 node --version
 npm --version
+git lfs version
 ```
 
 Optional: install Adobe DNG Converter if you need DNG normalisation. Most normal
@@ -84,6 +86,23 @@ MPS available: True
 If MPS is not available, the app still runs on CPU, but training will be much
 slower. Keep training jobs plugged into power.
 
+The repo auto-creates its runtime folders on backend or CLI startup. The
+important local structure is:
+
+```text
+data/
+  training_sources/       # local source learning photos, one child folder per dataset
+  training_workspace/     # generated datasets, splits, audits, foundation runs
+  models/                 # unpromoted Personal AI experiments
+  audits/                 # collapse/diversity/diagnostic reports
+v1_learning/              # frontend-visible profiles only
+SonnaEditorFoundation/    # hidden foundation manifest + versioned checkpoints
+.saha/                    # repo-local app state, jobs, active profile
+```
+
+Keep source photos out of `v1_learning/`. That folder is only for profiles the
+frontend should list.
+
 ## 4. Install Frontend Dependencies
 
 ```bash
@@ -133,6 +152,13 @@ curl http://127.0.0.1:8765/api/profiles
 If no profiles are listed, create a Personal AI profile from the frontend or
 train/publish one from the CLI.
 
+The hidden foundation checkpoint is not listed as a frontend profile. Check it
+separately:
+
+```bash
+uv run python scripts/rollback_foundation.py --list
+```
+
 ## 7. Prepare Lightroom Data
 
 Training needs edited Lightroom targets. RAW files alone are not enough.
@@ -144,11 +170,17 @@ for frontend-visible checkpoint and sidecar files only.
 This can be done from the frontend when creating a Personal AI profile: choose a
 folder that contains RAW files with matching `.xmp` sidecars.
 
+Recommended Mac source folder:
+
+```text
+data/training_sources/sonna_personal_001/raw_xmp/
+```
+
 CLI equivalent:
 
 ```bash
 uv run python scripts/build_dataset.py \
-  --input-dir /Volumes/Shoots/SonnaTraining \
+  --input-dir data/training_sources/sonna_personal_001/raw_xmp \
   --output-dir data/training_workspace/sonna_personal_001_dataset \
   --profile-name "sonna_v2" \
   --workers 4 \
@@ -162,6 +194,9 @@ uv run python scripts/build_dataset.py \
 
 This is currently a CLI path. Close Lightroom first. The catalog is opened
 read-only and the RAW files referenced by the catalog must be accessible.
+Ordinary catalog builds skip unedited-looking rows by default. Only use
+`--include-unedited-looking` for sparse trusted datasets such as FiveK expert
+collections, not normal Sonna catalogs.
 
 ```bash
 uv run python scripts/build_dataset_from_catalog.py \
@@ -192,6 +227,11 @@ This can be done from the frontend: open the Profiles page, choose Personal AI,
 select the RAW + XMP folder, enter the profile name, and start training. The
 backend builds the dataset, trains with the production recipe, publishes a
 versioned checkpoint into `v1_learning/`, and streams progress to the UI.
+
+Personal AI training resolves the active hidden foundation checkpoint when one
+is configured. Warm-started runs keep learned foundation weights but recalibrate
+final output-head biases from the current training split, so stale foundation
+colour/exposure priors do not dominate the new profile.
 
 CLI equivalent:
 
@@ -232,9 +272,13 @@ is promoted into the repo-local hidden `SonnaEditorFoundation/` folder and is
 used as the base for Lite profile creation.
 
 Foundation promotion is guarded. The CLI refuses normal foundation updates from
-fewer than 1000 train rows and blocks promotion when held-out metrics fail.
-Use `--allow-small-foundation-dataset` or `--allow-quality-gate-failure` only
-for deliberate reviewed experiments, not routine active foundation updates.
+fewer than 75 train rows and blocks promotion when held-out metrics fail. Small
+foundation splits below 500 train rows automatically train with the ConvNeXt
+backbone frozen (`--backbone-unfreeze-strategy custom
+--backbone-trainable-layers none`) unless you explicitly pass different
+backbone flags for a reviewed ablation. Use `--allow-small-foundation-dataset`
+or `--allow-quality-gate-failure` only for deliberate reviewed experiments, not
+routine active foundation updates.
 
 For RAW+XMP foundation data, first export metadata from Lightroom and keep the
 edited RAW/DNG files plus same-stem `.xmp` sidecars in a dedicated source
@@ -242,8 +286,8 @@ folder. For important runs, build and audit splits before training:
 
 ```bash
 uv run python scripts/build_dataset.py \
-  --input-dir "$HOME/SonnaEditorTraining/raw/edited-with-xmp" \
-  --output-dir "$HOME/SonnaEditorTraining/workspace/sonna_foundation_001_dataset" \
+  --input-dir data/training_sources/sonna_foundation_001/raw_xmp \
+  --output-dir data/training_workspace/sonna_foundation_001_dataset \
   --profile-name "sonna_foundation_001" \
   --workers 4 \
   --split \
@@ -254,17 +298,25 @@ uv run python scripts/build_dataset.py \
 
 ```bash
 uv run python scripts/audit_catalog.py \
-  --parquet-path "$HOME/SonnaEditorTraining/workspace/sonna_foundation_001_dataset/dataset.parquet" \
-  --output-dir "$HOME/SonnaEditorTraining/workspace/sonna_foundation_001_dataset/audit"
+  --parquet-path data/training_workspace/sonna_foundation_001_dataset/dataset.parquet \
+  --output-dir data/training_workspace/sonna_foundation_001_dataset/audit
+```
+
+Also audit scene/edit diversity:
+
+```bash
+uv run python scripts/audit_dataset_diversity.py \
+  --parquet data/training_workspace/sonna_foundation_001_dataset/dataset.parquet \
+  --output data/training_workspace/sonna_foundation_001_dataset/dataset_diversity.md
 ```
 
 Train from the inspected splits:
 
 ```bash
 uv run python scripts/train_foundation_model.py \
-  --splits-dir "$HOME/SonnaEditorTraining/workspace/sonna_foundation_001_dataset/splits_v2_stratified" \
-  --workspace-dir "$HOME/SonnaEditorTraining/workspace" \
-  --foundation-repo "$PWD/SonnaEditorFoundation" \
+  --splits-dir data/training_workspace/sonna_foundation_001_dataset/splits_v2_stratified \
+  --workspace-dir data/training_workspace \
+  --foundation-repo SonnaEditorFoundation \
   --profile-name "Sonna RAW XMP Foundation" \
   --run-name foundation-sonna-raw-xmp-001 \
   --version-stem foundation-sonna-raw-xmp-001 \
@@ -275,21 +327,44 @@ uv run python scripts/train_foundation_model.py \
 
 The foundation folder contains `foundation_manifest.json` and
 `checkpoints/foundation-sonna-raw-xmp-001.ckpt`. It is tracked by the parent
-repo, with checkpoint binaries routed through Git LFS. Install Git LFS before
-pushing from a new machine:
+repo, with checkpoint binaries routed through Git LFS.
 
-For small GPUs, start foundation runs at `--batch-size 8`. The RAW+XMP
-foundation CLI automatically retries with smaller batch sizes after CUDA memory
-failures.
+Run diagnostics before trusting or pushing a new foundation:
 
 ```bash
-brew install git-lfs
-git lfs install
-cd /path/to/SonnaEditor
-git add .gitattributes SonnaEditorFoundation
-git commit -m "Track foundation checkpoint"
+uv run python scripts/quick_diagnostic.py \
+  --summary-path data/training_workspace/foundation_runs/foundation-sonna-raw-xmp-001/training/training_summary.json
+```
+
+```bash
+uv run python scripts/analyse_prediction_collapse.py \
+  --model-path SonnaEditorFoundation/checkpoints/foundation-sonna-raw-xmp-001.ckpt \
+  --parquet data/training_workspace/sonna_foundation_001_dataset/splits_v2_stratified/val.parquet \
+  --output data/audits/foundation-sonna-raw-xmp-001-collapse.md \
+  --limit 200 \
+  --batch-size 16
+```
+
+Confirm the active foundation pointer:
+
+```bash
+uv run python scripts/rollback_foundation.py --list
+```
+
+Commit only the promoted hidden foundation files, not `data/training_workspace/`:
+
+```bash
+git add .gitattributes \
+        SonnaEditorFoundation/foundation_manifest.json \
+        SonnaEditorFoundation/checkpoints/foundation-sonna-raw-xmp-001.ckpt \
+        SonnaEditorFoundation/checkpoints/foundation-sonna-raw-xmp-001.json
+git commit -m "train foundation checkpoint foundation-sonna-raw-xmp-001"
 git push
 ```
+
+On Apple Silicon, training uses MPS when available. The CUDA auto-batch retry is
+mainly for Windows/Linux NVIDIA machines; on Mac, lower `--batch-size` manually
+if memory pressure appears.
 
 ## 10. Create A Lite Profile
 
@@ -384,6 +459,13 @@ Quick training summary check:
 
 ```bash
 uv run python scripts/quick_diagnostic.py
+```
+
+Specific training summary:
+
+```bash
+uv run python scripts/quick_diagnostic.py \
+  --summary-path data/models/sonna-personal-run01/training_summary.json
 ```
 
 Prediction collapse audit:

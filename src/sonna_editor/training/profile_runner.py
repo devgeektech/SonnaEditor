@@ -747,6 +747,16 @@ def train_profile(args: argparse.Namespace) -> dict:
                 registry=reg,
                 slider_set_version=args.slider_set_version,
             )
+            if not args.no_target_prior_init:
+                priors = _training_target_priors(args.train_parquet, args.slider_set_version)
+                model.initialise_output_priors(priors, zero_final_weights=False)
+                log.info(
+                    "Recalibrated warm-start output biases from training target medians "
+                    "(Exposure2012=%0.3f, Temperature=%0.0f, Tint=%0.2f)",
+                    priors.get("Exposure2012", 0.0),
+                    priors.get("Temperature", 0.0),
+                    priors.get("Tint", 0.0),
+                )
         if model._slider_set_version != args.slider_set_version:
             raise ValueError(
                 f"--slider-set-version={args.slider_set_version!r} does not match "
