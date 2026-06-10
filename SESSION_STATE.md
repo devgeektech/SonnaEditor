@@ -44,6 +44,18 @@ wheels on Windows/Linux x86_64, while macOS resolves the matching public wheels.
 
 ## What Changed This Session
 
+- Removed the currently tracked foundation checkpoint artifacts from the parent
+  repo so the Mac RAW+XMP foundation run can replace them:
+  `SonnaEditorFoundation\checkpoints\foundation-fivek-catalog-expert-c-001.*`
+  and `SonnaEditorFoundation\checkpoints\foundation-sonna-raw-xmp-001.*` are
+  deleted in the worktree, and `SonnaEditorFoundation\foundation_manifest.json`
+  is reset to an empty schema-v2 manifest. Until the Mac checkpoint is added and
+  pushed, the parent repo has no active hidden foundation checkpoint.
+- Updated `MAC_SETUP.md` for the active Mac workflow: VS Code with zsh, not the
+  full Xcode app or Windows PowerShell syntax. The guide now warns against
+  PowerShell backticks and Windows backslash paths in zsh, shows forward-slash
+  script paths with `\` line continuations, adds a VS Code open/terminal check,
+  and includes a preflight check before foundation training.
 - Hardened RAW+XMP dataset shoot bucketing for timezone-aware capture
   timestamps. `src\sonna_editor\data\dataset.py::_derive_shoot_id()` now
   normalizes aware datetimes to naive UTC before subtracting from the epoch and

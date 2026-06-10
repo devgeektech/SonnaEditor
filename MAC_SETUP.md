@@ -1,11 +1,30 @@
 # Mac Setup And Run Guide
 
 This is the Mac-specific setup and operating checklist for Sonna Editor / Saha.
-It assumes Apple Silicon macOS, but the same commands mostly work on Intel Macs.
+It assumes Apple Silicon macOS, VS Code, and the default `zsh` shell. The same
+commands mostly work on Intel Macs.
+
+## Command Syntax Rules For Mac
+
+All commands in this file are written for `zsh`/bash in VS Code's integrated
+terminal or the macOS Terminal app.
+
+- Use forward slashes in paths: `scripts/train_foundation_model.py`
+- Use a trailing backslash for line continuation: `\`
+- Do not use Windows PowerShell backticks: `` ` ``
+- Do not paste Windows paths like `scripts\train_foundation_model.py` into zsh.
+  zsh treats the backslash as an escape and can turn that into
+  `scriptstrain_foundation_model.py`.
+
+If zsh prints `command not found: --splits-dir`, the command was split
+incorrectly. Re-copy the Mac/zsh command block and make sure every continued
+line except the last ends with `\`.
 
 ## 1. Install System Tools
 
-Install Xcode command line tools:
+Install Apple's command line tools. You do not need the full Xcode app for this
+project; this just gives macOS the compiler/git support that Python packages and
+developer tools expect.
 
 ```bash
 xcode-select --install
@@ -22,6 +41,12 @@ Install the required developer tools:
 ```bash
 brew install git git-lfs uv python@3.11 node
 git lfs install
+```
+
+Install VS Code if it is not already installed:
+
+```bash
+brew install --cask visual-studio-code
 ```
 
 Check the tools:
@@ -73,6 +98,19 @@ If the repo is already copied onto the Mac:
 
 ```bash
 cd /path/to/SonnaEditor
+```
+
+Open the project in VS Code:
+
+```bash
+code .
+```
+
+Use VS Code's integrated terminal for the rest of the commands. It should be
+running `zsh` by default; confirm with:
+
+```bash
+echo $SHELL
 ```
 
 ## 3. Install Python Dependencies
@@ -348,6 +386,17 @@ uv run python scripts/audit_dataset_diversity.py \
 
 Train from the inspected splits:
 
+Quick preflight from the repo root:
+
+```bash
+pwd
+ls scripts/train_foundation_model.py
+ls data/training_workspace/sonna_foundation_001_dataset/splits_v2_stratified
+```
+
+The splits folder should contain `train.parquet`, `val.parquet`, and
+`test.parquet`.
+
 ```bash
 uv run python scripts/train_foundation_model.py \
   --splits-dir data/training_workspace/sonna_foundation_001_dataset/splits_v2_stratified \
@@ -358,7 +407,7 @@ uv run python scripts/train_foundation_model.py \
   --version-stem foundation-sonna-raw-xmp-001 \
   --max-epochs 100 \
   --batch-size 8 \
-  --workers 4
+  --workers 8
 ```
 
 Tone/presence focused retry from the same splits:
@@ -373,7 +422,7 @@ uv run python scripts/train_foundation_model.py \
   --version-stem foundation-sonna-raw-xmp-002-tone-presence \
   --max-epochs 150 \
   --batch-size 8 \
-  --workers 4 \
+  --workers 8 \
   --field-loss-weight Exposure2012=7 \
   --field-loss-weight Whites2012=6 \
   --field-loss-weight Blacks2012=6 \
