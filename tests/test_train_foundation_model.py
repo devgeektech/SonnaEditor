@@ -151,6 +151,7 @@ def test_main_skips_warm_start_with_no_warm_start_flag(
     # Should not raise due to the corrupted active foundation checkpoint.
     foundation_cli.main()
     assert captured_train_args[0].field_loss_weight == ["Whites2012=6", "Vibrance=4"]
+    assert captured_train_args[0].checkpoint_monitor == "val_visual_score"
 
 
 def test_foundation_parser_defaults_train_final_backbone_stage(monkeypatch) -> None:
@@ -264,7 +265,7 @@ def test_validate_foundation_split_size_allows_explicit_small_ablation(monkeypat
     assert counts["train"] == 132
 
 
-def test_foundation_quality_gate_flags_overfit_and_bad_metrics() -> None:
+def test_foundation_quality_gate_flags_hard_failures_and_warnings() -> None:
     summary = {
         "best_val_loss": 0.017,
         "test_results": {
@@ -274,11 +275,11 @@ def test_foundation_quality_gate_flags_overfit_and_bad_metrics() -> None:
         },
     }
 
-    failures = foundation_cli._foundation_quality_failures(summary)
+    failures, warnings = foundation_cli._foundation_quality_report(summary)
 
     assert any("test_loss" in failure for failure in failures)
-    assert any("Exposure2012" in failure for failure in failures)
     assert any("Shadows2012" in failure for failure in failures)
+    assert any("Exposure2012" in warning for warning in warnings)
 
 
 def test_foundation_quality_gate_uses_all_slider_mae_fallback() -> None:
@@ -292,9 +293,10 @@ def test_foundation_quality_gate_uses_all_slider_mae_fallback() -> None:
         },
     }
 
-    failures = foundation_cli._foundation_quality_failures(summary)
+    failures, warnings = foundation_cli._foundation_quality_report(summary)
 
-    assert any("Vibrance" in failure for failure in failures)
+    assert failures == []
+    assert any("Vibrance" in warning for warning in warnings)
 
 
 def test_write_quality_gate_result_updates_training_summary(tmp_path: Path) -> None:
@@ -310,13 +312,16 @@ def test_write_quality_gate_result_updates_training_summary(tmp_path: Path) -> N
         training_dir=training_dir,
         summary=summary,
         failures=failures,
+        warnings=["Whites2012 MAE 8 exceeds target 5"],
     )
 
     assert summary["quality_gate_passed"] is False
     assert summary["foundation_quality_failures"] == failures
+    assert summary["foundation_quality_warnings"] == ["Whites2012 MAE 8 exceeds target 5"]
     updated = summary_path.read_text()
     assert '"quality_gate_passed": false' in updated
     assert "Exposure2012" in updated
+    assert "Whites2012" in updated
 
 
 def test_small_foundation_split_uses_low_capacity_default() -> None:

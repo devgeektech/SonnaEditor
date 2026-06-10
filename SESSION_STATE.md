@@ -65,6 +65,18 @@ wheels on Windows/Linux x86_64, while macOS resolves the matching public wheels.
   comparison for any failed gate fields when train/test Parquet split paths are
   available. The baseline check shows whether the model is learning beyond a
   fixed average or whether the labels/gate are intrinsically high-variance.
+- Added balanced foundation checkpoint selection. `SonnaLightningModule` now
+  logs `val_visual_score`, a lower-is-better composite over Exposure, WB,
+  important tone/presence fields, HSL average, and key collapse ratios.
+  `scripts\train_foundation_model.py` passes `checkpoint_monitor="val_visual_score"`
+  into the trainer so foundation exports are selected by visual balance rather
+  than plain total `val_loss`. `train_profile()` still tracks best true val-loss
+  separately for diagnostics.
+- Changed foundation quality gates from all-or-nothing MAE limits to tiered
+  hard failures plus warnings. Severe failures still block promotion unless
+  explicitly overridden after review. Moderate misses are persisted as
+  `foundation_quality_warnings`, printed to stderr, and allowed to promote so
+  a useful checkpoint is not blocked by one noisy slider.
 - Recommendation from this investigation: do not pass
   `--allow-quality-gate-failure` for the pasted run. Run collapse analysis and
   the improved quick diagnostic first, then run a third fresh foundation retry

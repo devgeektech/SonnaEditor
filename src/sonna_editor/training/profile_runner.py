@@ -164,6 +164,16 @@ def _parse_args() -> argparse.Namespace:
                    help="Optional version stem, e.g. v2.0.0 or model-v2.0.0")
     p.add_argument("--no-publish", action="store_true",
                    help="Only save output-dir/model.ckpt; do not copy a versioned profile for the UI")
+    p.add_argument(
+        "--checkpoint-monitor",
+        choices=("val_loss", "val_visual_score"),
+        default="val_loss",
+        help=(
+            "Metric used to select/export the best checkpoint. Foundation runs "
+            "use val_visual_score so key visual sliders are balanced instead of "
+            "selecting only by total validation loss."
+        ),
+    )
     return p.parse_args()
 
 
@@ -867,24 +877,43 @@ def train_profile(args: argparse.Namespace) -> dict:
     # -----------------------------------------------------------------------
     ckpt_dir = args.output_dir / "checkpoints"
     tb_logger = TensorBoardLogger(save_dir=str(args.output_dir), name="tensorboard")
-
-    callbacks = [
-        ModelCheckpoint(
+    checkpoint_monitor = getattr(args, "checkpoint_monitor", "val_loss")
+    checkpoint_filename = (
+        "epoch={epoch:03d}-visual={val_visual_score:.4f}-val_loss={val_loss:.4f}"
+        if checkpoint_monitor == "val_visual_score"
+        else "epoch={epoch:03d}-val_loss={val_loss:.4f}"
+    )
+    checkpoint_callback = ModelCheckpoint(
+        dirpath=str(ckpt_dir),
+        filename=checkpoint_filename,
+        monitor=checkpoint_monitor,
+        mode="min",
+        save_top_k=3,
+        auto_insert_metric_name=False,
+    )
+    val_loss_callback = checkpoint_callback
+    if checkpoint_monitor != "val_loss":
+        val_loss_callback = ModelCheckpoint(
             dirpath=str(ckpt_dir),
-            filename="epoch={epoch:03d}-val_loss={val_loss:.4f}",
+            filename="val-loss-epoch={epoch:03d}-val_loss={val_loss:.4f}",
             monitor="val_loss",
             mode="min",
-            save_top_k=3,
+            save_top_k=1,
             auto_insert_metric_name=False,
-        ),
+        )
+
+    callbacks = [
+        checkpoint_callback,
         EarlyStopping(
-            monitor="val_loss",
+            monitor=checkpoint_monitor,
             patience=10,
             mode="min",
             verbose=True,
         ),
         LearningRateMonitor(logging_interval="epoch"),
     ]
+    if val_loss_callback is not checkpoint_callback:
+        callbacks.append(val_loss_callback)
     if getattr(args, "on_epoch_complete", None) is not None or getattr(args, "cancel_event", None) is not None:
         callbacks.append(
             _ProfileEpochBridgeCallback(
@@ -923,8 +952,10 @@ def train_profile(args: argparse.Namespace) -> dict:
             "train_rows": dataset_summary["train_rows"],
             "val_rows": dataset_summary["val_rows"],
             "test_rows": dataset_summary["test_rows"],
-            "best_val_loss": float(trainer.checkpoint_callback.best_model_score or 0.0),
-            "best_checkpoint": trainer.checkpoint_callback.best_model_path,
+            "best_val_loss": float(val_loss_callback.best_model_score or 0.0),
+            "best_checkpoint": checkpoint_callback.best_model_path,
+            "checkpoint_monitor": checkpoint_monitor,
+            "best_checkpoint_score": float(checkpoint_callback.best_model_score or 0.0),
             "final_model": None,
             "published_model": None,
             "test_results": {},
@@ -932,6 +963,7 @@ def train_profile(args: argparse.Namespace) -> dict:
             "hparams": {
                 "arch_version": lightning_module.model._arch_version,
                 "max_epochs": args.max_epochs,
+                "checkpoint_monitor": checkpoint_monitor,
                 "lr": args.lr,
                 "weight_decay": args.weight_decay,
                 "batch_size": args.batch_size,
@@ -959,7 +991,7 @@ def train_profile(args: argparse.Namespace) -> dict:
     # -----------------------------------------------------------------------
     # Test on best checkpoint
     # -----------------------------------------------------------------------
-    best_ckpt = trainer.checkpoint_callback.best_model_path
+    best_ckpt = checkpoint_callback.best_model_path
     log.info("Best checkpoint: %s", best_ckpt)
     if best_ckpt:
         test_results = trainer.test(lightning_module, datamodule=dm, ckpt_path=best_ckpt)
@@ -973,7 +1005,8 @@ def train_profile(args: argparse.Namespace) -> dict:
     # -----------------------------------------------------------------------
     # Save final model + summary
     # -----------------------------------------------------------------------
-    best_val_loss = float(trainer.checkpoint_callback.best_model_score or 0.0)
+    best_val_loss = float(val_loss_callback.best_model_score or 0.0)
+    best_checkpoint_score = float(checkpoint_callback.best_model_score or 0.0)
     display_name = args.profile_name or "Sonna trained profile"
     final_model_path = args.output_dir / "model.ckpt"
     if best_ckpt:
@@ -1021,6 +1054,8 @@ def train_profile(args: argparse.Namespace) -> dict:
         "test_rows": dataset_summary["test_rows"],
         "best_val_loss": best_val_loss,
         "best_checkpoint": best_ckpt,
+        "checkpoint_monitor": checkpoint_monitor,
+        "best_checkpoint_score": best_checkpoint_score,
         "final_model": str(final_model_path),
         "published_model": published_model_path,
         "test_results": test_results[0] if test_results else {},
@@ -1029,6 +1064,7 @@ def train_profile(args: argparse.Namespace) -> dict:
         "hparams": {
             "arch_version": lightning_module.model._arch_version,
             "max_epochs": args.max_epochs,
+            "checkpoint_monitor": checkpoint_monitor,
             "lr": args.lr,
             "weight_decay": args.weight_decay,
             "batch_size": args.batch_size,

@@ -148,17 +148,20 @@ block:7:2,stage:6` for an ~8M trainable ablation, `block:7:1-2,stage:6` for
 run.
 
 Foundation promotion has guardrails. The CLI refuses normal foundation
-training/promotion from fewer than 75 train rows, and it refuses promotion
-when held-out metrics fail the quality gate. Overrides exist for deliberate
-reviewed experiments only: `--allow-small-foundation-dataset` and
-`--allow-quality-gate-failure`.
+training/promotion from fewer than 75 train rows, and foundation runs select the
+exported checkpoint by `val_visual_score` rather than plain `val_loss` so the
+best epoch is balanced across key visible sliders. The quality gate is tiered:
+hard failures block promotion, while moderate misses are stored as warnings and
+require visual review. Overrides exist for deliberate reviewed experiments
+only: `--allow-small-foundation-dataset` and `--allow-quality-gate-failure`.
 
-Foundation summaries now record `quality_gate_passed` and
-`foundation_quality_failures` before a promotion error returns. Run
+Foundation summaries now record `quality_gate_passed`,
+`foundation_quality_failures`, `foundation_quality_warnings`,
+`checkpoint_monitor`, and `best_checkpoint_score`. Run
 `scripts/quick_diagnostic.py --summary-path <training_summary.json>` after a
-failure; it prints backbone capacity, field-loss overrides, all-parameter MAE,
-and a train-median baseline comparison for failed gate fields when the split
-Parquets are available.
+run; it prints backbone capacity, field-loss overrides, all-parameter MAE, the
+gate result, and a train-median baseline comparison for failed gate fields when
+the split Parquets are available.
 
 If a run misses tone/presence metrics but the dataset audit looks healthy, retry
 from the same prepared splits with repeatable `--field-loss-weight FIELD=WEIGHT`

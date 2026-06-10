@@ -174,8 +174,21 @@ refuses to train/promote unless you explicitly pass:
 Use that only for a smoke test, a private ablation, or a deliberately reviewed
 run. Do not use it for normal active foundation updates.
 
-After training, promotion is blocked when held-out metrics fail the quality
-gate. Override only after visual review:
+Foundation runs now export the best checkpoint by `val_visual_score`, not plain
+`val_loss`. The visual score is a lower-is-better composite over the sliders
+that most affect real edits: Exposure, Temperature, Tint, Highlights, Shadows,
+Whites, Blacks, Vibrance, Saturation, HSL average, plus a collapse penalty for
+key predicted spreads. This avoids choosing an epoch that has the lowest total
+loss but worse visible edit balance.
+
+After training, promotion is blocked only when held-out metrics hit hard
+failure limits such as severe overfitting, severely bad Exposure/WB, or very
+large tone/presence errors. Moderate misses are stored as quality warnings in
+`training_summary.json` and printed to stderr, but they do not block promotion
+by themselves. Warnings still require visual review before trusting the
+checkpoint.
+
+Override hard failures only after visual review:
 
 ```powershell
 --allow-quality-gate-failure
@@ -186,9 +199,10 @@ rows, trained 16.2M parameters, overfit, and collapsed Highlights/Shadows. The
 active manifest was rolled back to `foundation-fivek-catalog-expert-c-001`.
 
 Future `training_summary.json` files embed train/val/test row counts, parquet
-paths, train-batch count, `hparams.max_epochs`, all-slider
-`test_per_field_mae`, and the foundation quality-gate result
-(`quality_gate_passed` plus `foundation_quality_failures`). Run
+paths, train-batch count, `hparams.max_epochs`, `checkpoint_monitor`,
+`best_checkpoint_score`, all-slider `test_per_field_mae`, and the foundation
+quality-gate result (`quality_gate_passed`, `foundation_quality_failures`, and
+`foundation_quality_warnings`). Run
 `scripts\quick_diagnostic.py` after training to see the critical metrics, the
 all-parameter MAE check, the configured backbone capacity, the field-loss
 overrides, and a train-median baseline comparison for failed gate fields.

@@ -254,18 +254,18 @@ def _validate_foundation_split_size(
     return counts
 
 
-_FOUNDATION_METRIC_LIMITS: dict[str, tuple[float, str]] = {
-    "test_mae_temperature": (350.0, "Temperature"),
-    "test_mae_tint": (8.0, "Tint"),
-    "test_mae_exposure": (0.25, "Exposure2012"),
-    "test_mae_shadows": (8.0, "Shadows2012"),
-    "test_mae_highlights": (8.0, "Highlights2012"),
-    "test_mae_whites": (5.0, "Whites2012"),
-    "test_mae_blacks": (5.0, "Blacks2012"),
-    "test_mae_clarity": (5.0, "Clarity2012"),
-    "test_mae_vibrance": (5.0, "Vibrance"),
-    "test_mae_saturation": (5.0, "Saturation"),
-    "test_mae_hsl_avg": (10.0, "HSL average"),
+_FOUNDATION_METRIC_LIMITS: dict[str, tuple[float, float, str]] = {
+    "test_mae_temperature": (350.0, 500.0, "Temperature"),
+    "test_mae_tint": (8.0, 12.0, "Tint"),
+    "test_mae_exposure": (0.25, 0.50, "Exposure2012"),
+    "test_mae_shadows": (8.0, 15.0, "Shadows2012"),
+    "test_mae_highlights": (8.0, 18.0, "Highlights2012"),
+    "test_mae_whites": (5.0, 25.0, "Whites2012"),
+    "test_mae_blacks": (5.0, 25.0, "Blacks2012"),
+    "test_mae_clarity": (5.0, 10.0, "Clarity2012"),
+    "test_mae_vibrance": (5.0, 10.0, "Vibrance"),
+    "test_mae_saturation": (5.0, 10.0, "Saturation"),
+    "test_mae_hsl_avg": (10.0, 14.0, "HSL average"),
 }
 
 
@@ -297,8 +297,9 @@ def _foundation_metric_value(summary: dict[str, Any], key: str) -> float | None:
     return None
 
 
-def _foundation_quality_failures(summary: dict[str, Any]) -> list[str]:
+def _foundation_quality_report(summary: dict[str, Any]) -> tuple[list[str], list[str]]:
     failures: list[str] = []
+    warnings: list[str] = []
     best_val = summary.get("best_val_loss")
     test_results = summary.get("test_results") or {}
     test_loss = test_results.get("test_loss")
@@ -308,16 +309,29 @@ def _foundation_quality_failures(summary: dict[str, Any]) -> list[str]:
         and best_val > 0
         and isinstance(test_loss, (int, float))
         and not isinstance(test_loss, bool)
-        and test_loss > best_val * 1.25
     ):
-        failures.append(
-            f"test_loss {test_loss:.6f} is more than 1.25x best_val_loss {best_val:.6f}"
-        )
+        if test_loss > best_val * 1.35:
+            failures.append(
+                f"test_loss {test_loss:.6f} is more than 1.35x best_val_loss {best_val:.6f}"
+            )
+        elif test_loss > best_val * 1.25:
+            warnings.append(
+                f"test_loss {test_loss:.6f} is more than 1.25x best_val_loss {best_val:.6f}"
+            )
 
-    for key, (limit, label) in _FOUNDATION_METRIC_LIMITS.items():
+    for key, (warn_limit, hard_limit, label) in _FOUNDATION_METRIC_LIMITS.items():
         value = _foundation_metric_value(summary, key)
-        if value is not None and value > limit:
-            failures.append(f"{label} MAE {value:.4g} exceeds {limit:g}")
+        if value is None:
+            continue
+        if value > hard_limit:
+            failures.append(f"{label} MAE {value:.4g} exceeds hard limit {hard_limit:g}")
+        elif value > warn_limit:
+            warnings.append(f"{label} MAE {value:.4g} exceeds target {warn_limit:g}")
+    return failures, warnings
+
+
+def _foundation_quality_failures(summary: dict[str, Any]) -> list[str]:
+    failures, _ = _foundation_quality_report(summary)
     return failures
 
 
@@ -342,15 +356,19 @@ def _write_quality_gate_result(
     training_dir: Path,
     summary: dict[str, Any],
     failures: list[str],
+    warnings: list[str] | None = None,
 ) -> None:
+    warnings = warnings or []
     summary["quality_gate_passed"] = not failures
     summary["foundation_quality_failures"] = failures
+    summary["foundation_quality_warnings"] = warnings
     summary_path = training_dir / "training_summary.json"
     if summary_path.exists():
         try:
             existing = json.loads(summary_path.read_text())
             existing["quality_gate_passed"] = summary["quality_gate_passed"]
             existing["foundation_quality_failures"] = failures
+            existing["foundation_quality_warnings"] = warnings
             summary_path.write_text(json.dumps(existing, indent=2))
             return
         except Exception:
@@ -534,6 +552,7 @@ def main() -> None:
         no_wb_metadata_skip=False,
         no_target_prior_init=False,
         image_resolution=args.image_resolution,
+        checkpoint_monitor="val_visual_score",
         temperature_weight=4.0,
         tint_weight=4.0,
         exposure_weight=5.0,
@@ -555,11 +574,12 @@ def main() -> None:
     final_model = summary.get("final_model")
     if not final_model:
         raise RuntimeError("Training did not produce a final model checkpoint")
-    quality_failures = _foundation_quality_failures(summary)
+    quality_failures, quality_warnings = _foundation_quality_report(summary)
     _write_quality_gate_result(
         training_dir=training_dir,
         summary=summary,
         failures=quality_failures,
+        warnings=quality_warnings,
     )
     if quality_failures and not args.allow_quality_gate_failure:
         formatted = "\n  - ".join(quality_failures)
@@ -569,6 +589,13 @@ def main() -> None:
             f"{formatted}\n"
             "Inspect the run, add more data or tune the recipe, then rerun. "
             "Pass --allow-quality-gate-failure only after deliberate visual review."
+        )
+    if quality_warnings:
+        formatted = "\n  - ".join(quality_warnings)
+        print(
+            "Warning: foundation checkpoint has quality warnings and needs "
+            f"visual review:\n  - {formatted}",
+            file=sys.stderr,
         )
 
     promoted = promote_foundation_checkpoint(

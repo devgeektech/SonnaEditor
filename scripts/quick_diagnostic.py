@@ -546,6 +546,8 @@ def main():
     print(f"  Published model: {summary.get('published_model', 'unknown')}")
     print(f"  Final model:     {summary.get('final_model', 'unknown')}")
     print(f"  Best checkpoint: {summary.get('best_checkpoint', 'unknown')}")
+    print(f"  Checkpoint monitor: {summary.get('checkpoint_monitor', hparams.get('checkpoint_monitor', 'unknown'))}")
+    print(f"  Best monitor score: {_fmt_float(summary.get('best_checkpoint_score'), 6)}")
     print("\nLoss weights:")
     print(f"  Temperature bucket: {loss_cfg.get('temperature_bucket_loss_weight', 'unknown')}")
     print(f"  Tint bucket:        {loss_cfg.get('tint_bucket_loss_weight', 'unknown')}")
@@ -617,6 +619,20 @@ def main():
         summary=summary,
         summary_path=summary_path,
     )
+    failures = summary.get("foundation_quality_failures")
+    warnings = summary.get("foundation_quality_warnings")
+    if isinstance(failures, list) or isinstance(warnings, list):
+        print(f"\n{'FOUNDATION QUALITY GATE':^80}")
+        print(f"{'='*80}")
+        print(f"  Passed: {_fmt_bool(summary.get('quality_gate_passed'))}")
+        if failures:
+            print("  Hard failures:")
+            for failure in failures:
+                print(f"   - {failure}")
+        if warnings:
+            print("  Warnings:")
+            for warning in warnings:
+                print(f"   - {warning}")
 
     # Training dynamics
     print(f"\n{'TRAINING DYNAMICS':^80}")

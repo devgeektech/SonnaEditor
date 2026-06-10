@@ -29,7 +29,7 @@ from sonna_editor.training.diagnostics import (
     parameter_counts,
     trainable_parameter_breakdown,
 )
-from sonna_editor.training.module import SonnaLightningModule
+from sonna_editor.training.module import SonnaLightningModule, visual_score_from_mae
 from sonna_editor.training.profile_runner import (
     _apply_training_overrides,
     _parse_field_loss_weight_overrides,
@@ -53,6 +53,51 @@ def test_parse_field_loss_weight_overrides_accepts_repeatable_fields() -> None:
         "Blacks2012": 5.5,
         "Vibrance": 4.0,
     }
+
+
+def test_visual_score_prefers_balanced_key_slider_errors() -> None:
+    balanced = visual_score_from_mae({
+        "Exposure2012": 0.18,
+        "Temperature": 260.0,
+        "Tint": 5.0,
+        "Highlights2012": 6.0,
+        "Shadows2012": 6.0,
+        "Whites2012": 4.0,
+        "Blacks2012": 4.0,
+        "Vibrance": 4.0,
+        "Saturation": 4.0,
+        "hsl_avg": 7.0,
+    })
+    unbalanced = visual_score_from_mae({
+        "Exposure2012": 0.42,
+        "Temperature": 260.0,
+        "Tint": 5.0,
+        "Highlights2012": 13.0,
+        "Shadows2012": 10.0,
+        "Whites2012": 20.0,
+        "Blacks2012": 12.0,
+        "Vibrance": 8.0,
+        "Saturation": 6.0,
+        "hsl_avg": 7.0,
+    })
+    collapsed = visual_score_from_mae(
+        {
+            "Exposure2012": 0.18,
+            "Temperature": 260.0,
+            "Tint": 5.0,
+            "Highlights2012": 6.0,
+            "Shadows2012": 6.0,
+            "Whites2012": 4.0,
+            "Blacks2012": 4.0,
+            "Vibrance": 4.0,
+            "Saturation": 4.0,
+            "hsl_avg": 7.0,
+        },
+        distribution_ratios={"Exposure2012": 0.02},
+    )
+
+    assert balanced < unbalanced
+    assert collapsed > balanced
 
 
 def test_parse_field_loss_weight_overrides_rejects_unknown_field() -> None:

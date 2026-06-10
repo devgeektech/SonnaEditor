@@ -24,6 +24,61 @@ _DISTRIBUTION_FIELDS = [
     "Temperature",
     "Tint",
 ]
+_VISUAL_SCORE_LIMITS = {
+    "Exposure2012": 0.25,
+    "Temperature": 350.0,
+    "Tint": 8.0,
+    "Highlights2012": 8.0,
+    "Shadows2012": 8.0,
+    "Whites2012": 5.0,
+    "Blacks2012": 5.0,
+    "Vibrance": 5.0,
+    "Saturation": 5.0,
+    "hsl_avg": 10.0,
+}
+_VISUAL_SCORE_WEIGHTS = {
+    "Exposure2012": 4.0,
+    "Temperature": 3.0,
+    "Tint": 2.0,
+    "Highlights2012": 2.0,
+    "Shadows2012": 2.0,
+    "Whites2012": 2.5,
+    "Blacks2012": 2.5,
+    "Vibrance": 1.5,
+    "Saturation": 1.5,
+    "hsl_avg": 1.0,
+}
+_VISUAL_SCORE_COLLAPSE_MIN_RATIO = 0.15
+_VISUAL_SCORE_COLLAPSE_WEIGHT = 0.35
+
+
+def visual_score_from_mae(
+    field_means: dict[str, float],
+    *,
+    distribution_ratios: dict[str, float] | None = None,
+) -> float:
+    """Return a lower-is-better score for visual checkpoint selection."""
+    weighted = 0.0
+    total_weight = 0.0
+    for field, limit in _VISUAL_SCORE_LIMITS.items():
+        value = field_means.get(field, math.nan)
+        if math.isnan(value):
+            continue
+        weight = _VISUAL_SCORE_WEIGHTS[field]
+        weighted += weight * (value / limit)
+        total_weight += weight
+    score = math.inf if total_weight == 0 else weighted / total_weight
+
+    collapse_penalty = 0.0
+    if distribution_ratios:
+        for ratio in distribution_ratios.values():
+            if math.isnan(ratio) or ratio >= _VISUAL_SCORE_COLLAPSE_MIN_RATIO:
+                continue
+            collapse_penalty += (
+                (_VISUAL_SCORE_COLLAPSE_MIN_RATIO - ratio)
+                / _VISUAL_SCORE_COLLAPSE_MIN_RATIO
+            )
+    return score + _VISUAL_SCORE_COLLAPSE_WEIGHT * collapse_penalty
 
 
 class SonnaLightningModule(pl.LightningModule):
@@ -203,8 +258,15 @@ class SonnaLightningModule(pl.LightningModule):
         self._val_distribution_outputs.clear()
 
     def on_validation_epoch_end(self) -> None:
-        self._log_aggregated_mae(self._val_mae_outputs, prefix="val")
-        self._log_distribution_stats()
+        field_means = self._log_aggregated_mae(self._val_mae_outputs, prefix="val")
+        distribution_ratios = self._log_distribution_stats()
+        if field_means:
+            visual_score = visual_score_from_mae(
+                field_means,
+                distribution_ratios=distribution_ratios,
+            )
+            if math.isfinite(visual_score):
+                self._log_metric("val_visual_score", visual_score, prog_bar=True)
 
     def on_test_epoch_start(self) -> None:
         self._test_mae_outputs.clear()
@@ -212,9 +274,9 @@ class SonnaLightningModule(pl.LightningModule):
     def on_test_epoch_end(self) -> None:
         self._log_aggregated_mae(self._test_mae_outputs, prefix="test")
 
-    def _log_aggregated_mae(self, outputs: list[dict[str, float]], prefix: str) -> None:
+    def _log_aggregated_mae(self, outputs: list[dict[str, float]], prefix: str) -> dict[str, float]:
         if not outputs:
-            return
+            return {}
 
         # Nanmean across batches for every field
         field_means: dict[str, float] = {}
@@ -232,11 +294,13 @@ class SonnaLightningModule(pl.LightningModule):
         # Log HSL average
         hsl_vals = [field_means[f] for f in _HSL_FIELDS if not math.isnan(field_means.get(f, math.nan))]
         if hsl_vals:
-            self._log_metric(f"{prefix}_mae_hsl_avg", sum(hsl_vals) / len(hsl_vals), prog_bar=(prefix == "val"))
+            field_means["hsl_avg"] = sum(hsl_vals) / len(hsl_vals)
+            self._log_metric(f"{prefix}_mae_hsl_avg", field_means["hsl_avg"], prog_bar=(prefix == "val"))
+        return field_means
 
-    def _log_distribution_stats(self) -> None:
+    def _log_distribution_stats(self) -> dict[str, float]:
         if not self._val_distribution_outputs:
-            return
+            return {}
         predictions = torch.cat(
             [d["predictions"] for d in self._val_distribution_outputs],
             dim=0,
@@ -245,6 +309,7 @@ class SonnaLightningModule(pl.LightningModule):
             [d["targets"] for d in self._val_distribution_outputs],
             dim=0,
         )
+        ratios: dict[str, float] = {}
         fields = fields_for_version(self.model._slider_set_version)
         for field in _DISTRIBUTION_FIELDS:
             if field not in fields:
@@ -263,10 +328,12 @@ class SonnaLightningModule(pl.LightningModule):
             pred_std = torch.std(pred_valid, unbiased=False)
             target_std = torch.std(target_valid, unbiased=False)
             ratio = pred_std / target_std.clamp(min=1e-8)
+            ratios[field] = float(ratio)
             safe_name = field.replace("2012", "").lower()
             self._log_metric(f"val_dist_{safe_name}_pred_std", float(pred_std), prog_bar=False)
             self._log_metric(f"val_dist_{safe_name}_target_std", float(target_std), prog_bar=False)
             self._log_metric(f"val_dist_{safe_name}_std_ratio", float(ratio), prog_bar=False)
+        return ratios
 
     # ------------------------------------------------------------------
     # Optimiser + scheduler

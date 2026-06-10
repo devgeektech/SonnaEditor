@@ -60,18 +60,23 @@ below 500 train rows automatically use a heads/fusion-only custom schedule
 unless a fixed custom strategy is requested.
 
 Foundation promotion is now guarded. Normal foundation runs need at least 75
-train rows and must pass held-out quality checks before promotion. Tiny
-RAW+XMP sets can still be used for smoke tests or reviewed ablations with
-`--allow-small-foundation-dataset`, and quality-gate failures can be overridden
-only with `--allow-quality-gate-failure` after visual review. Do not use those
-flags for routine active foundation updates.
+train rows and select the exported checkpoint by `val_visual_score`, a balanced
+visual composite over key sliders plus collapse penalty, instead of plain
+`val_loss`. Tiny RAW+XMP sets can still be used for smoke tests or reviewed
+ablations with `--allow-small-foundation-dataset`.
 
-Foundation summaries now persist the quality-gate result as
-`quality_gate_passed` and `foundation_quality_failures`. `quick_diagnostic.py`
-also prints the active backbone capacity, field-loss overrides, and a
-train-median baseline comparison for failed gate fields when the split Parquets
-are available. Use that baseline table plus collapse analysis before deciding
-whether a failed large run needs a third recipe retry or a rebuilt dataset.
+The quality gate is tiered. Hard failures still block promotion and can be
+overridden only with `--allow-quality-gate-failure` after visual review.
+Moderate misses become `foundation_quality_warnings`: they are printed and
+stored in the summary but do not block promotion by themselves. Do not use hard
+failure overrides for routine active foundation updates.
+
+Foundation summaries now persist `quality_gate_passed`,
+`foundation_quality_failures`, `foundation_quality_warnings`,
+`checkpoint_monitor`, and `best_checkpoint_score`. `quick_diagnostic.py` also
+prints the active backbone capacity, field-loss overrides, quality-gate result,
+and a train-median baseline comparison for failed gate fields when the split
+Parquets are available.
 
 Tone/presence-focused retries should use the same audited splits first, not a
 new dataset. Pass `--tone-presence-retry` to use the reviewed retry recipe for
