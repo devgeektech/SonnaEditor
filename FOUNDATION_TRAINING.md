@@ -444,6 +444,11 @@ Checkpoint binaries are tracked through Git LFS. The parent repo already has:
 SonnaEditorFoundation/checkpoints/*.ckpt filter=lfs diff=lfs merge=lfs -text
 ```
 
+Run `git lfs install` once on every machine that pushes or pulls checkpoints.
+No separate checkpoint upload command is needed: after LFS is installed, normal
+`git push` uploads the `.ckpt` contents to LFS automatically. On a new machine,
+run `git lfs pull` after clone/pull if checkpoint files are still pointer files.
+
 After training and audit, confirm the manifest points to the checkpoint you want:
 
 ```powershell
@@ -455,11 +460,13 @@ Then commit and push the new checkpoint, sidecar, and manifest:
 
 ```powershell
 git status --short
+git lfs status
 git add SonnaEditorFoundation\foundation_manifest.json `
         SonnaEditorFoundation\checkpoints\foundation-fivek-catalog-expert-c-001.ckpt `
         SonnaEditorFoundation\checkpoints\foundation-fivek-catalog-expert-c-001.json `
         FOUNDATION_TRAINING.md CLI_COMMANDS.md RUN.md README.md HANDOVER.md SESSION_STATE.md project_knowledge.md
 git status --short
+git lfs ls-files
 git commit -m "train FiveK catalog foundation checkpoint"
 git push origin main
 ```

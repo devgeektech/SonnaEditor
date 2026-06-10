@@ -35,6 +35,20 @@ npm --version
 git lfs version
 ```
 
+Git LFS is required because model checkpoint files are large binary files. The
+repo tracks checkpoint paths through `.gitattributes`, including:
+
+```text
+SonnaEditorFoundation/checkpoints/*.ckpt
+v1_learning/*.ckpt
+models/**/*.ckpt
+```
+
+You do not need a separate upload command for checkpoints. After `git lfs
+install`, a normal `git push` uploads the small git pointer files and the large
+`.ckpt` contents to Git LFS automatically. On a fresh Mac clone, run `git lfs
+pull` after cloning if checkpoint files are still pointer files.
+
 Optional: install Adobe DNG Converter if you need DNG normalisation. Most normal
 RAW + XMP training and shoot processing does not require DNG conversion.
 
@@ -52,6 +66,7 @@ mkdir -p ~/Projects
 cd ~/Projects
 git clone git@github.com:darshilp16-byte/sonnaeditor.git
 cd sonnaeditor
+git lfs pull
 ```
 
 If the repo is already copied onto the Mac:
@@ -67,6 +82,20 @@ Create and sync the uv environment:
 ```bash
 uv sync --extra dev
 ```
+
+This project is pinned to Python `3.11.*` in `pyproject.toml` / `uv.lock`.
+If uv tries to use Python 3.12 or newer, force Python 3.11:
+
+```bash
+uv python pin 3.11
+uv sync --extra dev
+```
+
+Direct runtime and dev dependencies are exact-pinned in `pyproject.toml` to
+reduce Mac resolver drift. macOS installs the public PyTorch wheels
+(`torch==2.11.0`, `torchvision==0.26.0`); Windows/Linux x86_64 use the same
+public versions but resolve CUDA 12.8 local wheels from the configured PyTorch
+index.
 
 Verify Python and PyTorch:
 
@@ -383,12 +412,20 @@ uv run python scripts/rollback_foundation.py --list
 Commit only the promoted hidden foundation files, not `data/training_workspace/`:
 
 ```bash
+git lfs status
 git add .gitattributes \
         SonnaEditorFoundation/foundation_manifest.json \
         SonnaEditorFoundation/checkpoints/foundation-sonna-raw-xmp-001.ckpt \
         SonnaEditorFoundation/checkpoints/foundation-sonna-raw-xmp-001.json
 git commit -m "train foundation checkpoint foundation-sonna-raw-xmp-001"
 git push
+```
+
+That normal `git push` uploads the checkpoint binary through Git LFS. To confirm
+the checkpoint is LFS-managed before pushing, run:
+
+```bash
+git lfs ls-files
 ```
 
 On Apple Silicon, training uses MPS when available. The CUDA auto-batch retry is

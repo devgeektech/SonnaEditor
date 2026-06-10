@@ -6,9 +6,13 @@ training, resume, and retrain commands live in `FOUNDATION_TRAINING.md`.
 
 ## Current Local State (2026-06-03)
 
-- Python 3.11.15 via uv 0.11.17.
+- Python 3.11.15 via uv 0.11.17. `pyproject.toml` and `uv.lock` now require
+  Python `3.11.*`; use `uv python pin 3.11` on Mac if uv tries a newer Python.
 - PyTorch is `2.11.0+cu128`; CUDA is verified on the local NVIDIA GeForce RTX 3050.
-- `uv sync --extra dev` now preserves CUDA PyTorch on Windows/Linux x86_64 through the pinned PyTorch CUDA 12.8 index in `pyproject.toml` / `uv.lock`.
+- Direct runtime/dev dependencies are exact-pinned in `pyproject.toml` to reduce
+  Mac resolver drift. `uv sync --extra dev` preserves CUDA PyTorch on
+  Windows/Linux x86_64 through the pinned PyTorch CUDA 12.8 index, while macOS
+  resolves the public `torch==2.11.0` / `torchvision==0.26.0` wheels.
 - Training/profile caches were intentionally cleared so a fresh dataset can be added.
 - `data\training_workspace\sonna_personal_001_dataset\`, `data\models\`, `data\parquet\`, `data\captures\`, `data\thumbnails\`, `data\audits\`, `data\dbg\`, `data\raw\sonna_training\`, `.pytest_cache`, `.ruff_cache`, and `.saha\active_profile.txt` were removed or emptied.
 - There is currently no guaranteed local frontend-visible checkpoint in `v1_learning\`. Add fresh RAW+XMP data and train a Personal AI profile from the UI, or configure the hidden foundation checkpoint using `FOUNDATION_TRAINING.md`.
@@ -699,7 +703,9 @@ to GitHub through Git LFS:
 
 ```powershell
 git status --short
+git lfs status
 git add SonnaEditorFoundation\foundation_manifest.json SonnaEditorFoundation\checkpoints\<your-version>.ckpt SonnaEditorFoundation\checkpoints\<your-version>.json
+git lfs ls-files
 git commit -m "train foundation checkpoint <your-version>"
 git push origin main
 ```
@@ -707,6 +713,11 @@ git push origin main
 Replace `<your-version>` with the exact `--version-stem` used during training.
 Do not commit `data\training_workspace\`; that folder contains local generated
 datasets and training runs.
+
+You only need `git lfs install` once per machine. After that, normal `git push`
+uploads checkpoint binaries through LFS automatically. On a new Mac or Windows
+checkout, run `git lfs pull` after clone/pull to download the real `.ckpt`
+contents.
 
 On the Windows RTX 3050 workstation, start foundation runs at `--batch-size 8`.
 The RAW+XMP foundation CLI will automatically retry with smaller batch sizes if

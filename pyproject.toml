@@ -2,33 +2,33 @@
 name = "sonna-editor"
 version = "0.1.0"
 description = "Internal AI photo editing tool for Sonna Studios"
-requires-python = ">=3.11"
+requires-python = ">=3.11,<3.12"
 dependencies = [
-    "torch",
-    "torchvision",
-    "pytorch-lightning",
-    "rawpy",
-    "pillow",
-    "lxml",
-    "pandas",
-    "pyarrow",
-    "numpy",
-    "matplotlib",
-    "tqdm",
-    "pyqt6",
-    "scikit-learn",
-    "tensorboard>=2.20.0",
-    "fastapi",
-    "uvicorn[standard]",
+    "torch==2.11.0",
+    "torchvision==0.26.0",
+    "pytorch-lightning==2.6.1",
+    "rawpy==0.27.0",
+    "pillow==12.2.0",
+    "lxml==6.1.0",
+    "pandas==3.0.2",
+    "pyarrow==24.0.0",
+    "numpy==2.4.4",
+    "matplotlib==3.10.9",
+    "tqdm==4.67.3",
+    "pyqt6==6.11.0",
+    "scikit-learn==1.8.0",
+    "tensorboard==2.20.0",
+    "fastapi==0.136.1",
+    "uvicorn[standard]==0.46.0",
 ]
 
 [project.optional-dependencies]
 dev = [
-    "pytest",
-    "ruff",
-    "mypy",
-    "httpx",
-    "uv",
+    "pytest==9.0.3",
+    "ruff==0.15.12",
+    "mypy==2.0.0",
+    "httpx==0.28.1",
+    "uv==0.11.17",
 ]
 
 [tool.uv.sources]

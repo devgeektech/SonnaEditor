@@ -4,10 +4,12 @@ This is the cross-platform local runbook for macOS, Windows, and Linux.
 
 ## 1. Python Environment
 
-The repo is uv-managed and pinned to Python 3.11 through `.python-version`.
-On Windows/Linux x86_64, `pyproject.toml` pins `torch` and `torchvision` to the
-PyTorch CUDA 12.8 wheel index. This keeps NVIDIA GPU support intact after
-`uv sync --extra dev`.
+The repo is uv-managed and pinned to Python `3.11.*` through `.python-version`,
+`pyproject.toml`, and `uv.lock`. Direct runtime/dev dependencies are exact-pinned
+in `pyproject.toml` to reduce Mac resolver drift. On Windows/Linux x86_64,
+`torch` and `torchvision` resolve from the PyTorch CUDA 12.8 wheel index, which
+keeps NVIDIA GPU support intact after `uv sync --extra dev`. macOS resolves the
+matching public PyTorch wheels.
 
 Windows PowerShell:
 
@@ -32,7 +34,12 @@ python -m pip install --user uv
 ```
 
 Use `python3` instead of `python` on systems where that is the correct Python
-launcher.
+launcher. If uv picks Python 3.12 or newer, force 3.11 with:
+
+```bash
+uv python pin 3.11
+uv sync --extra dev
+```
 
 ## 2. Verify
 
@@ -276,7 +283,11 @@ CUDA memory failures.
 After a foundation checkpoint passes audit, commit and push
 `SonnaEditorFoundation\foundation_manifest.json` plus the matching
 `SonnaEditorFoundation\checkpoints\<version>.ckpt` and `.json` sidecar. The
-`.ckpt` file is handled by Git LFS. Do not push `data\training_workspace\`.
+`.ckpt` file is handled by Git LFS. Run `git lfs install` once per machine;
+after that, normal `git push` uploads checkpoint binaries automatically. Use
+`git lfs status` / `git lfs ls-files` before pushing if you want to confirm the
+checkpoint is LFS-managed. On a new machine, run `git lfs pull` after clone/pull
+to fetch the real checkpoint contents. Do not push `data\training_workspace\`.
 
 ### Lite profile flow
 

@@ -6,7 +6,7 @@ sidecars for new shoots.
 
 ## Current State
 
-- Backend: Python 3.11, uv, FastAPI, PyTorch, pytest.
+- Backend: Python 3.11 only, uv, FastAPI, PyTorch, pytest.
 - Frontend: Electron + React in `saha-app/`.
 - Production profile lineage: frontend-visible profiles live under `v1_learning/`.
 - Personal AI profiles train from RAW+XMP through the frontend and warm-start
@@ -15,8 +15,11 @@ sidecars for new shoots.
   Exposure/WB corrections before fine-tuning.
 - Platform target: macOS, Windows, and Linux. CUDA and Apple MPS are used when
   available; CPU fallback is supported for development and small runs.
-- Current Windows training workspace: PyTorch `2.11.0+cu128` is pinned through
-  `pyproject.toml` / `uv.lock` and verified on an NVIDIA GeForce RTX 3050.
+- Current dependency pins are recorded directly in `pyproject.toml` and
+  `uv.lock`. The Windows training workspace uses PyTorch `2.11.0+cu128`
+  through the CUDA 12.8 wheel index and is verified on an NVIDIA GeForce RTX
+  3050. macOS resolves the matching public `torch==2.11.0` /
+  `torchvision==0.26.0` wheels.
 - Training/profile caches were cleared on 2026-06-03 so a fresh dataset can be
   added. There is currently no guaranteed local dataset or visible checkpoint.
 - Current training defaults use geometry-only augmentation, Exposure loss
@@ -45,6 +48,10 @@ uv sync --extra dev
 uv run python scripts/verify_environment.py
 ```
 
+The project requires Python `3.11.*`; do not create the uv environment with
+Python 3.12 or newer. Direct Python dependencies are exact-pinned to reduce
+Mac setup drift and resolver conflicts.
+
 For Mac setup from a clean machine through frontend/CLI operation, see
 `MAC_SETUP.md`.
 
@@ -57,6 +64,11 @@ default. Promoted foundation checkpoints live under the project child folder
 `SonnaEditorFoundation/` unless `SONNA_FOUNDATION_REPO` points somewhere else.
 That folder is tracked by the parent repo; `.ckpt` checkpoint binaries are
 routed through Git LFS.
+
+Run `git lfs install` once on every machine that pushes or pulls checkpoints.
+After that, normal `git push` uploads `.ckpt` contents through LFS
+automatically, and `git lfs pull` downloads real checkpoint files after a fresh
+clone.
 
 On Windows/Linux x86_64, `uv sync --extra dev` installs CUDA-enabled PyTorch
 from the pinned PyTorch CUDA 12.8 index. If no NVIDIA GPU is available, the app
@@ -76,8 +88,8 @@ npm install
 npm run dev
 ```
 
-On macOS/Linux the same commands work with `python3 -m uv ...` if `python`
-does not point at Python 3.11+.
+On macOS/Linux the same commands work with `python3.11 -m uv ...` if `python`
+does not point at Python 3.11.
 
 ## Optional External Tools
 

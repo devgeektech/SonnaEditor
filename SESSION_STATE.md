@@ -24,7 +24,12 @@
 - `scripts/verify_environment.py`: 11/11 checks passed
 - Adobe DNG Converter discovered at the default Windows install path
 
-The earlier `GPU available: False` training issue was caused by a CPU-only PyTorch install (`torch 2.11.0+cpu`). `pyproject.toml` and `uv.lock` now pin `torch` and `torchvision` to the PyTorch CUDA 12.8 wheel index on Windows/Linux x86_64, and `uv sync --extra dev` installs CUDA wheels.
+The project now requires Python `3.11.*` in `pyproject.toml` / `uv.lock`.
+Direct runtime/dev dependencies are exact-pinned from the current uv
+environment to reduce Mac resolver drift. The earlier `GPU available: False`
+training issue was caused by a CPU-only PyTorch install (`torch 2.11.0+cpu`).
+`torch==2.11.0` and `torchvision==0.26.0` still resolve to CUDA 12.8 local
+wheels on Windows/Linux x86_64, while macOS resolves the matching public wheels.
 
 ## Data And Models
 
@@ -39,6 +44,19 @@ The earlier `GPU available: False` training issue was caused by a CPU-only PyTor
 
 ## What Changed This Session
 
+- Exact-pinned direct runtime/dev dependencies in `pyproject.toml` from the
+  current uv environment and restricted the project to Python `3.11.*` to reduce
+  Mac setup conflicts.
+- Refreshed `uv.lock`; its resolution matrix is now limited to Python 3.11
+  platforms instead of carrying Python 3.12+ wheel variants.
+- Updated `README.md`, `RUN.md`, `CLI_COMMANDS.md`, `MAC_SETUP.md`,
+  `HANDOVER.md`, `SESSION_STATE.md`, and `project_knowledge.md` with the pinned
+  dependency/Mac setup guidance.
+- Clarified Git LFS checkpoint workflow in the runbooks: `.ckpt` files under
+  `SonnaEditorFoundation\checkpoints\`, `v1_learning\`, and `models\` are
+  LFS-managed by `.gitattributes`; after `git lfs install`, normal `git push`
+  uploads checkpoint binaries automatically, and new machines should run
+  `git lfs pull`.
 - Added repeatable named slider loss overrides to `scripts\train_profile.py` /
   `src\sonna_editor\training\profile_runner.py` via
   `--field-loss-weight FIELD=WEIGHT`.
