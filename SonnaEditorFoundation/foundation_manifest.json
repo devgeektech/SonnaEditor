@@ -1,18 +1,39 @@
 {
   "schema_version": 2,
-  "active_version": null,
-  "active_checkpoint": null,
-  "active_sidecar": null,
-  "display_name": null,
-  "source_run_dir": null,
-  "updated_at": null,
+  "active_version": "foundation-sonna-raw-xmp-004-visual",
+  "active_checkpoint": "checkpoints/foundation-sonna-raw-xmp-004-visual.ckpt",
+  "active_sidecar": "checkpoints/foundation-sonna-raw-xmp-004-visual.json",
+  "display_name": "Sonna RAW XMP Foundation Visual 004",
+  "source_run_dir": "/Users/sonnawork/Sonna_Editor_new/SonnaEditor/data/training_workspace/foundation_runs/foundation-sonna-raw-xmp-004-visual",
+  "updated_at": "2026-06-10T13:50:44.204100Z",
   "foundation_type": "sonna_editor_slider_regression",
   "capabilities": [
     "backbone_features",
     "metadata_encoder",
     "slider_regression"
   ],
-  "trained_on": [],
-  "versions": [],
+  "trained_on": [
+    "lightroom_parameters"
+  ],
+  "versions": [
+    {
+      "version": "foundation-sonna-raw-xmp-004-visual",
+      "checkpoint": "checkpoints/foundation-sonna-raw-xmp-004-visual.ckpt",
+      "sidecar": "checkpoints/foundation-sonna-raw-xmp-004-visual.json",
+      "display_name": "Sonna RAW XMP Foundation Visual 004",
+      "source_run_dir": "/Users/sonnawork/Sonna_Editor_new/SonnaEditor/data/training_workspace/foundation_runs/foundation-sonna-raw-xmp-004-visual",
+      "created_at": "2026-06-10T13:50:44.204100Z",
+      "foundation_type": "sonna_editor_slider_regression",
+      "capabilities": [
+        "backbone_features",
+        "metadata_encoder",
+        "slider_regression"
+      ],
+      "trained_on": [
+        "lightroom_parameters"
+      ],
+      "sha256": "ac3a6bd81163fb1e69d86d5868457a272037bd016a8054386410da5e3a091523"
+    }
+  ],
   "history": []
 }
