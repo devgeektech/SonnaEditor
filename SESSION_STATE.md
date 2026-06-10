@@ -44,6 +44,33 @@ wheels on Windows/Linux x86_64, while macOS resolves the matching public wheels.
 
 ## What Changed This Session
 
+- Investigated Darshil's pasted Mac foundation diagnostics for
+  `foundation-sonna-raw-xmp-002-tone-presence`. The run used real scale
+  splits (`5,021/865/1,172` train/val/test rows), so this is not the earlier
+  132-row small-data failure. The quality gate failure is legitimate for the
+  stored held-out MAE values: Exposure, Shadows, Highlights, Whites, Blacks,
+  Vibrance, and Saturation exceeded current foundation promotion limits while
+  Temperature, HSL average, Clarity, and test-loss overfit ratio were acceptable.
+- Improved training diagnostics so the next Mac run is easier to judge:
+  `training_summary.json` now stores `hparams.max_epochs`, and foundation
+  training persists `quality_gate_passed` plus `foundation_quality_failures`
+  into the summary before returning a gate error.
+- Added an explicit foundation retry recipe flag:
+  `scripts\train_foundation_model.py --tone-presence-retry`. It applies the
+  reviewed stronger loss weights for Exposure2012, Whites2012, Blacks2012,
+  Highlights2012, Shadows2012, Vibrance, and Saturation while respecting any
+  explicit `--field-loss-weight` override for the same field.
+- Improved `scripts\quick_diagnostic.py` for foundation triage. It now prints
+  backbone strategy/layers, field loss overrides, and a train-median baseline
+  comparison for any failed gate fields when train/test Parquet split paths are
+  available. The baseline check shows whether the model is learning beyond a
+  fixed average or whether the labels/gate are intrinsically high-variance.
+- Recommendation from this investigation: do not pass
+  `--allow-quality-gate-failure` for the pasted run. Run collapse analysis and
+  the improved quick diagnostic first, then run a third fresh foundation retry
+  from the same prepared splits with `--tone-presence-retry`. It does not
+  require rebuilding the dataset unless the new baseline, collapse, or diversity
+  diagnostics show weak label coverage.
 - Removed the currently tracked foundation checkpoint artifacts from the parent
   repo so the Mac RAW+XMP foundation run can replace them:
   `SonnaEditorFoundation\checkpoints\foundation-fivek-catalog-expert-c-001.*`
@@ -51,6 +78,14 @@ wheels on Windows/Linux x86_64, while macOS resolves the matching public wheels.
   deleted in the worktree, and `SonnaEditorFoundation\foundation_manifest.json`
   is reset to an empty schema-v2 manifest. Until the Mac checkpoint is added and
   pushed, the parent repo has no active hidden foundation checkpoint.
+- Removed all remaining local `.ckpt` files under the repo, including generated
+  foundation-run checkpoints under `data\training_workspace\foundation_runs\`
+  and the stale frontend-visible `v1_learning\model-v0.2.0.ckpt`. Removed the
+  matching stale `v1_learning\model-v0.2.0.*` profile sidecar/preset/survey
+  files so the frontend-visible profile folder is empty again.
+- Removed the old generated foundation run directories under
+  `data\training_workspace\foundation_runs\` entirely, including previous
+  FiveK, RAW+XMP, tone/presence, timestamped, and guardrail-smoke run folders.
 - Updated `MAC_SETUP.md` for the active Mac workflow: VS Code with zsh, not the
   full Xcode app or Windows PowerShell syntax. The guide now warns against
   PowerShell backticks and Windows backslash paths in zsh, shows forward-slash

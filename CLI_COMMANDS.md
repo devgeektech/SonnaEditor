@@ -66,11 +66,21 @@ RAW+XMP sets can still be used for smoke tests or reviewed ablations with
 only with `--allow-quality-gate-failure` after visual review. Do not use those
 flags for routine active foundation updates.
 
+Foundation summaries now persist the quality-gate result as
+`quality_gate_passed` and `foundation_quality_failures`. `quick_diagnostic.py`
+also prints the active backbone capacity, field-loss overrides, and a
+train-median baseline comparison for failed gate fields when the split Parquets
+are available. Use that baseline table plus collapse analysis before deciding
+whether a failed large run needs a third recipe retry or a rebuilt dataset.
+
 Tone/presence-focused retries should use the same audited splits first, not a
-new dataset. Pass repeatable `--field-loss-weight FIELD=WEIGHT` overrides for
-weak sliders such as `Whites2012`, `Blacks2012`, `Highlights2012`, `Vibrance`,
-and `Saturation`. These are fresh runs from the prepared Parquet splits with a
-foundation weight warm start by default, not `--resume-from-checkpoint`.
+new dataset. Pass `--tone-presence-retry` to use the reviewed retry recipe for
+failed tone/presence gates. It raises loss pressure on `Exposure2012`,
+`Whites2012`, `Blacks2012`, `Highlights2012`, `Shadows2012`, `Vibrance`, and
+`Saturation`; explicit repeatable `--field-loss-weight FIELD=WEIGHT` values can
+still override the preset per field. These are fresh runs from the prepared
+Parquet splits with a foundation weight warm start by default, not
+`--resume-from-checkpoint`.
 
 Current triage note: `foundation-sonna-raw-xmp-001` was rejected as the active
 foundation because it trained from only 132 train rows, overfit, and collapsed
@@ -488,6 +498,13 @@ Before or after a training run you can run lightweight diagnostics to inspect th
 uv run python scripts\quick_diagnostic.py
 ```
 
+For a specific foundation run:
+
+```powershell
+uv run python scripts\quick_diagnostic.py `
+  --summary-path data\training_workspace\foundation_runs\foundation-sonna-raw-xmp-002-tone-presence\training\training_summary.json
+```
+
 - Prediction collapse audit (runs a checkpoint on a parquet split and reports target/predicted spread):
 
 ```powershell
@@ -599,13 +616,7 @@ uv run python scripts\train_foundation_model.py `
   --max-epochs 150 `
   --batch-size 8 `
   --workers 8 `
-  --field-loss-weight Exposure2012=7 `
-  --field-loss-weight Whites2012=6 `
-  --field-loss-weight Blacks2012=6 `
-  --field-loss-weight Highlights2012=5 `
-  --field-loss-weight Shadows2012=4 `
-  --field-loss-weight Vibrance=4 `
-  --field-loss-weight Saturation=4
+  --tone-presence-retry
 ```
 
 FiveK catalog foundation training first builds Expert C splits:

@@ -186,9 +186,18 @@ rows, trained 16.2M parameters, overfit, and collapsed Highlights/Shadows. The
 active manifest was rolled back to `foundation-fivek-catalog-expert-c-001`.
 
 Future `training_summary.json` files embed train/val/test row counts, parquet
-paths, train-batch count, and all-slider `test_per_field_mae`. Run
-`scripts\quick_diagnostic.py` after training to see both the critical metrics
-and the all-parameter MAE check.
+paths, train-batch count, `hparams.max_epochs`, all-slider
+`test_per_field_mae`, and the foundation quality-gate result
+(`quality_gate_passed` plus `foundation_quality_failures`). Run
+`scripts\quick_diagnostic.py` after training to see the critical metrics, the
+all-parameter MAE check, the configured backbone capacity, the field-loss
+overrides, and a train-median baseline comparison for failed gate fields.
+
+The baseline comparison is important after a large RAW+XMP run. If the model
+beats the train-median baseline but still misses a strict gate, inspect visual
+examples and label spread before changing the gate. If it does not beat the
+baseline on failed fields, treat the run as underfit or collapsed and retry the
+recipe before promotion.
 
 ## Tone/Presence Focused Retry
 
@@ -196,6 +205,16 @@ If a foundation run is close on white balance but fails tone or presence gate
 metrics, do not build a new dataset first unless the audits show coverage gaps.
 Use the same audited splits with per-field loss overrides so the next run puts
 more gradient pressure on the weak Lightroom sliders.
+
+The reviewed shortcut for this situation is:
+
+```powershell
+--tone-presence-retry
+```
+
+It applies stronger retry weights to Exposure2012, Whites2012, Blacks2012,
+Highlights2012, Shadows2012, Vibrance, and Saturation. Explicit
+`--field-loss-weight FIELD=WEIGHT` flags still override this preset per field.
 
 The trainer supports repeatable named slider overrides:
 
@@ -547,13 +566,26 @@ uv run python scripts\train_foundation_model.py `
   --max-epochs 150 `
   --batch-size 8 `
   --workers 8 `
-  --field-loss-weight Exposure2012=7 `
-  --field-loss-weight Whites2012=6 `
-  --field-loss-weight Blacks2012=6 `
-  --field-loss-weight Highlights2012=5 `
-  --field-loss-weight Shadows2012=4 `
-  --field-loss-weight Vibrance=4 `
-  --field-loss-weight Saturation=4
+  --tone-presence-retry
+```
+
+After the focused run finishes, run:
+
+```powershell
+uv run python scripts\quick_diagnostic.py `
+  --summary-path "data\training_workspace\foundation_runs\foundation-sonna-raw-xmp-002-tone-presence\training\training_summary.json"
+```
+
+Then run prediction-collapse analysis before deciding whether a third run needs
+only recipe tuning or a rebuilt dataset:
+
+```powershell
+uv run python scripts\analyse_prediction_collapse.py `
+  --model-path "data\training_workspace\foundation_runs\foundation-sonna-raw-xmp-002-tone-presence\training\model.ckpt" `
+  --parquet "data\training_workspace\sonna_foundation_001_dataset\splits_v2_stratified\val.parquet" `
+  --output "data\audits\foundation-sonna-raw-xmp-002-tone-presence-collapse.md" `
+  --limit 0 `
+  --batch-size 16
 ```
 
 ### Direct RAW+XMP Shortcut

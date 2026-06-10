@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import argparse
 import gc
+import json
 import logging
 import os
 import sys
@@ -41,6 +42,15 @@ _DEFAULT_FOUNDATION_BACKBONE_STRATEGY = "progressive"
 _DEFAULT_FOUNDATION_BACKBONE_LAYERS = "stage:7"
 _SMALL_FOUNDATION_BACKBONE_STRATEGY = "custom"
 _SMALL_FOUNDATION_BACKBONE_LAYERS = "none"
+_TONE_PRESENCE_RETRY_WEIGHTS: dict[str, float] = {
+    "Exposure2012": 10.0,
+    "Whites2012": 10.0,
+    "Blacks2012": 10.0,
+    "Highlights2012": 8.0,
+    "Shadows2012": 6.0,
+    "Vibrance": 6.0,
+    "Saturation": 6.0,
+}
 
 
 def _parse_args() -> argparse.Namespace:
@@ -94,6 +104,16 @@ def _parse_args() -> argparse.Namespace:
         help=(
             "Override a named Lightroom slider loss weight during foundation "
             "training. Repeatable, e.g. --field-loss-weight Whites2012=6."
+        ),
+    )
+    parser.add_argument(
+        "--tone-presence-retry",
+        action="store_true",
+        help=(
+            "Apply the reviewed foundation retry recipe for runs that pass WB/HSL "
+            "but fail tone/presence gates. This raises loss pressure on Exposure, "
+            "Whites, Blacks, Highlights, Shadows, Vibrance, and Saturation. "
+            "Explicit --field-loss-weight values override this preset per field."
         ),
     )
     parser.add_argument(
@@ -301,6 +321,42 @@ def _foundation_quality_failures(summary: dict[str, Any]) -> list[str]:
     return failures
 
 
+def _field_loss_weights_for_recipe(args: argparse.Namespace) -> list[str]:
+    weights = list(getattr(args, "field_loss_weight", []) or [])
+    if not getattr(args, "tone_presence_retry", False):
+        return weights
+
+    explicit_fields = {
+        raw.split("=", 1)[0].strip()
+        for raw in weights
+        if "=" in raw
+    }
+    for field, weight in _TONE_PRESENCE_RETRY_WEIGHTS.items():
+        if field not in explicit_fields:
+            weights.append(f"{field}={weight:g}")
+    return weights
+
+
+def _write_quality_gate_result(
+    *,
+    training_dir: Path,
+    summary: dict[str, Any],
+    failures: list[str],
+) -> None:
+    summary["quality_gate_passed"] = not failures
+    summary["foundation_quality_failures"] = failures
+    summary_path = training_dir / "training_summary.json"
+    if summary_path.exists():
+        try:
+            existing = json.loads(summary_path.read_text())
+            existing["quality_gate_passed"] = summary["quality_gate_passed"]
+            existing["foundation_quality_failures"] = failures
+            summary_path.write_text(json.dumps(existing, indent=2))
+            return
+        except Exception:
+            log.warning("Could not update quality gate result in %s", summary_path)
+
+
 def _foundation_capacity_for_split(
     *,
     split_counts: dict[str, int],
@@ -481,7 +537,7 @@ def main() -> None:
         temperature_weight=4.0,
         tint_weight=4.0,
         exposure_weight=5.0,
-        field_loss_weight=args.field_loss_weight,
+        field_loss_weight=_field_loss_weights_for_recipe(args),
         temperature_bucket_loss_weight=0.15,
         tint_bucket_loss_weight=2.0,
         spread_loss_weight=None,
@@ -500,6 +556,11 @@ def main() -> None:
     if not final_model:
         raise RuntimeError("Training did not produce a final model checkpoint")
     quality_failures = _foundation_quality_failures(summary)
+    _write_quality_gate_result(
+        training_dir=training_dir,
+        summary=summary,
+        failures=quality_failures,
+    )
     if quality_failures and not args.allow_quality_gate_failure:
         formatted = "\n  - ".join(quality_failures)
         raise RuntimeError(

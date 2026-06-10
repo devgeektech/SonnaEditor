@@ -192,6 +192,47 @@ def test_foundation_parser_accepts_repeatable_field_loss_weight(monkeypatch) -> 
     assert args.field_loss_weight == ["Whites2012=6", "Blacks2012=6"]
 
 
+def test_tone_presence_retry_adds_reviewed_field_weights(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "train_foundation_model.py",
+            "--splits-dir",
+            "data/training_workspace/sonna/splits_v2_stratified",
+            "--tone-presence-retry",
+        ],
+    )
+
+    args = foundation_cli._parse_args()
+    weights = foundation_cli._field_loss_weights_for_recipe(args)
+
+    assert "Exposure2012=10" in weights
+    assert "Whites2012=10" in weights
+    assert "Highlights2012=8" in weights
+    assert "Vibrance=6" in weights
+
+
+def test_tone_presence_retry_respects_explicit_field_weight(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "train_foundation_model.py",
+            "--splits-dir",
+            "data/training_workspace/sonna/splits_v2_stratified",
+            "--tone-presence-retry",
+            "--field-loss-weight",
+            "Exposure2012=12",
+        ],
+    )
+
+    args = foundation_cli._parse_args()
+    weights = foundation_cli._field_loss_weights_for_recipe(args)
+
+    assert "Exposure2012=12" in weights
+    assert "Exposure2012=10" not in weights
+    assert "Whites2012=10" in weights
+
+
 def test_validate_foundation_split_size_blocks_tiny_production_run(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.setattr(
         foundation_cli,
@@ -254,6 +295,28 @@ def test_foundation_quality_gate_uses_all_slider_mae_fallback() -> None:
     failures = foundation_cli._foundation_quality_failures(summary)
 
     assert any("Vibrance" in failure for failure in failures)
+
+
+def test_write_quality_gate_result_updates_training_summary(tmp_path: Path) -> None:
+    training_dir = tmp_path / "training"
+    training_dir.mkdir()
+    summary_path = training_dir / "training_summary.json"
+    summary_path.write_text('{"test_results": {"test_loss": 0.1}}')
+
+    summary = {"test_results": {"test_loss": 0.1}}
+    failures = ["Exposure2012 MAE 0.3 exceeds 0.25"]
+
+    foundation_cli._write_quality_gate_result(
+        training_dir=training_dir,
+        summary=summary,
+        failures=failures,
+    )
+
+    assert summary["quality_gate_passed"] is False
+    assert summary["foundation_quality_failures"] == failures
+    updated = summary_path.read_text()
+    assert '"quality_gate_passed": false' in updated
+    assert "Exposure2012" in updated
 
 
 def test_small_foundation_split_uses_low_capacity_default() -> None:

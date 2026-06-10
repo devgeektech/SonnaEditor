@@ -2,6 +2,7 @@
 """Quick diagnostic: analyze training summary and config to explain current model performance."""
 import argparse
 import json
+import math
 import sys
 from pathlib import Path
 from typing import Any, cast
@@ -312,6 +313,102 @@ def _print_all_parameter_mae(summary: dict[str, Any]) -> None:
         print(f"  {field:30} {value:10.4f}   {norm_mae:10.4f}   {status}")
 
 
+def _print_median_baseline_comparison(
+    *,
+    summary: dict[str, Any],
+    summary_path: Path,
+) -> None:
+    per_field = summary.get("test_per_field_mae")
+    if not isinstance(per_field, dict) or not per_field:
+        return
+
+    train_parquet = _nested_path(
+        summary,
+        ("train_parquet", "train_path"),
+        summary_path=summary_path,
+    )
+    test_parquet = _nested_path(
+        summary,
+        ("test_parquet", "test_path"),
+        summary_path=summary_path,
+    )
+    if train_parquet is None or test_parquet is None:
+        return
+
+    try:
+        import pandas as pd
+    except Exception:
+        return
+
+    try:
+        train_df = pd.read_parquet(train_parquet)
+        test_df = pd.read_parquet(test_parquet)
+    except Exception as exc:
+        print(f"\nMedian baseline comparison skipped: could not read parquet splits ({exc}).")
+        return
+
+    failing_fields = [
+        field
+        for field, limit in _FIELD_USABLE_LIMITS.items()
+        if _finite_number(per_field.get(field)) is not None
+        and _finite_number(per_field.get(field)) > limit
+    ]
+    if not failing_fields:
+        return
+
+    rows: list[dict[str, Any]] = []
+    for field in failing_fields:
+        if field not in train_df.columns or field not in test_df.columns:
+            continue
+        train_values = pd.to_numeric(train_df[field], errors="coerce")
+        test_values = pd.to_numeric(test_df[field], errors="coerce")
+        if field == "Temperature":
+            train_values = train_values[train_values > 0]
+            test_values = test_values[test_values > 0]
+        train_values = train_values.dropna()
+        test_values = test_values.dropna()
+        if train_values.empty or test_values.empty:
+            continue
+
+        baseline = float(train_values.median())
+        model_mae = _finite_number(per_field.get(field))
+        if model_mae is None:
+            continue
+        baseline_mae = float((test_values - baseline).abs().mean())
+        target_std = float(test_values.std(ddof=0)) if len(test_values) > 1 else math.nan
+        improvement = (
+            100.0 * (baseline_mae - model_mae) / baseline_mae
+            if baseline_mae > 1e-9
+            else math.nan
+        )
+        rows.append({
+            "field": field,
+            "n": int(len(test_values)),
+            "target_std": target_std,
+            "baseline_mae": baseline_mae,
+            "model_mae": model_mae,
+            "improvement": improvement,
+        })
+
+    if not rows:
+        return
+
+    print(f"\n{'TRAIN-MEDIAN BASELINE CHECK':^80}")
+    print(f"{'='*80}")
+    print("  Compares failed model MAE against a simple train-split median predictor.")
+    print("  Positive improvement means the model is learning beyond a fixed average.")
+    print(f"  {'Field':24} {'N':>6} {'Target std':>11} {'Median MAE':>11} {'Model MAE':>10} {'Improve':>9}")
+    print(f"  {'-'*24} {'-'*6} {'-'*11} {'-'*11} {'-'*10} {'-'*9}")
+    for row in sorted(rows, key=lambda item: item["model_mae"], reverse=True):
+        improvement = row["improvement"]
+        improvement_text = "unknown" if math.isnan(improvement) else f"{improvement:+.1f}%"
+        print(
+            f"  {row['field']:24} {row['n']:6d} "
+            f"{row['target_std']:11.4f} {row['baseline_mae']:11.4f} "
+            f"{row['model_mae']:10.4f} {improvement_text:>9}"
+        )
+
+
 def _target_text(ideal: float | None, usable: float | None, unit: str) -> str:
     if ideal is None and usable is None:
         return "lower is better"
@@ -441,6 +538,8 @@ def main():
     print(f"  Batch size: {_fmt_int(hparams.get('batch_size'))}")
     print(f"  LR: {_fmt_float(hparams.get('lr'), 6)}")
     print(f"  Freeze backbone: {_fmt_int(hparams.get('freeze_backbone_epochs'))} epochs")
+    print(f"  Backbone strategy: {hparams.get('backbone_unfreeze_strategy', 'unknown')}")
+    print(f"  Backbone layers:   {hparams.get('backbone_trainable_layers', 'unknown')}")
     print(f"  Slider set version: {hparams.get('slider_set_version', 'unknown')}")
     print(f"  WB metadata skip: {_fmt_bool(hparams.get('use_wb_metadata_skip'))}")
     print("\nModel files:")
@@ -451,6 +550,7 @@ def main():
     print(f"  Temperature bucket: {loss_cfg.get('temperature_bucket_loss_weight', 'unknown')}")
     print(f"  Tint bucket:        {loss_cfg.get('tint_bucket_loss_weight', 'unknown')}")
     print(f"  Exposure weight:    {loss_cfg.get('exposure_weight', 'unknown')}")
+    print(f"  Field overrides:    {loss_cfg.get('field_loss_weights') or 'none'}")
     print(f"  Spread loss:        {loss_cfg.get('spread_loss_weight', 'unknown')}")
     print(f"  Sign wrong penalty: {loss_cfg.get('sign_wrong_penalty_weight', 'unknown')}")
     
@@ -513,6 +613,10 @@ def main():
             print(f"  {key:30} {_fmt_float(test_results[key], 4)}")
 
     _print_all_parameter_mae(summary)
+    _print_median_baseline_comparison(
+        summary=summary,
+        summary_path=summary_path,
+    )
 
     # Training dynamics
     print(f"\n{'TRAINING DYNAMICS':^80}")

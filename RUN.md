@@ -153,12 +153,20 @@ when held-out metrics fail the quality gate. Overrides exist for deliberate
 reviewed experiments only: `--allow-small-foundation-dataset` and
 `--allow-quality-gate-failure`.
 
+Foundation summaries now record `quality_gate_passed` and
+`foundation_quality_failures` before a promotion error returns. Run
+`scripts/quick_diagnostic.py --summary-path <training_summary.json>` after a
+failure; it prints backbone capacity, field-loss overrides, all-parameter MAE,
+and a train-median baseline comparison for failed gate fields when the split
+Parquets are available.
+
 If a run misses tone/presence metrics but the dataset audit looks healthy, retry
 from the same prepared splits with repeatable `--field-loss-weight FIELD=WEIGHT`
-overrides before collecting another dataset. This creates a new run and
-warm-starts model weights from the active foundation by default. It is not
-`--resume-from-checkpoint`; resume is only for continuing an interrupted run
-from that same run's Lightning checkpoint.
+overrides or the reviewed `--tone-presence-retry` shortcut before collecting
+another dataset. This creates a new run and warm-starts model weights from the
+active foundation by default. It is not `--resume-from-checkpoint`; resume is
+only for continuing an interrupted run from that same run's Lightning
+checkpoint.
 
 Current active foundation note: `foundation-sonna-raw-xmp-001` was rolled back
 after diagnostics showed only 132 train rows, overfitting, and collapsed
@@ -217,13 +225,7 @@ uv run python scripts\train_foundation_model.py `
   --max-epochs 150 `
   --batch-size 8 `
   --workers 8 `
-  --field-loss-weight Exposure2012=7 `
-  --field-loss-weight Whites2012=6 `
-  --field-loss-weight Blacks2012=6 `
-  --field-loss-weight Highlights2012=5 `
-  --field-loss-weight Shadows2012=4 `
-  --field-loss-weight Vibrance=4 `
-  --field-loss-weight Saturation=4
+  --tone-presence-retry
 ```
 
 For FiveK, build Expert C catalog splits first:

@@ -931,6 +931,7 @@ def train_profile(args: argparse.Namespace) -> dict:
             "epochs_trained": trainer.current_epoch,
             "hparams": {
                 "arch_version": lightning_module.model._arch_version,
+                "max_epochs": args.max_epochs,
                 "lr": args.lr,
                 "weight_decay": args.weight_decay,
                 "batch_size": args.batch_size,
@@ -1027,6 +1028,7 @@ def train_profile(args: argparse.Namespace) -> dict:
         "epochs_trained": trainer.current_epoch,
         "hparams": {
             "arch_version": lightning_module.model._arch_version,
+            "max_epochs": args.max_epochs,
             "lr": args.lr,
             "weight_decay": args.weight_decay,
             "batch_size": args.batch_size,
