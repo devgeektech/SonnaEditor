@@ -266,6 +266,24 @@ def test_process_pair_all_slider_fields_present(tmp_path: Path) -> None:
         assert field in row, f"Missing slider field: {field}"
 
 
+def test_process_pair_accepts_timezone_aware_capture_datetime_string(tmp_path: Path) -> None:
+    raw, xmp = _make_fake_pair(tmp_path)
+    thumb_dir = tmp_path / "thumbs"
+    thumb_dir.mkdir()
+    extracted = _make_fake_extract_result(raw, xmp)
+    extracted["capture_datetime"] = "2024-03-15T23:30:00+13:00"
+
+    with patch("sonna_editor.data.dataset.extract_all", return_value=extracted):
+        row = _process_pair((raw, xmp, "p", thumb_dir))
+
+    assert row is not None
+    assert row["shoot_id"] == _derive_shoot_id(
+        datetime(2024, 3, 15, 10, 30, tzinfo=timezone.utc),
+        "Canon EOS R6",
+    )
+    assert row["capture_datetime"] == "2024-03-15T23:30:00+13:00"
+
+
 # ---------------------------------------------------------------------------
 # build_dataset (mocked, synthetic)
 # ---------------------------------------------------------------------------

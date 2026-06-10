@@ -44,6 +44,13 @@ wheels on Windows/Linux x86_64, while macOS resolves the matching public wheels.
 
 ## What Changed This Session
 
+- Hardened RAW+XMP dataset shoot bucketing for timezone-aware capture
+  timestamps. `src\sonna_editor\data\dataset.py::_derive_shoot_id()` now
+  normalizes aware datetimes to naive UTC before subtracting from the epoch and
+  strips non-offset `tzinfo` values from effectively naive datetimes. Added a
+  regression test for ISO capture timestamps like `2024-03-15T23:30:00+13:00`
+  so Mac dataset builds do not fail with `can't subtract offset-naive and
+  offset-aware datetimes`.
 - Exact-pinned direct runtime/dev dependencies in `pyproject.toml` from the
   current uv environment and restricted the project to Python `3.11.*` to reduce
   Mac setup conflicts.

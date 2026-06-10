@@ -66,8 +66,10 @@ def _derive_shoot_id(capture_datetime: datetime | None, camera_body: str | None)
     """Assign a shoot ID by bucketing capture time into 12-hour windows."""
     if capture_datetime is None:
         return f"unknown_{camera_body or 'unknown'}"
-    if capture_datetime.tzinfo is not None:
+    if capture_datetime.tzinfo is not None and capture_datetime.utcoffset() is not None:
         capture_datetime = capture_datetime.astimezone(timezone.utc).replace(tzinfo=None)
+    else:
+        capture_datetime = capture_datetime.replace(tzinfo=None)
     epoch = datetime(2000, 1, 1)
     hours_since_epoch = (capture_datetime - epoch).total_seconds() / 3600
     bucket = int(hours_since_epoch // 12)
