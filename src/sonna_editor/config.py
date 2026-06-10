@@ -161,8 +161,18 @@ SCENE_STAT_FIELDS: list[str] = [
 
 # Supported RAW file extensions
 SUPPORTED_RAW_EXTENSIONS = {
-    ".cr3", ".cr2", ".nef", ".arw", ".raf", ".rw2",
-    ".orf", ".pef", ".srw", ".x3f", ".dng",
+    ".cr2",
+    ".cr3",
+    ".nef",
+    ".arw",
+    ".raf",
+    ".orf",
+    ".rw2",
+    ".pef",
+    ".dng",
+    ".x3f",
+    ".rwl",
+    ".srw",
 }
 
 # Slider fields — 147 values in order (must match model output order)

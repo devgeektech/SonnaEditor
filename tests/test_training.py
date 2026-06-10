@@ -1,6 +1,7 @@
 """Tests for Task 3.3: SonnaDataset, SonnaDataModule, SonnaLightningModule."""
 from __future__ import annotations
 
+import argparse
 import io
 import math
 from pathlib import Path
@@ -11,6 +12,7 @@ import pytest
 import torch
 from PIL import Image
 
+from sonna_editor import config
 from sonna_editor.config import SLIDER_FIELDS
 from sonna_editor.model.architecture import EmbeddingRegistry, SonnaEditor
 from sonna_editor.model.augmentation import ValidationAugmentation
@@ -28,12 +30,57 @@ from sonna_editor.training.diagnostics import (
     trainable_parameter_breakdown,
 )
 from sonna_editor.training.module import SonnaLightningModule
-from sonna_editor.training.profile_runner import _warm_start_model_from_checkpoint
+from sonna_editor.training.profile_runner import (
+    _apply_training_overrides,
+    _parse_field_loss_weight_overrides,
+    _warm_start_model_from_checkpoint,
+)
 
 
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
+
+def test_parse_field_loss_weight_overrides_accepts_repeatable_fields() -> None:
+    result = _parse_field_loss_weight_overrides([
+        "Whites2012=6",
+        "Blacks2012=5.5",
+        "Vibrance=4",
+    ])
+
+    assert result == {
+        "Whites2012": 6.0,
+        "Blacks2012": 5.5,
+        "Vibrance": 4.0,
+    }
+
+
+def test_parse_field_loss_weight_overrides_rejects_unknown_field() -> None:
+    with pytest.raises(ValueError, match="Unknown slider field"):
+        _parse_field_loss_weight_overrides(["NoSuchSlider=4"])
+
+
+def test_apply_training_overrides_updates_named_slider_weights(monkeypatch) -> None:
+    monkeypatch.setattr(config, "SLIDER_LOSS_WEIGHTS", dict(config.SLIDER_LOSS_WEIGHTS))
+    args = argparse.Namespace(
+        image_resolution=config.IMAGE_RESOLUTION,
+        temperature_weight=config.SLIDER_LOSS_WEIGHTS["Temperature"],
+        tint_weight=config.SLIDER_LOSS_WEIGHTS["Tint"],
+        exposure_weight=config.SLIDER_LOSS_WEIGHTS["Exposure2012"],
+        field_loss_weight=["Whites2012=6", "Blacks2012=5.5", "Vibrance=4"],
+        temperature_bucket_loss_weight=config.TEMPERATURE_BUCKET_LOSS_WEIGHT,
+        tint_bucket_loss_weight=config.TINT_BUCKET_LOSS_WEIGHT,
+        spread_loss_weight=config.SPREAD_LOSS_WEIGHT,
+        exposure_scene_loss_weight=config.EXPOSURE_SCENE_LOSS_WEIGHT,
+        sign_wrong_penalty_weight=config.SIGN_WRONG_PENALTY_WEIGHT,
+    )
+
+    _apply_training_overrides(args)
+
+    assert config.SLIDER_LOSS_WEIGHTS["Whites2012"] == pytest.approx(6.0)
+    assert config.SLIDER_LOSS_WEIGHTS["Blacks2012"] == pytest.approx(5.5)
+    assert config.SLIDER_LOSS_WEIGHTS["Vibrance"] == pytest.approx(4.0)
+
 
 def _make_thumbnail(path: Path, size: tuple[int, int] = (200, 200)) -> None:
     arr = np.random.randint(0, 256, (*size, 3), dtype=np.uint8)

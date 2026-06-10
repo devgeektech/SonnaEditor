@@ -4,7 +4,7 @@ import hashlib
 import io
 import logging
 import multiprocessing
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Sequence
 
@@ -66,6 +66,8 @@ def _derive_shoot_id(capture_datetime: datetime | None, camera_body: str | None)
     """Assign a shoot ID by bucketing capture time into 12-hour windows."""
     if capture_datetime is None:
         return f"unknown_{camera_body or 'unknown'}"
+    if capture_datetime.tzinfo is not None:
+        capture_datetime = capture_datetime.astimezone(timezone.utc).replace(tzinfo=None)
     epoch = datetime(2000, 1, 1)
     hours_since_epoch = (capture_datetime - epoch).total_seconds() / 3600
     bucket = int(hours_since_epoch // 12)
@@ -390,12 +392,18 @@ def stratified_group_split(
             else:
                 train_shoots.append(sid)
 
+        def _steal_one(target: list, donors: list[list]) -> None:
+            for donor in donors:
+                if donor:
+                    target.append(donor.pop())
+                    return
+
         if not train_shoots:
-            train_shoots.append(test_shoots.pop())
+            _steal_one(train_shoots, [test_shoots, val_shoots])
         if not val_shoots:
-            val_shoots.append(train_shoots.pop())
+            _steal_one(val_shoots, [test_shoots, train_shoots])
         if not test_shoots:
-            test_shoots.append(train_shoots.pop())
+            _steal_one(test_shoots, [train_shoots, val_shoots])
         return train_shoots, val_shoots, test_shoots
 
     def _objective(train_shoots: list, val_shoots: list, test_shoots: list) -> float:

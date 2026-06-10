@@ -1,7 +1,7 @@
 # Session State - Sonna Editor
 
-**Saved:** 2026-06-05 local time
-**Current phase/task:** Foundation result triage and promotion guardrails after bad Sonna RAW+XMP continuation.
+**Saved:** 2026-06-10 local time
+**Current phase/task:** Foundation tone/presence retry support after RAW+XMP quality-gate miss.
 
 ## Current Workspace
 
@@ -39,6 +39,24 @@ The earlier `GPU available: False` training issue was caused by a CPU-only PyTor
 
 ## What Changed This Session
 
+- Added repeatable named slider loss overrides to `scripts\train_profile.py` /
+  `src\sonna_editor\training\profile_runner.py` via
+  `--field-loss-weight FIELD=WEIGHT`.
+- `scripts\train_foundation_model.py` now passes `--field-loss-weight`
+  overrides through to the packaged trainer, so foundation retries can focus on
+  tone/presence fields without creating a separate dataset or one-off script.
+- Training summaries now record parsed per-field overrides in
+  `hparams.field_loss_weights`.
+- Documented the tone/presence focused retry workflow in
+  `FOUNDATION_TRAINING.md`, `CLI_COMMANDS.md`, and `MAC_SETUP.md`, including
+  that this is a fresh run from prepared splits with a foundation weight
+  warm-start by default, not `--resume-from-checkpoint`.
+- Centralised model-inference RAW scanning on `config.SUPPORTED_RAW_EXTENSIONS` instead of maintaining a narrower duplicate list in `src\sonna_editor\inference\pipeline.py`.
+- Added `.rwl` to `SUPPORTED_RAW_EXTENSIONS`. The scanned format set is now `.cr2`, `.cr3`, `.nef`, `.arw`, `.raf`, `.orf`, `.rw2`, `.pef`, `.dng`, `.x3f`, `.rwl`, and `.srw` across RAW+XMP dataset building, folder/API scans, preset processing, model inference, and fine-tune capture.
+- Added config regression tests that assert the supported extension set and that inference uses the central config list.
+- Verification for this fix:
+  - `uv run ruff check src\sonna_editor\config.py src\sonna_editor\inference\pipeline.py src\sonna_editor\finetune\capture.py tests\test_config.py` passed.
+  - `uv run pytest tests\test_config.py tests\test_inference_pipeline_integration.py::test_mode_b_end_to_end_sidecar_propagation -q` passed: `29 passed`.
 - Diagnosed the pasted training diagnostics for the two foundation runs:
   - `foundation-fivek-catalog-expert-c-001` trained on the full FiveK Expert C split (`3769/536/695` train/val/test rows in the current local `splits_v2_stratified_fiveK` folder). Collapse audit on 200 validation photos found `0` collapsed sliders, but Saturation/Vibrance and Temperature still need visual review before treating it as production-quality Mode A output.
   - `foundation-sonna-raw-xmp-001` trained on only `132/27/30` train/val/test rows from `data\training_workspace\sonna_foundation_001_dataset\splits_v2_stratified` while starting with `stage:7` trainable (`16.2M` trainable params). It overfit (`test_loss / best_val_loss = 1.616x`) and failed key visual sliders: Exposure, Shadows, Highlights, Whites, Blacks, Vibrance, and Saturation. Collapse audit on its 27-row val split found collapsed `Highlights2012` and `Shadows2012`.
@@ -282,6 +300,7 @@ The earlier `GPU available: False` training issue was caused by a CPU-only PyTor
 
 ## Current Code Behavior Notes
 
+- RAW file scanning is centralised in `config.SUPPORTED_RAW_EXTENSIONS`: `.cr2`, `.cr3`, `.nef`, `.arw`, `.raf`, `.orf`, `.rw2`, `.pef`, `.dng`, `.x3f`, `.rwl`, and `.srw`. This controls dataset builds, folder/API scans, preset processing, model inference, and fine-tune capture. Actual extraction still depends on `rawpy`/LibRaw support for the camera file; optional DNG conversion still depends on Adobe DNG Converter support.
 - `scripts/train_profile.py` default v2 recipe now uses:
   - `image_resolution=512`
   - `lr=1e-4`

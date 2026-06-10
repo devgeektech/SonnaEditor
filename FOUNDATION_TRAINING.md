@@ -190,6 +190,39 @@ paths, train-batch count, and all-slider `test_per_field_mae`. Run
 `scripts\quick_diagnostic.py` after training to see both the critical metrics
 and the all-parameter MAE check.
 
+## Tone/Presence Focused Retry
+
+If a foundation run is close on white balance but fails tone or presence gate
+metrics, do not build a new dataset first unless the audits show coverage gaps.
+Use the same audited splits with per-field loss overrides so the next run puts
+more gradient pressure on the weak Lightroom sliders.
+
+The trainer supports repeatable named slider overrides:
+
+```powershell
+--field-loss-weight Whites2012=6 `
+--field-loss-weight Blacks2012=6 `
+--field-loss-weight Highlights2012=5 `
+--field-loss-weight Shadows2012=4 `
+--field-loss-weight Vibrance=4 `
+--field-loss-weight Saturation=4 `
+--field-loss-weight Exposure2012=7
+```
+
+These weights are recorded in `training_summary.json` under
+`hparams.field_loss_weights`, so the run remains reproducible. If the focused
+run still fails, inspect prediction collapse and dataset diversity before
+collecting more data. Add data only when the current split lacks enough
+low-light, high-contrast, strong Whites/Blacks/Highlights, or strong
+presence-edit examples.
+
+This is a fresh training run from the prepared train/val/test Parquet splits.
+It is not `--resume-from-checkpoint`. By default it warm-starts model weights
+from the active foundation checkpoint, recalibrates output biases to the
+current train split, trains a new run folder, and promotes a new checkpoint only
+if the quality gate passes. Use `--resume-from-checkpoint` only to continue an
+interrupted Lightning run from that same run's `checkpoints/last.ckpt`.
+
 ## Copy-Paste Naming Rule
 
 For every new foundation command, change both identifiers together:
@@ -492,6 +525,28 @@ uv run python scripts\train_foundation_model.py `
   --max-epochs 100 `
   --batch-size 8 `
   --workers 8
+```
+
+Tone/presence focused retry from the same splits:
+
+```powershell
+uv run python scripts\train_foundation_model.py `
+  --splits-dir "data\training_workspace\sonna_foundation_001_dataset\splits_v2_stratified" `
+  --workspace-dir "data\training_workspace" `
+  --foundation-repo "SonnaEditorFoundation" `
+  --profile-name "Sonna RAW XMP Foundation Tone Presence 002" `
+  --run-name "foundation-sonna-raw-xmp-002-tone-presence" `
+  --version-stem "foundation-sonna-raw-xmp-002-tone-presence" `
+  --max-epochs 150 `
+  --batch-size 8 `
+  --workers 8 `
+  --field-loss-weight Exposure2012=7 `
+  --field-loss-weight Whites2012=6 `
+  --field-loss-weight Blacks2012=6 `
+  --field-loss-weight Highlights2012=5 `
+  --field-loss-weight Shadows2012=4 `
+  --field-loss-weight Vibrance=4 `
+  --field-loss-weight Saturation=4
 ```
 
 ### Direct RAW+XMP Shortcut

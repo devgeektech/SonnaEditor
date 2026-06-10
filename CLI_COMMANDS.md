@@ -62,6 +62,12 @@ RAW+XMP sets can still be used for smoke tests or reviewed ablations with
 only with `--allow-quality-gate-failure` after visual review. Do not use those
 flags for routine active foundation updates.
 
+Tone/presence-focused retries should use the same audited splits first, not a
+new dataset. Pass repeatable `--field-loss-weight FIELD=WEIGHT` overrides for
+weak sliders such as `Whites2012`, `Blacks2012`, `Highlights2012`, `Vibrance`,
+and `Saturation`. These are fresh runs from the prepared Parquet splits with a
+foundation weight warm start by default, not `--resume-from-checkpoint`.
+
 Current triage note: `foundation-sonna-raw-xmp-001` was rejected as the active
 foundation because it trained from only 132 train rows, overfit, and collapsed
 Highlights/Shadows. The active foundation manifest was rolled back to
@@ -104,6 +110,14 @@ Do not reuse a previous --version-stem; old checkpoints are never overwritten.
    data/training_sources/sonna_personal_001/raw_xmp/
    data/training_sources/sonna_personal_002/raw_xmp/
    ```
+
+   The shared RAW scanner currently recognises `.cr2`, `.cr3`, `.nef`,
+   `.arw`, `.raf`, `.orf`, `.rw2`, `.pef`, `.dng`, `.x3f`, `.rwl`, and
+   `.srw` across dataset building, folder/API scans, preset processing,
+   model inference, and fine-tune capture. Extension recognition means the app
+   will attempt to process the file; successful preview/metadata extraction
+   still depends on `rawpy`/LibRaw support for that camera file. Optional DNG
+   normalisation still depends on Adobe DNG Converter support.
 
 2. Build the training dataset.
    - RAW + XMP path: run `scripts/build_dataset.py`.
@@ -430,6 +444,7 @@ Sign-wrong penalty weight=0.2
 WB metadata skip=enabled
 target prior init=enabled
 photometric augmentation=disabled
+optional repeatable named slider overrides via --field-loss-weight FIELD=WEIGHT
 ```
 
 Use `--no-target-prior-init` only for an ablation. For the next quality evaluation, start fresh and do not resume the old unsatisfactory checkpoint, otherwise target-prior calibration, adaptive capacity, and regenerated splits will not be evaluated cleanly.
@@ -565,6 +580,28 @@ uv run python scripts\train_foundation_model.py `
   --max-epochs 100 `
   --batch-size 8 `
   --workers 8
+```
+
+Tone/presence retry from the same splits:
+
+```powershell
+uv run python scripts\train_foundation_model.py `
+  --splits-dir data\training_workspace\sonna_foundation_001_dataset\splits_v2_stratified `
+  --workspace-dir data\training_workspace `
+  --foundation-repo SonnaEditorFoundation `
+  --profile-name "Sonna RAW XMP Foundation Tone Presence 002" `
+  --run-name foundation-sonna-raw-xmp-002-tone-presence `
+  --version-stem foundation-sonna-raw-xmp-002-tone-presence `
+  --max-epochs 150 `
+  --batch-size 8 `
+  --workers 8 `
+  --field-loss-weight Exposure2012=7 `
+  --field-loss-weight Whites2012=6 `
+  --field-loss-weight Blacks2012=6 `
+  --field-loss-weight Highlights2012=5 `
+  --field-loss-weight Shadows2012=4 `
+  --field-loss-weight Vibrance=4 `
+  --field-loss-weight Saturation=4
 ```
 
 FiveK catalog foundation training first builds Expert C splits:

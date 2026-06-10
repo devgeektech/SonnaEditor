@@ -29,6 +29,7 @@ from sonna_editor.foundation import (
     ensure_foundation_repo_layout,
     promote_foundation_checkpoint,
     resolve_foundation_checkpoint,
+    validate_foundation_checkpoint,
 )
 from sonna_editor.training.profile_runner import train_profile
 
@@ -85,6 +86,16 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--max-epochs", type=int, default=100)
     parser.add_argument("--batch-size", type=int, default=8)
     parser.add_argument("--image-resolution", type=int, default=config.IMAGE_RESOLUTION)
+    parser.add_argument(
+        "--field-loss-weight",
+        action="append",
+        default=[],
+        metavar="FIELD=WEIGHT",
+        help=(
+            "Override a named Lightroom slider loss weight during foundation "
+            "training. Repeatable, e.g. --field-loss-weight Whites2012=6."
+        ),
+    )
     parser.add_argument(
         "--min-foundation-train-rows",
         type=int,
@@ -420,6 +431,15 @@ def main() -> None:
     training_dir = run_dir / "training"
     training_dir.mkdir(parents=True, exist_ok=True)
     base_foundation = None if args.no_warm_start else _active_foundation_or_none()
+    if base_foundation is not None:
+        try:
+            validate_foundation_checkpoint(base_foundation)
+        except ValueError as exc:
+            raise RuntimeError(
+                "Active foundation checkpoint is invalid. "
+                "If you want a brand-new foundation build, rerun with --no-warm-start. "
+                f"Otherwise fix or replace {base_foundation}."
+            ) from exc
 
     splits_dir = _resolve_splits(args, run_dir)
     split_counts = _validate_foundation_split_size(
@@ -461,6 +481,7 @@ def main() -> None:
         temperature_weight=4.0,
         tint_weight=4.0,
         exposure_weight=5.0,
+        field_loss_weight=args.field_loss_weight,
         temperature_bucket_loss_weight=0.15,
         tint_bucket_loss_weight=2.0,
         spread_loss_weight=None,

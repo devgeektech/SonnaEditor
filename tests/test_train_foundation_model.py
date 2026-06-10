@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import argparse
+import sys
 from pathlib import Path
 
 import pytest
 
 import scripts.train_foundation_model as foundation_cli
+from sonna_editor import config
 
 
 def test_batch_size_attempts_halves_to_one() -> None:
@@ -59,6 +61,98 @@ def test_train_profile_with_cuda_oom_retry_does_not_hide_non_cuda_errors(monkeyp
         foundation_cli._train_profile_with_cuda_oom_retry(argparse.Namespace(batch_size=16))
 
 
+def test_main_fails_fast_on_invalid_active_foundation_checkpoint(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setattr(config, "FOUNDATION_REPO_DIR", tmp_path / "foundation")
+    bad_ckpt = tmp_path / "bad-foundation.ckpt"
+    bad_ckpt.write_text("not a torch checkpoint", encoding="utf-8")
+    monkeypatch.setattr(
+        foundation_cli,
+        "_active_foundation_or_none",
+        lambda: bad_ckpt,
+    )
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "train_foundation_model.py",
+            "--splits-dir",
+            str(tmp_path / "splits"),
+        ],
+    )
+
+    with pytest.raises(RuntimeError, match="If you want a brand-new foundation build, rerun with --no-warm-start"):
+        foundation_cli.main()
+
+
+def test_main_skips_warm_start_with_no_warm_start_flag(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setattr(config, "FOUNDATION_REPO_DIR", tmp_path / "foundation")
+    bad_ckpt = tmp_path / "bad-foundation.ckpt"
+    bad_ckpt.write_text("not a torch checkpoint", encoding="utf-8")
+    monkeypatch.setattr(
+        foundation_cli,
+        "_active_foundation_or_none",
+        lambda: bad_ckpt,
+    )
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "train_foundation_model.py",
+            "--splits-dir",
+            str(tmp_path / "splits"),
+            "--no-warm-start",
+            "--field-loss-weight",
+            "Whites2012=6",
+            "--field-loss-weight",
+            "Vibrance=4",
+        ],
+    )
+
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+    monkeypatch.setattr(
+        foundation_cli,
+        "_resolve_splits",
+        lambda args, run_dir: tmp_path / "splits",
+    )
+    monkeypatch.setattr(
+        foundation_cli,
+        "_validate_foundation_split_size",
+        lambda *_, **kwargs: {"train": 100, "val": 10, "test": 10},
+    )
+    monkeypatch.setattr(
+        foundation_cli,
+        "_build_dataset_from_raw_xmp",
+        lambda args, run_dir: tmp_path / "splits",
+    )
+    captured_train_args: list[argparse.Namespace] = []
+
+    def fake_train_profile_with_cuda_oom_retry(args: argparse.Namespace) -> dict:
+        captured_train_args.append(args)
+        return {"final_model": str(tmp_path / "model.ckpt")}
+
+    monkeypatch.setattr(
+        foundation_cli,
+        "_train_profile_with_cuda_oom_retry",
+        fake_train_profile_with_cuda_oom_retry,
+    )
+    monkeypatch.setattr(
+        foundation_cli,
+        "promote_foundation_checkpoint",
+        lambda *args, **kwargs: tmp_path / "foundation" / "checkpoints" / "foundation-v1.ckpt",
+    )
+
+    # Should not raise due to the corrupted active foundation checkpoint.
+    foundation_cli.main()
+    assert captured_train_args[0].field_loss_weight == ["Whites2012=6", "Vibrance=4"]
+
+
 def test_foundation_parser_defaults_train_final_backbone_stage(monkeypatch) -> None:
     monkeypatch.setattr(
         "sys.argv",
@@ -76,6 +170,26 @@ def test_foundation_parser_defaults_train_final_backbone_stage(monkeypatch) -> N
     assert args.min_foundation_train_rows == 75
     assert args.allow_small_foundation_dataset is False
     assert args.allow_quality_gate_failure is False
+    assert args.field_loss_weight == []
+
+
+def test_foundation_parser_accepts_repeatable_field_loss_weight(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "train_foundation_model.py",
+            "--splits-dir",
+            "data/training_workspace/fivek/splits_v2_stratified",
+            "--field-loss-weight",
+            "Whites2012=6",
+            "--field-loss-weight",
+            "Blacks2012=6",
+        ],
+    )
+
+    args = foundation_cli._parse_args()
+
+    assert args.field_loss_weight == ["Whites2012=6", "Blacks2012=6"]
 
 
 def test_validate_foundation_split_size_blocks_tiny_production_run(monkeypatch, tmp_path: Path) -> None:

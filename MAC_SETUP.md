@@ -280,6 +280,13 @@ backbone flags for a reviewed ablation. Use `--allow-small-foundation-dataset`
 or `--allow-quality-gate-failure` only for deliberate reviewed experiments, not
 routine active foundation updates.
 
+If a foundation run is close on white balance but misses tone/presence metrics,
+retry from the same audited splits with repeatable
+`--field-loss-weight FIELD=WEIGHT` overrides before collecting a new dataset.
+This starts a new run and warm-starts model weights from the active foundation
+checkpoint by default. It is not `--resume-from-checkpoint`; use resume only for
+an interrupted run from that same run's `checkpoints/last.ckpt`.
+
 For RAW+XMP foundation data, first export metadata from Lightroom and keep the
 edited RAW/DNG files plus same-stem `.xmp` sidecars in a dedicated source
 folder. For important runs, build and audit splits before training:
@@ -323,6 +330,28 @@ uv run python scripts/train_foundation_model.py \
   --max-epochs 100 \
   --batch-size 8 \
   --workers 4
+```
+
+Tone/presence focused retry from the same splits:
+
+```bash
+uv run python scripts/train_foundation_model.py \
+  --splits-dir data/training_workspace/sonna_foundation_001_dataset/splits_v2_stratified \
+  --workspace-dir data/training_workspace \
+  --foundation-repo SonnaEditorFoundation \
+  --profile-name "Sonna RAW XMP Foundation Tone Presence 002" \
+  --run-name foundation-sonna-raw-xmp-002-tone-presence \
+  --version-stem foundation-sonna-raw-xmp-002-tone-presence \
+  --max-epochs 150 \
+  --batch-size 8 \
+  --workers 4 \
+  --field-loss-weight Exposure2012=7 \
+  --field-loss-weight Whites2012=6 \
+  --field-loss-weight Blacks2012=6 \
+  --field-loss-weight Highlights2012=5 \
+  --field-loss-weight Shadows2012=4 \
+  --field-loss-weight Vibrance=4 \
+  --field-loss-weight Saturation=4
 ```
 
 The foundation folder contains `foundation_manifest.json` and

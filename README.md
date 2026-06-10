@@ -99,6 +99,12 @@ enough. Training requires target Lightroom slider values from one of:
 - A Lightroom Classic `.lrcat` opened read-only, with accessible RAW files.
 - Fine-tune captures from previous Saha runs.
 
+The shared RAW scanner recognises `.cr2`, `.cr3`, `.nef`, `.arw`, `.raf`,
+`.orf`, `.rw2`, `.pef`, `.dng`, `.x3f`, `.rwl`, and `.srw`. Successful
+preview/metadata extraction still depends on `rawpy`/LibRaw supporting the
+specific camera file, and optional DNG conversion depends on Adobe DNG
+Converter support.
+
 Preset + survey creates a Lite profile, but it is not supervised training from
 photos. See `CLI_COMMANDS.md` for operator commands and
 `FOUNDATION_TRAINING.md` for hidden foundation-model training.

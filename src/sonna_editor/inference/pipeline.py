@@ -25,9 +25,10 @@ from sonna_editor.slider_set import fields_for_version
 
 _logger = logging.getLogger(__name__)
 
-RAW_EXTENSIONS: frozenset[str] = frozenset(
-    {".cr3", ".cr2", ".nef", ".arw", ".dng", ".rw2", ".orf", ".raf"}
-)
+# Backward-compatible alias used by capture/tests. Keep the extension list in
+# config so training, folder scanning, preset processing, inference, and
+# capture cannot drift apart.
+RAW_EXTENSIONS: frozenset[str] = frozenset(config.SUPPORTED_RAW_EXTENSIONS)
 
 # Mean per-slider std above which a photo is flagged as low-confidence
 _UNCERTAINTY_THRESHOLD = 3.0

@@ -89,6 +89,30 @@ class TestPlatformPaths:
             assert path.is_dir(), f"Expected directory to exist: {path}"
 
 
+class TestRawExtensions:
+    def test_supported_raw_extensions_cover_target_formats(self) -> None:
+        expected = {
+            ".cr2",
+            ".cr3",
+            ".nef",
+            ".arw",
+            ".raf",
+            ".orf",
+            ".rw2",
+            ".pef",
+            ".dng",
+            ".x3f",
+            ".rwl",
+            ".srw",
+        }
+        assert config.SUPPORTED_RAW_EXTENSIONS == expected
+
+    def test_inference_pipeline_uses_config_raw_extensions(self) -> None:
+        from sonna_editor.inference.pipeline import RAW_EXTENSIONS
+
+        assert RAW_EXTENSIONS == frozenset(config.SUPPORTED_RAW_EXTENSIONS)
+
+
 class TestSliderFields:
     def test_count(self) -> None:
         assert len(SLIDER_FIELDS) == 147

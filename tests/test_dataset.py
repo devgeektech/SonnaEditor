@@ -1,5 +1,5 @@
 from __future__ import annotations
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from unittest.mock import patch
 
@@ -188,6 +188,13 @@ def test_shoot_id_different_camera_same_time(tmp_path: Path) -> None:
 def test_shoot_id_none_datetime(tmp_path: Path) -> None:
     sid = _derive_shoot_id(None, "R6")
     assert sid.startswith("unknown_")
+
+
+def test_shoot_id_offset_aware_datetime(tmp_path: Path) -> None:
+    aware_dt = datetime(2024, 3, 15, 10, 0, tzinfo=timezone.utc)
+    assert _derive_shoot_id(aware_dt, "R6") == _derive_shoot_id(
+        datetime(2024, 3, 15, 11, 0, tzinfo=timezone.utc), "R6"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -489,6 +496,18 @@ def test_stratified_split_no_photo_leakage() -> None:
     assert set(train["id"]).isdisjoint(set(test["id"]))
     assert set(val["id"]).isdisjoint(set(test["id"]))
     assert len(train) + len(val) + len(test) == len(df)
+
+
+def test_stratified_split_small_shoot_count_does_not_crash() -> None:
+    from sonna_editor.data.dataset import stratified_group_split
+    df = _make_split_df(n_shoots=1, photos_per_shoot=3)
+    train, val, test = stratified_group_split(
+        df, val_ratio=0.1, test_ratio=0.1, n_strata=5, random_state=42
+    )
+    assert len(train) + len(val) + len(test) == len(df)
+    assert set(train["id"]).isdisjoint(set(val["id"]))
+    assert set(train["id"]).isdisjoint(set(test["id"]))
+    assert set(val["id"]).isdisjoint(set(test["id"]))
 
 
 def test_stratified_split_deterministic_with_seed() -> None:

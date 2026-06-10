@@ -136,6 +136,16 @@ def _parse_args() -> argparse.Namespace:
                    help="Override the per-slider loss weight for Tint")
     p.add_argument("--exposure-weight", type=float, default=5.0,
                    help="Override the per-slider loss weight for Exposure2012")
+    p.add_argument(
+        "--field-loss-weight",
+        action="append",
+        default=[],
+        metavar="FIELD=WEIGHT",
+        help=(
+            "Override any named Lightroom slider loss weight. Repeatable, for "
+            "example --field-loss-weight Whites2012=6 --field-loss-weight Vibrance=4."
+        ),
+    )
     p.add_argument("--temperature-bucket-loss-weight", type=float, default=0.15,
                    help="Override TEMPERATURE_BUCKET_LOSS_WEIGHT")
     p.add_argument("--tint-bucket-loss-weight", type=float, default=2.0,
@@ -214,6 +224,15 @@ def _apply_training_overrides(args: argparse.Namespace) -> None:
         setter=lambda v: config.SLIDER_LOSS_WEIGHTS.__setitem__("Exposure2012", float(v)),
         fmt="%0.2f",
     )
+    field_loss_weights = _parse_field_loss_weight_overrides(
+        getattr(args, "field_loss_weight", []) or []
+    )
+    for field, weight in field_loss_weights.items():
+        current = config.SLIDER_LOSS_WEIGHTS[field]
+        config.SLIDER_LOSS_WEIGHTS[field] = weight
+        if weight != current:
+            prefix = "Override" if "--field-loss-weight" in provided_flags else "Training recipe"
+            log.info("%s %s weight=%0.2f", prefix, field, weight)
     apply_value(
         flag="--temperature-bucket-loss-weight",
         label="TEMPERATURE_BUCKET_LOSS_WEIGHT",
@@ -254,6 +273,35 @@ def _apply_training_overrides(args: argparse.Namespace) -> None:
         setter=lambda v: setattr(config, "SIGN_WRONG_PENALTY_WEIGHT", float(v)),
         fmt="%0.2f",
     )
+
+
+def _parse_field_loss_weight_overrides(raw_values: list[str]) -> dict[str, float]:
+    overrides: dict[str, float] = {}
+    valid_fields = set(config.SLIDER_FIELDS)
+    for raw in raw_values:
+        if "=" not in raw:
+            raise ValueError(
+                "--field-loss-weight must use FIELD=WEIGHT, "
+                f"got {raw!r}"
+            )
+        field, raw_weight = raw.split("=", 1)
+        field = field.strip()
+        if field not in valid_fields:
+            raise ValueError(
+                f"Unknown slider field in --field-loss-weight: {field!r}"
+            )
+        try:
+            weight = float(raw_weight)
+        except ValueError as exc:
+            raise ValueError(
+                f"Invalid loss weight for {field}: {raw_weight!r}"
+            ) from exc
+        if not math.isfinite(weight) or weight < 0:
+            raise ValueError(
+                f"Loss weight for {field} must be a finite non-negative number"
+            )
+        overrides[field] = weight
+    return overrides
 
 
 def _load_best_weights_into_model(model, best_ckpt: str) -> None:
@@ -561,7 +609,20 @@ def _warm_start_model_from_checkpoint(
     and skip categorical embedding tables while copying shared visual/metadata
     layers and heads.
     """
-    ckpt = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
+    try:
+        ckpt = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
+    except Exception as exc:
+        raise ValueError(
+            "Warm-start failed because the active foundation checkpoint is invalid or corrupted. "
+            f"If you intended a fresh foundation training run, rerun with --no-warm-start. "
+            f"Checkpoint path: {checkpoint_path}"
+        ) from exc
+    if not isinstance(ckpt, dict) or "model_state" not in ckpt:
+        raise ValueError(
+            "Warm-start failed because the active foundation checkpoint is not a valid foundation checkpoint dict. "
+            f"If you intended a fresh foundation training run, rerun with --no-warm-start. "
+            f"Checkpoint path: {checkpoint_path}"
+        )
     state: dict[str, torch.Tensor] = ckpt["model_state"]
     arch_config = ckpt.get("arch_config", {}) or {}
     source_slider_set_version = arch_config.get("slider_set_version")
@@ -985,6 +1046,9 @@ def train_profile(args: argparse.Namespace) -> dict:
             "temperature_weight": args.temperature_weight,
             "tint_weight": args.tint_weight,
             "exposure_weight": args.exposure_weight,
+            "field_loss_weights": _parse_field_loss_weight_overrides(
+                getattr(args, "field_loss_weight", []) or []
+            ),
             "temperature_bucket_loss_weight": args.temperature_bucket_loss_weight,
             "tint_bucket_loss_weight": args.tint_bucket_loss_weight,
             "spread_loss_weight": args.spread_loss_weight,

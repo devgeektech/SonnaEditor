@@ -105,6 +105,11 @@ for supervised training. Use one of these dataset sources:
 - A Lightroom Classic `.lrcat` with develop settings and accessible RAW files.
 - Fine-tune captures from previous Saha runs.
 
+The app scans the same RAW extension set everywhere: `.cr2`, `.cr3`, `.nef`,
+`.arw`, `.raf`, `.orf`, `.rw2`, `.pef`, `.dng`, `.x3f`, `.rwl`, and `.srw`.
+Actual extraction still depends on `rawpy`/LibRaw support for the specific
+camera file; optional DNG conversion depends on Adobe DNG Converter support.
+
 Preset + survey creates a Lite initial checkpoint from the configured foundation
 checkpoint, but it is not supervised training from photos.
 
@@ -140,6 +145,13 @@ training/promotion from fewer than 75 train rows, and it refuses promotion
 when held-out metrics fail the quality gate. Overrides exist for deliberate
 reviewed experiments only: `--allow-small-foundation-dataset` and
 `--allow-quality-gate-failure`.
+
+If a run misses tone/presence metrics but the dataset audit looks healthy, retry
+from the same prepared splits with repeatable `--field-loss-weight FIELD=WEIGHT`
+overrides before collecting another dataset. This creates a new run and
+warm-starts model weights from the active foundation by default. It is not
+`--resume-from-checkpoint`; resume is only for continuing an interrupted run
+from that same run's Lightning checkpoint.
 
 Current active foundation note: `foundation-sonna-raw-xmp-001` was rolled back
 after diagnostics showed only 132 train rows, overfitting, and collapsed
@@ -183,6 +195,28 @@ uv run python scripts\train_foundation_model.py `
   --max-epochs 100 `
   --batch-size 8 `
   --workers 4
+```
+
+Tone/presence focused retry from prepared RAW+XMP splits:
+
+```powershell
+uv run python scripts\train_foundation_model.py `
+  --splits-dir data\training_workspace\sonna_foundation_001_dataset\splits_v2_stratified `
+  --workspace-dir data\training_workspace `
+  --foundation-repo SonnaEditorFoundation `
+  --profile-name "Sonna RAW XMP Foundation Tone Presence 002" `
+  --run-name foundation-sonna-raw-xmp-002-tone-presence `
+  --version-stem foundation-sonna-raw-xmp-002-tone-presence `
+  --max-epochs 150 `
+  --batch-size 8 `
+  --workers 8 `
+  --field-loss-weight Exposure2012=7 `
+  --field-loss-weight Whites2012=6 `
+  --field-loss-weight Blacks2012=6 `
+  --field-loss-weight Highlights2012=5 `
+  --field-loss-weight Shadows2012=4 `
+  --field-loss-weight Vibrance=4 `
+  --field-loss-weight Saturation=4
 ```
 
 For FiveK, build Expert C catalog splits first:
