@@ -101,7 +101,8 @@ This section tracks what each backend source file/folder does. Keep it updated w
 |---|---|
 | `src/sonna_editor/inference/__init__.py` | Package marker for inference code. |
 | `src/sonna_editor/inference/engine.py` | Checkpoint loading and batched prediction engine. Builds tensors from extracted previews/metadata plus scene stats, maps categorical metadata through the checkpoint registry, supports uncertainty sampling, and postprocesses outputs. |
-| `src/sonna_editor/inference/pipeline.py` | End-to-end shoot processing: scan RAW files using the central `config.SUPPORTED_RAW_EXTENSIONS` set, extract features, run inference, apply WB/skip semantics, write XMP sidecars, write `sonna_predictions.json`, and emit progress callbacks. |
+| `src/sonna_editor/inference/pipeline.py` | End-to-end shoot processing: scan RAW files using the central `config.SUPPORTED_RAW_EXTENSIONS` set, extract features, run inference, apply WB/skip semantics, optionally apply preview-based auto straightening, write XMP sidecars, write `sonna_predictions.json`, and emit progress callbacks. |
+| `src/sonna_editor/inference/straighten.py` | Optional auto-straightening postprocess. Estimates small Lightroom `CropAngle` corrections from preview edges with conservative confidence thresholds and returns CRS crop attributes only when selected per processing job. This is not a trained model output. |
 
 ### Fine-Tune Package
 
@@ -343,6 +344,14 @@ Lite checkpoints are marked with `profile_type: mode_b_initial` in the sidecar J
 - Lite survey contract correction, 2026-06-03: `src/sonna_editor/mode_b/survey.py`, `/api/profiles/lite`, and the Saha Lite wizard now capture all six Lite survey answers again. Initial Lite processing still dynamically adjusts only Exposure2012, Temperature, and Tint so the preset owns the initial look sliders.
 - Staged-head learning improvement, 2026-06-03: fresh `arch_version=3` models condition WB/presence heads on the tone block output and condition later color/detail/curve heads on tone + presence + WB outputs. Existing checkpoints load with their saved architecture version.
 - Earlier UI progress fix: `src/sonna_editor/inference/pipeline.py::process_shoot_with_model()` fires the per-photo `on_photo_complete` callback immediately after predictions are available, before the XMP write.
+- Auto straightening, 2026-06-12: the Process view now has an opt-in
+  `Auto straighten` checkbox, `/api/process` accepts `auto_straighten`, and
+  `scripts/process_shoot_model.py` exposes `--auto-straighten`. When enabled,
+  `inference/straighten.py` estimates a small Lightroom-native `CropAngle`
+  from the extracted preview and writes `HasCrop=True` / `CropAngle=...` only
+  when confidence passes conservative thresholds. The result is recorded under
+  `auto_straighten` and `straightening` in `sonna_predictions.json`. No model
+  retraining is required.
 
 ## Important behavior notes
 
@@ -351,6 +360,10 @@ Lite checkpoints are marked with `profile_type: mode_b_initial` in the sidecar J
 - Legacy v1 checkpoint support is preserved via checkpoint sidecar heuristics and output count gating.
 - Lite profile creation from a v2 base must keep `slider_set_version="v2"`; down-converting via `from_checkpoint(target_slider_set_version="v1")` is intentionally rejected by the model loader.
 - Initial Mode B/Lite checkpoints are intentionally profile carriers with preset/survey metadata and the configured foundation checkpoint's native slider set. Before fine-tuning, the UI/CLI processing path is Imagen-aligned Lite execution: uploaded preset controls the look, with per-photo Exposure/WB corrections only.
+- Auto straightening is an opt-in inference postprocess, shared by Personal AI
+  and Lite processing. It writes Lightroom crop-angle metadata from preview
+  geometry when confident; it does not use or update model checkpoints and it
+  does not train on crop labels.
 - Raw metadata extraction uses embedded JPEG EXIF first, then supplements from a `.xmp` sidecar if present.
 - Fresh `arch_version=3` models consume preview-derived scene luminance statistics and use staged output-head conditioning. Existing `arch_version=1`/`2` checkpoints load unchanged and keep their saved head shapes.
 

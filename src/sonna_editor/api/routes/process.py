@@ -61,6 +61,7 @@ async def _run_process_job(
     write_xmp_in_place: bool,
     preserve_wb: bool,
     skip_fields: list[str],
+    auto_straighten: bool,
 ) -> None:
     """Background task: run the inference pipeline and emit terminal message."""
     jobs.transition(record, "running")
@@ -78,6 +79,7 @@ async def _run_process_job(
             uncertainty=flag_low_confidence,
             preserve_wb=preserve_wb,
             extra_skip_fields=skip_fields,
+            auto_straighten=auto_straighten,
             on_photo_complete=photo_cb,
             cancel_event=record.cancel_event,
         )
@@ -126,6 +128,7 @@ async def start_process(req: ProcessRequest) -> JobAck:
         write_xmp_in_place=req.write_xmp_in_place,
         preserve_wb=req.preserve_wb,
         skip_fields=list(req.skip_fields),
+        auto_straighten=req.auto_straighten,
     ))
 
     return JobAck(job_id=record.job_id, state=record.state)

@@ -390,6 +390,8 @@ function CentreAction({
   profiles, activeProfile,
   onPickProfile,
   onProcess,
+  autoStraighten,
+  onAutoStraightenChange,
   totalRaws,
   queueCount,
   canProcess,
@@ -405,12 +407,40 @@ function CentreAction({
     }}>
       <ErrorBanner error={error} onDismiss={onDismissError} />
 
-      <Section label="Profile" last>
+      <Section label="Profile">
         <ProfileSelect
           profiles={profiles} activeProfile={activeProfile}
           onPick={onPickProfile}
           open={profileOpen} setOpen={setProfileOpen}
         />
+      </Section>
+
+      <Section label="Options" last>
+        <label style={{
+          height: 38,
+          display: 'flex',
+          alignItems: 'center',
+          gap: 10,
+          color: isProcessing ? SONNA.fgFaint : SONNA.fg,
+          fontSize: 13,
+          cursor: isProcessing ? 'not-allowed' : 'pointer',
+          userSelect: 'none',
+        }}>
+          <input
+            type="checkbox"
+            checked={autoStraighten}
+            disabled={isProcessing}
+            onChange={(e) => onAutoStraightenChange(e.target.checked)}
+            title="Apply Lightroom crop-angle straightening when confidence is high"
+            style={{
+              width: 15,
+              height: 15,
+              accentColor: SONNA.ochre,
+              cursor: isProcessing ? 'not-allowed' : 'pointer',
+            }}
+          />
+          <span>Auto straighten</span>
+        </label>
       </Section>
 
       <div style={{ flex: 1 }} />
@@ -960,6 +990,7 @@ export function Editor({ profiles = [], activeProfile, onActivateProfile, onNavi
   useEffect(() => {
     setSkipFields(new Set(activeProfile?.default_skip_fields || []));
   }, [activeProfile?.id]);
+  const [autoStraighten, setAutoStraighten] = useState(false);
   const [error, setError] = useState(null);
 
   // useRecentFolders is retained for RightEmpty's "Last run" tile only — the
@@ -1234,6 +1265,7 @@ export function Editor({ profiles = [], activeProfile, onActivateProfile, onNavi
       profile_id: activeProfile.id,
       flag_low_confidence: false,
       skip_fields: Array.from(skipFields),
+      auto_straighten: autoStraighten,
     }).catch((e) => {
       // job.start rejected before opening the WS (HTTP error). Mark the
       // folder failed and let the effect re-fire to advance.
@@ -1248,7 +1280,7 @@ export function Editor({ profiles = [], activeProfile, onActivateProfile, onNavi
       }]);
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isQueueRunning, cancelRequested, job.current?.id, job.current?.snapshot?.state, queue, activeProfile, skipFields]);
+  }, [isQueueRunning, cancelRequested, job.current?.id, job.current?.snapshot?.state, queue, activeProfile, skipFields, autoStraighten]);
 
 
   // Keyboard shortcuts (⌘O / ⌘R / ⌘.) — global for the editor.
@@ -1340,6 +1372,8 @@ export function Editor({ profiles = [], activeProfile, onActivateProfile, onNavi
           activeProfile={activeProfile}
           onPickProfile={onActivateProfile}
           onProcess={handleProcess}
+          autoStraighten={autoStraighten}
+          onAutoStraightenChange={setAutoStraighten}
           totalRaws={totalRaws}
           queueCount={queue.length}
           canProcess={canProcess}

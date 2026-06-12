@@ -443,3 +443,76 @@ def test_mode_b_initial_uses_per_photo_preset_adjuster(tmp_path: Path) -> None:
     assert sidecar["photos"]["dark.cr3"]["Exposure2012"] == pytest.approx(
         dark["Exposure2012"]
     )
+
+
+def test_pipeline_auto_straighten_writes_crop_angle_and_sidecar(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from PIL import Image, ImageDraw
+    import json as _json
+    import math
+    import torch
+
+    from sonna_editor import config
+    from sonna_editor.inference import pipeline as pl
+
+    folder = tmp_path / "shoot"
+    folder.mkdir()
+    raw = folder / "tilted.cr3"
+    raw.write_bytes(b"raw")
+    ckpt = tmp_path / "model-v1.0.1.ckpt"
+    ckpt.write_bytes(b"ckpt")
+
+    image = Image.new("RGB", (400, 300), "white")
+    draw = ImageDraw.Draw(image)
+    theta = math.radians(3.0)
+    dx = math.cos(theta) * 260
+    dy = math.sin(theta) * 260
+    draw.line((200 - dx, 150 - dy, 200 + dx, 150 + dy), fill="black", width=5)
+
+    class FakeModel:
+        _slider_set_version = "v1"
+
+    class FakeEngine:
+        _image_resolution = 384
+        _model = FakeModel()
+
+        def __init__(self, *_args, **_kwargs) -> None:
+            pass
+
+        def warmup(self) -> None:
+            pass
+
+        def predict(self, *_args, **_kwargs):
+            return torch.zeros((1, len(config.SLIDER_FIELDS)))
+
+    captured: dict[str, object] = {}
+
+    def fake_write(_path, settings, **kwargs):
+        captured["settings"] = dict(settings)
+        captured["extra_attributes"] = dict(kwargs["extra_attributes"])
+
+    monkeypatch.setattr(pl, "InferenceEngine", FakeEngine)
+    monkeypatch.setattr(pl, "_extract_one", lambda _path, _size: (image, {"as_shot_wb": None}))
+    monkeypatch.setattr(pl, "write_xmp", fake_write)
+
+    result = pl.process_shoot_with_model(
+        input_dir=folder,
+        model_path=ckpt,
+        output_dir=folder,
+        auto_straighten=True,
+        max_workers=1,
+        save_predictions=True,
+    )
+
+    assert result["processed"] == 1
+    attrs = captured["extra_attributes"]
+    assert attrs["LensProfileEnable"] == "1"
+    assert attrs["AutoLateralCA"] == "1"
+    assert attrs["HasCrop"] == "True"
+    assert float(attrs["CropAngle"]) == pytest.approx(-3.0, abs=0.5)
+
+    sidecar = _json.loads((folder / "sonna_predictions.json").read_text())
+    assert sidecar["auto_straighten"] is True
+    assert sidecar["straightening"]["tilted.cr3"]["applied"] is True

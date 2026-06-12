@@ -167,6 +167,9 @@ Do not reuse a previous --version-stem; old checkpoints are never overwritten.
 5. Process new shoots.
    - Run through the Electron UI or `scripts/process_shoot_model.py`.
    - Output XMP files are written next to RAWs by default, plus `sonna_predictions.json` for later fine-tuning.
+   - Optional auto straightening is controlled per run from the UI checkbox or
+     `--auto-straighten`; it writes Lightroom `CropAngle` metadata when the
+     preview-based estimator is confident and does not require retraining.
 
 6. Fine-tune later.
    - Capture final Lightroom tweaks.
@@ -301,7 +304,8 @@ Run the Lite checkpoint on a shoot:
 uv run python scripts\process_shoot_model.py `
   --input-dir D:\Shoots\ClientShoot01 `
   --model-path v1_learning\model-v0.2.0.ckpt `
-  --output-dir D:\Shoots\ClientShoot01\SahaOutput
+  --output-dir D:\Shoots\ClientShoot01\SahaOutput `
+  --auto-straighten
 ```
 
 Lite checkpoints are visible in the UI when they are published into
@@ -856,7 +860,8 @@ Invoke-RestMethod http://127.0.0.1:8765/api/profiles
 uv run python scripts\process_shoot_model.py `
   --input-dir D:\Shoots\ClientShoot01 `
   --model-path v1_learning\model-v2.0.0.ckpt `
-  --output-dir D:\Shoots\ClientShoot01\SahaOutput
+  --output-dir D:\Shoots\ClientShoot01\SahaOutput `
+  --auto-straighten
 ```
 
 The Electron app uses the same backend inference path.

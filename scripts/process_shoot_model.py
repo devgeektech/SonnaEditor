@@ -54,6 +54,8 @@ def main() -> None:
     parser.add_argument("--no-save-predictions", dest="save_predictions",
                         action="store_false", default=True,
                         help="Skip writing sonna_predictions.json (disables continuous learning capture).")
+    parser.add_argument("--auto-straighten", action="store_true",
+                        help="Estimate and write Lightroom CropAngle straightening when confident.")
     args = parser.parse_args()
     if args.model_path is None:
         args.model_path = _latest_published_model()
@@ -84,6 +86,8 @@ def main() -> None:
         print(f"Output:    {args.output_dir}")
     if args.uncertainty:
         print(f"Uncertainty: MC dropout, {args.uncertainty_samples} samples")
+    if args.auto_straighten:
+        print("Auto straighten: enabled")
     print()
 
     summary = process_shoot_with_model(
@@ -97,6 +101,7 @@ def main() -> None:
         dry_run=args.dry_run,
         device=args.device,
         save_predictions=args.save_predictions,
+        auto_straighten=args.auto_straighten,
     )
 
     print("Done.")

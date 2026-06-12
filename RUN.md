@@ -372,8 +372,13 @@ Run the published Lite profile with the model-processing CLI:
 uv run python scripts\process_shoot_model.py `
   --input-dir D:\Shoots\ClientShoot01 `
   --model-path v1_learning\model-v0.2.0.ckpt `
-  --output-dir D:\Shoots\ClientShoot01\SahaOutput
+  --output-dir D:\Shoots\ClientShoot01\SahaOutput `
+  --auto-straighten
 ```
+
+`--auto-straighten` is optional and matches the Process UI checkbox. It writes
+Lightroom `CropAngle` metadata only when the preview-based estimator is
+confident; it does not retrain or alter the selected profile checkpoint.
 
 ### UI-based Lite profile creation and processing
 

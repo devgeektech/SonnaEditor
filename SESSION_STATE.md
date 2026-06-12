@@ -49,6 +49,26 @@ wheels on Windows/Linux x86_64, while macOS resolves the matching public wheels.
 
 ## What Changed This Session
 
+- Added an opt-in Lightroom-native auto straightening feature:
+  - Frontend Process view now shows an `Auto straighten` checkbox.
+  - `/api/process` accepts and forwards `auto_straighten`.
+  - `scripts\process_shoot_model.py` exposes `--auto-straighten`.
+  - `src\sonna_editor\inference\straighten.py` estimates small crop-angle
+    corrections from RAW previews using a deterministic edge/projection
+    estimator, with conservative thresholds for minimum edge count, confidence,
+    and angle size.
+  - `process_shoot_with_model()` writes `crs:HasCrop="True"` and
+    `crs:CropAngle="..."` through `write_xmp(extra_attributes=...)` only when
+    `auto_straighten` is enabled and the estimator result is applied.
+  - `sonna_predictions.json` now records `auto_straighten` plus per-photo
+    `straightening` diagnostics (`angle_degrees`, `confidence`, `applied`,
+    `reason`, and `edge_count`).
+  - No model retraining is required; this is an inference/XMP postprocess for
+    both Personal AI and Lite profiles.
+- Verification for auto straightening:
+  - `uv run ruff check src\sonna_editor\inference\straighten.py src\sonna_editor\inference\pipeline.py src\sonna_editor\api\models.py src\sonna_editor\api\routes\process.py scripts\process_shoot_model.py tests\test_straighten.py tests\api\test_process_route.py tests\api\test_callback_bridge.py` passed.
+  - `uv run python -m py_compile src\sonna_editor\inference\straighten.py src\sonna_editor\inference\pipeline.py src\sonna_editor\api\models.py src\sonna_editor\api\routes\process.py scripts\process_shoot_model.py` passed.
+  - `uv run pytest tests\test_straighten.py tests\api\test_process_route.py::test_process_auto_straighten_forwarded tests\api\test_callback_bridge.py::test_pipeline_auto_straighten_writes_crop_angle_and_sidecar -q` passed: `6 passed`.
 - Ran the full local verification flow after the Pylance cleanup passes:
   - `uv run python scripts\verify_environment.py` passed `11/11` checks on
     Python 3.11.15, uv 0.11.17, PyTorch `2.11.0+cu128`, CUDA on the local RTX
@@ -600,6 +620,10 @@ wheels on Windows/Linux x86_64, while macOS resolves the matching public wheels.
 - Training on tiny splits now logs once that it adjusted `log_every_n_steps` instead of letting Lightning warn. This is expected for the current 132-row train split, which has 9 batches at batch size 16.
 - `Profile.profile_type` is already implemented in backend profile responses and frontend profile classification. `None` means a legacy trained profile; `"mode_b_initial"` means a Lite preset-derived profile.
 - Mode B/Lite checkpoints now inherit the configured foundation checkpoint's native slider set and field count. Before fine-tuning, the UI/CLI processing path treats `mode_b_initial` as an Imagen-aligned Lite profile: preset look fixed, per-photo Exposure/WB corrections only. After fine-tuning, the same profile can move back to normal model inference.
+- Auto straightening is opt-in and runs after preview extraction during
+  processing. It writes Lightroom `CropAngle` metadata only for confident small
+  rotations and records skipped/applied diagnostics in `sonna_predictions.json`.
+  It is independent of training and checkpoint versioning.
 
 ## Next Suggested Step
 

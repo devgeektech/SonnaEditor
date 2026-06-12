@@ -42,6 +42,14 @@ This checkout is a Windows development/training workspace at `C:\Users\vikas.DES
 - **Anti-collapse and retention diagnostics:** `scripts/analyse_prediction_collapse.py` reports per-slider prediction/target spread and collapsed sliders. `scripts/analyse_backbone_drift.py` compares ConvNeXt `backbone_features` tensors between a foundation checkpoint and a trained Personal AI checkpoint so FiveK/RAW+XMP feature retention can be measured instead of guessed. `scripts/audit_dataset_diversity.py` reports scene/edit diversity buckets. On the previous 27-photo validation split, existing `model-v2.0.0` showed 14 collapsed sliders and Exposure2012 std_ratio ~0.115; the rejected scene-stats candidate showed 29 collapsed sliders and near-zero Exposure spread despite lower test MAE. The previous diagnostic dataset was only 189 photos / 35 shoots, with 16 bright scenes and 9 cool-WB scenes. Those local dataset/checkpoint caches were later cleared for a fresh reset.
 - **Dark low-light exposure failure:** Diagnosis on `0H5A4599` showed the expected/training XMP had `Exposure2012=+1.11`, while the then-active `model-v2.0.0` wrote about `+0.105`. Other key tone/WB sliders and curves were close, so the root cause was not XMP writing or tone-curve endpoints; it was Exposure2012 prediction collapse. Across the previous 189-row dataset, target Exposure std was ~0.454 but model output std was ~0.061, and the darkest luminance quartile needed ~`+0.695` while the model predicted ~`+0.090`.
 - **Inference colour-cast fix:** `src/sonna_editor/inference/pipeline.py` now stabilises RGB tone-curve endpoints before writing XMP. Diagnosis from `0H5A3190A-2.xmp`: WB/Tint were close to the expected output, but Green/Blue tone-curve white endpoints below `255/255` made neutral whites render pink/red in Lightroom. The pipeline preserves RGB black endpoints at `0/0` and white endpoints at `255/255` while leaving middle curve points model-driven.
+- **Opt-in auto straightening:** the Process UI now has an `Auto straighten`
+  checkbox, `/api/process` accepts `auto_straighten`, and
+  `scripts\process_shoot_model.py` supports `--auto-straighten`. This is a
+  Lightroom-native inference postprocess, not a trained model output: when
+  enabled, `src\sonna_editor\inference\straighten.py` estimates a small
+  `CropAngle` from the extracted preview and writes crop-angle XMP metadata
+  only when confidence is high enough. `sonna_predictions.json` records
+  per-photo straightening diagnostics. No model retraining is required.
 - **Verified this pass:** full local verification on 2026-06-12 passed after the
   Pylance cleanup and foundation CLI repair. `scripts\verify_environment.py`
   passed `11/11`; `uv run ruff check .` passed; `uv run python -m compileall -q
