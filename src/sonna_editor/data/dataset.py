@@ -4,7 +4,7 @@ import hashlib
 import io
 import logging
 import multiprocessing
-from datetime import datetime, timezone
+from datetime import datetime
 from pathlib import Path
 from typing import Sequence
 
@@ -66,10 +66,6 @@ def _derive_shoot_id(capture_datetime: datetime | None, camera_body: str | None)
     """Assign a shoot ID by bucketing capture time into 12-hour windows."""
     if capture_datetime is None:
         return f"unknown_{camera_body or 'unknown'}"
-    if capture_datetime.tzinfo is not None and capture_datetime.utcoffset() is not None:
-        capture_datetime = capture_datetime.astimezone(timezone.utc).replace(tzinfo=None)
-    else:
-        capture_datetime = capture_datetime.replace(tzinfo=None)
     epoch = datetime(2000, 1, 1)
     hours_since_epoch = (capture_datetime - epoch).total_seconds() / 3600
     bucket = int(hours_since_epoch // 12)
@@ -287,7 +283,7 @@ def stratified_group_split(
     if stratify_on is None:
         # Legacy path — preserves the pre-stratified behaviour for callers that
         # explicitly opt out of stratification.
-        groups = df[group_col].values
+        groups = np.asarray(df[group_col].to_numpy())
         s1 = GroupShuffleSplit(n_splits=1, test_size=test_ratio, random_state=random_state)
         train_val_idx, test_idx = next(s1.split(df, groups=groups))
         df_tv = df.iloc[train_val_idx].reset_index(drop=True)
@@ -295,7 +291,7 @@ def stratified_group_split(
         s2 = GroupShuffleSplit(
             n_splits=1, test_size=val_ratio / (1 - test_ratio), random_state=random_state
         )
-        train_idx, val_idx = next(s2.split(df_tv, groups=df_tv[group_col].values))
+        train_idx, val_idx = next(s2.split(df_tv, groups=np.asarray(df_tv[group_col].to_numpy())))
         df_train = df_tv.iloc[train_idx].reset_index(drop=True)
         df_val = df_tv.iloc[val_idx].reset_index(drop=True)
         logger.info(

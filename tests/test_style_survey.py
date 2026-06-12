@@ -24,8 +24,9 @@ from sonna_editor.mode_b.survey import (
 # Load the CLI script as a module so we can invoke main() directly.
 _SCRIPT_PATH = Path(__file__).parent.parent / "scripts" / "run_style_survey.py"
 _spec = importlib.util.spec_from_file_location("run_style_survey", _SCRIPT_PATH)
-_run_style_survey = importlib.util.module_from_spec(_spec)
+assert _spec is not None
 assert _spec.loader is not None
+_run_style_survey = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(_run_style_survey)
 _cli_main = _run_style_survey.main
 

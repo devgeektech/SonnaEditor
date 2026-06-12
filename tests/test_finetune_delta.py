@@ -117,7 +117,10 @@ class TestAnalyseDeltas:
     def test_most_adjusted_capped_at_ten(self):
         """Output must contain at most 10 entries."""
         # Give all fields a user_final delta
-        field_entries = {f: (float(i + 1), _SOURCE_USER_FINAL) for i, f in enumerate(config.SLIDER_FIELDS)}
+        field_entries: dict[str, tuple[float | None, str]] = {
+            f: (float(i + 1), _SOURCE_USER_FINAL)
+            for i, f in enumerate(config.SLIDER_FIELDS)
+        }
         rows = [
             {
                 "deltas": _make_deltas_json(field_entries),

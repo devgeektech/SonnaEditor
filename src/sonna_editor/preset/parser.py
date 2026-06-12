@@ -4,7 +4,7 @@ import logging
 import re
 from pathlib import Path
 
-from lxml import etree
+import lxml.etree as etree
 
 from sonna_editor.config import SLIDER_FIELDS
 from sonna_editor.data.xmp import (
@@ -30,7 +30,7 @@ _LOCAL_ADJUSTMENT_INDICATORS = {
 }
 
 # Sliders whose absolute value beyond this threshold is "extreme"
-_EXTREME_THRESHOLDS: dict[str, float] = {
+_EXTREME_THRESHOLDS: dict[str, float | None] = {
     "Exposure2012": 3.0,
     "Contrast2012": 80.0,
     "Highlights2012": 90.0,

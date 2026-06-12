@@ -94,6 +94,10 @@ def _balanced_survey(**overrides: int) -> dict:
     return survey_mod.build_survey_payload(answers)
 
 
+def _empty_preset() -> dict[str, object]:
+    return {f: None for f in config.SLIDER_FIELDS}
+
+
 def _write_survey(tmp_path: Path, payload: dict) -> Path:
     path = tmp_path / "survey.json"
     survey_mod.write_survey(payload, path)
@@ -106,7 +110,7 @@ def _write_survey(tmp_path: Path, payload: dict) -> Path:
 
 def test_compute_bias_vector_returns_absolute_targets() -> None:
     """Spot-check the target semantic: bias[field] = preset + survey target."""
-    preset = {f: None for f in config.SLIDER_FIELDS}
+    preset = _empty_preset()
     preset["Exposure2012"] = 0.35
     targets = compute_bias_vector(preset, _balanced_survey())
     assert targets["Exposure2012"] == pytest.approx(0.35)
@@ -115,7 +119,7 @@ def test_compute_bias_vector_returns_absolute_targets() -> None:
 def test_compute_bias_vector_uses_lr_defaults_when_preset_absent() -> None:
     """Preset absent (falls back to LR_DEFAULTS) + neutral survey → all
     targets land at Lightroom defaults in prediction space."""
-    preset = {f: None for f in config.SLIDER_FIELDS}
+    preset = _empty_preset()
     targets = compute_bias_vector(preset, _balanced_survey())
     assert targets["Exposure2012"] == pytest.approx(0.0)
     assert targets["Sharpness"] == pytest.approx(25.0)
@@ -126,7 +130,7 @@ def test_compute_bias_vector_uses_lr_defaults_when_preset_absent() -> None:
 
 def test_compute_bias_vector_applies_survey_offset() -> None:
     """Survey offsets contribute to the target in their native units."""
-    preset = {f: None for f in config.SLIDER_FIELDS}
+    preset = _empty_preset()
     preset["Exposure2012"] = 0.3
     # survey exposure answer = 2 -> offset = +1.0 stops -> target +1.3
     survey = _balanced_survey(exposure=2)
@@ -135,7 +139,7 @@ def test_compute_bias_vector_applies_survey_offset() -> None:
 
 
 def test_compute_bias_vector_applies_all_six_survey_offsets() -> None:
-    preset = {f: None for f in config.SLIDER_FIELDS}
+    preset = _empty_preset()
     preset["Contrast2012"] = 12.0
     survey = _balanced_survey(contrast=2, saturation=-1, shadows=1)
 
@@ -148,7 +152,7 @@ def test_compute_bias_vector_applies_all_six_survey_offsets() -> None:
 
 def test_compute_bias_vector_clamps_to_range() -> None:
     """Clamp the (preset + survey) target to slider range."""
-    preset = {f: None for f in config.SLIDER_FIELDS}
+    preset = _empty_preset()
     preset["Exposure2012"] = 10.0  # outside [-5, 5]; clamps to 5
     survey = _balanced_survey(exposure=2)  # would push to 11; still clamps to 5
     targets = compute_bias_vector(preset, survey)
@@ -157,7 +161,7 @@ def test_compute_bias_vector_clamps_to_range() -> None:
 
 def test_compute_bias_vector_temperature_log_space_target() -> None:
     """Temperature target is in log-Kelvin."""
-    preset = {f: None for f in config.SLIDER_FIELDS}
+    preset = _empty_preset()
     preset["Temperature"] = 4500.0
     # survey temperature answer = -1 → offset = -500 K → target 4000 K
     survey = _balanced_survey(temperature=-1)
@@ -167,7 +171,7 @@ def test_compute_bias_vector_temperature_log_space_target() -> None:
 
 def test_compute_bias_vector_temperature_clamped_before_log() -> None:
     """Raw Kelvin clamping must happen before log() so log can't NaN."""
-    preset = {f: None for f in config.SLIDER_FIELDS}
+    preset = _empty_preset()
     preset["Temperature"] = 500.0  # below range floor 2000 → clamps to 2000
     targets = compute_bias_vector(preset, _balanced_survey())
     assert targets["Temperature"] == pytest.approx(math.log(2000.0))
@@ -176,7 +180,7 @@ def test_compute_bias_vector_temperature_clamped_before_log() -> None:
 def test_compute_bias_vector_tone_curve_identity_when_absent() -> None:
     """Tone-curve LR defaults are the identity points (51/102/...); a preset
     that omits them falls back to those."""
-    preset = {f: None for f in config.SLIDER_FIELDS}
+    preset = _empty_preset()
     targets = compute_bias_vector(preset, _balanced_survey())
     expected = [0, 51, 102, 153, 204, 255]
     for n in range(1, 7):
@@ -185,14 +189,14 @@ def test_compute_bias_vector_tone_curve_identity_when_absent() -> None:
 
 
 def test_compute_bias_vector_returns_exactly_135_fields() -> None:
-    preset = {f: None for f in config.SLIDER_FIELDS}
+    preset = _empty_preset()
     deltas = compute_bias_vector(preset, _balanced_survey())
     assert len(deltas) == V1_OUTPUT_COUNT
     assert set(deltas.keys()) == set(config.SLIDER_FIELDS[:V1_OUTPUT_COUNT])
 
 
 def test_compute_bias_vector_returns_v2_fields_when_requested() -> None:
-    preset = {f: None for f in config.SLIDER_FIELDS}
+    preset = _empty_preset()
     deltas = compute_bias_vector(
         preset,
         _balanced_survey(),
@@ -205,7 +209,7 @@ def test_compute_bias_vector_returns_v2_fields_when_requested() -> None:
 def test_compute_bias_vector_string_preset_value_falls_back_to_default() -> None:
     """Non-numeric preset values (e.g. WhiteBalance='Custom') must not crash.
     Falling back to LR_DEFAULTS means the target lands at the default."""
-    preset = {f: None for f in config.SLIDER_FIELDS}
+    preset = _empty_preset()
     preset["Exposure2012"] = "not a number"  # type: ignore[assignment]
     targets = compute_bias_vector(preset, _balanced_survey())
     assert targets["Exposure2012"] == pytest.approx(0.0)
@@ -220,7 +224,7 @@ def test_apply_biases_zeroes_final_head_weights(tmp_path: Path) -> None:
     ckpt = _make_v1_base_ckpt(tmp_path)
     model = SonnaEditor.from_checkpoint(ckpt, target_slider_set_version="v1")
     biases = compute_bias_vector(
-        {f: None for f in config.SLIDER_FIELDS},
+        _empty_preset(),
         _balanced_survey(),
     )
     apply_biases_to_model(model, biases)
@@ -237,7 +241,7 @@ def test_apply_biases_initial_output_is_preset_faithful(tmp_path: Path) -> None:
 
     ckpt = _make_v1_base_ckpt(tmp_path)
     model = SonnaEditor.from_checkpoint(ckpt, target_slider_set_version="v1")
-    preset = {f: None for f in config.SLIDER_FIELDS}
+    preset = _empty_preset()
     preset["Exposure2012"] = 0.7
     biases = compute_bias_vector(
         preset,
@@ -262,7 +266,7 @@ def test_apply_biases_sets_absolute_target_bias(tmp_path: Path) -> None:
     """Each head's final-linear bias becomes the preset/survey target."""
     ckpt = _make_v1_base_ckpt(tmp_path)
     model = SonnaEditor.from_checkpoint(ckpt, target_slider_set_version="v1")
-    preset = {f: None for f in config.SLIDER_FIELDS}
+    preset = _empty_preset()
     preset["Exposure2012"] = 0.7
     preset["Sharpness"] = 40.0
     targets = compute_bias_vector(preset, _balanced_survey(exposure=1))
@@ -289,7 +293,7 @@ def test_apply_biases_supports_v2_model_and_zeroes_wb_skip() -> None:
         slider_set_version="v2",
     )
     biases = compute_bias_vector(
-        {f: None for f in config.SLIDER_FIELDS},
+        _empty_preset(),
         _balanced_survey(),
         slider_set_version="v2",
     )

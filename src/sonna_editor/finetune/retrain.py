@@ -311,7 +311,12 @@ def finetune_model(
         trainer.fit(lm, datamodule=dm)
         epochs_trained = trainer.current_epoch + 1
 
-        best_ckpt_path = trainer.checkpoint_callback.best_model_path
+        best_ckpt_path = ckpt_callback.best_model_path
+        if not best_ckpt_path:
+            trainer_ckpt_callback = getattr(trainer, "checkpoint_callback", None)
+            best_ckpt_path = str(
+                getattr(trainer_ckpt_callback, "best_model_path", "") or ""
+            )
         if not best_ckpt_path:
             raise RuntimeError("No best checkpoint was saved — training may have failed immediately.")
 

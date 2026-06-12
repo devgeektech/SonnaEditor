@@ -12,6 +12,8 @@ from sonna_editor import config
 # Load the migration script as a module (it lives in scripts/, not src/).
 _SCRIPT_PATH = Path(__file__).parent.parent / "scripts" / "migrate_labels_to_v2.py"
 _spec = importlib.util.spec_from_file_location("migrate_labels_to_v2", _SCRIPT_PATH)
+assert _spec is not None
+assert _spec.loader is not None
 _migrate = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(_migrate)
 

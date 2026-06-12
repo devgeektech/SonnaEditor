@@ -4,7 +4,7 @@
 
 Sonna Editor is a local desktop tool for predicting Lightroom slider adjustments from RAW images. It uses a PyTorch regression model trained on Lightroom-edited photos, then writes XMP sidecars alongside RAW files. The UI is Electron + React and the backend is Python. The runtime target is cross-platform: macOS, Windows, and Linux.
 
-Current local workspace state as of 2026-06-09:
+Current local workspace state as of 2026-06-12:
 - Windows path: `C:\Users\vikas.DESKTOP-61LEE8B\Projects\SonnaEditor`
 - Python 3.11.15 via uv 0.11.17. `pyproject.toml` / `uv.lock` require Python `3.11.*`.
 - PyTorch `2.11.0+cu128`, CUDA active on NVIDIA GeForce RTX 3050. `torch==2.11.0` / `torchvision==0.26.0` are exact-pinned in `pyproject.toml`; Windows/Linux x86_64 resolve CUDA 12.8 local wheels through the configured PyTorch index, while macOS resolves public wheels.
@@ -12,6 +12,14 @@ Current local workspace state as of 2026-06-09:
 - There is no guaranteed local `data/training_workspace/sonna_personal_001_dataset/` split set or frontend-visible `v1_learning/model-v*.ckpt` profile until fresh RAW+XMP data is added and a Personal AI profile is trained or a checkpoint is intentionally published. The duplicate generated folder `v1_learning/dataset` was removed. Generated datasets, splits, thumbnails, audits, and run workspaces belong under `data/training_workspace`; `v1_learning` is reserved for frontend-visible checkpoint/sidecar/preset/survey files.
 - Historical diagnostics from the previous 189-photo local dataset remain useful for collapse analysis context, but do not assume those local Parquet/checkpoint files are present in this checkout.
 - Supported RAW extension scanning is centralised in `config.SUPPORTED_RAW_EXTENSIONS` and currently covers `.cr2`, `.cr3`, `.nef`, `.arw`, `.raf`, `.orf`, `.rw2`, `.pef`, `.dng`, `.x3f`, `.rwl`, and `.srw` across dataset building, folder/API scans, preset processing, model inference, and fine-tune capture. Decode/conversion still depends on `rawpy`/LibRaw or Adobe DNG Converter supporting the specific camera file.
+- Preferred app startup is now one command: `.\run_saha.cmd` on Windows and
+  `bash run_saha.sh` on macOS/Linux. The legacy two-terminal backend/frontend
+  commands are still documented as a debugging reference.
+- Latest full local verification on 2026-06-12 passed: environment `11/11`,
+  `uv run ruff check .`, `uv run python -m compileall -q src scripts tests`,
+  `npm run build:vite`, and `uv run pytest -q` (`753 passed, 45 skipped,
+  1 warning`). The remaining warning is the known PyTorch scalar-conversion
+  warning in `tests/test_losses.py`.
 
 The core inference flow is:
 - extract RAW preview + metadata
@@ -26,6 +34,13 @@ The core inference flow is:
 - `tests/`: pytest coverage for Python code
 - `scripts/`: command-line scripts for training, dataset building, auditing, and inference
 - `saha-app/`: Electron + React frontend UI
+- `scripts/run_app.py`: one-command development launcher. It bootstraps runtime
+  folders, checks for Node/npm, installs frontend npm dependencies when
+  `saha-app/node_modules` is missing, then runs the Electron dev app. Electron
+  starts or reuses the FastAPI backend on port 8765.
+- `run_saha.cmd` / `run_saha.ps1` / `run_saha.sh`: root-level client-friendly
+  wrappers around `uv run python scripts/run_app.py`; use `bash run_saha.sh`
+  on macOS/Linux so the wrapper does not depend on executable file mode.
 - `data/`: gitignored local learning area. `data/training_sources/` stores source RAW/XMP inputs in separate child folders per dataset or run; `data/training_workspace/` stores generated datasets and training runs, including catalog-derived FiveK splits. Fresh clones auto-create this tree at runtime.
 - `v1_learning/`: frontend-visible published profile checkpoints plus sidecar/preset/survey files only. Generated datasets do not belong here.
 - `.saha/`: repo-local runtime state for active-profile selection, recent folders, job snapshots, Personal AI training scratch runs, and fine-tune scratch runs. Auto-created at runtime and gitignored.
@@ -261,6 +276,10 @@ This section tracks what each backend source file/folder does. Keep it updated w
 - `scripts/analyse_backbone_drift.py`: compares ConvNeXt `backbone_features` tensors between a foundation checkpoint and a Personal AI checkpoint, reporting per-stage relative drift, cosine similarity, and the largest tensor changes.
 - `scripts/run_style_survey.py`: create the Mode B/Lite survey JSON used with preset-based checkpoint creation
 - `scripts/build_mode_b_checkpoint.py`: create a Lite checkpoint from preset + survey + configured foundation checkpoint; if `--output` is omitted it publishes the next `v1_learning/model-v0.N.0.ckpt` for frontend visibility
+- `scripts/run_app.py`: starts Saha from the repo root with one command by
+  preparing runtime folders, checking Node/npm, ensuring frontend dependencies
+  exist, and running `npm run dev` under `saha-app/`. The Electron main process
+  handles backend startup/shutdown.
 - `scripts/process_shoot_preset.py`: direct preset-to-XMP execution with heuristic per-photo corrections, without creating a model checkpoint
 - `scripts/train_v1_2_0_full_production.py`: train the main v1 model
 - `scripts/train_profile.py`: current supported training entry point for new profiles
@@ -288,7 +307,8 @@ Lite checkpoints are marked with `profile_type: mode_b_initial` in the sidecar J
 - Training log clarity fix, 2026-06-01: `scripts/train_profile.py` no longer labels default v2 recipe settings as overrides. It reports defaults as `Training recipe ...` and reserves `Override ...` for explicit CLI flags.
 - Training runner packaging, 2026-06-02: the training callable now lives in `src/sonna_editor/training/profile_runner.py`; `scripts/train_profile.py` is a CLI wrapper. The API imports the packaged runner instead of importing a script module.
 - Warm-start calibration, 2026-06-08: `src/sonna_editor/training/profile_runner.py` now recalibrates warm-started model output-head final biases from the current train split while preserving learned final weights. Fresh models still zero final output-head weights before applying target medians. This keeps foundation features but avoids stale output priors, such as FiveK Saturation/Vibrance baselines, dominating small Sonna continuation runs.
-- Tone/presence focused loss overrides, 2026-06-10: `src/sonna_editor/training/profile_runner.py` accepts repeatable `--field-loss-weight FIELD=WEIGHT` overrides for any slider in `config.SLIDER_FIELDS`, records the parsed map in `training_summary.json`, and `scripts/train_foundation_model.py` passes those overrides through. The foundation CLI also has `--tone-presence-retry`, a reviewed shortcut that raises retry weights for Exposure2012, Whites2012, Blacks2012, Highlights2012, Shadows2012, Vibrance, and Saturation while respecting explicit per-field overrides. Use this before collecting more data when a foundation run is close on WB but misses tone/presence gate metrics.
+- Tone/presence focused loss overrides, verified 2026-06-12: `src/sonna_editor/training/profile_runner.py` accepts repeatable `--field-loss-weight FIELD=WEIGHT` overrides for any slider in `config.SLIDER_FIELDS`, records the parsed map in `training_summary.json`, and `scripts/train_foundation_model.py` passes those overrides through. The foundation CLI also exposes and forwards `--tone-presence-retry`, a reviewed shortcut that raises retry weights for Exposure2012, Whites2012, Blacks2012, Highlights2012, Shadows2012, Vibrance, and Saturation while respecting explicit per-field overrides. Use this before collecting more data when a foundation run is close on WB but misses tone/presence gate metrics.
+- Profile runner Pylance cleanup, 2026-06-12: `src/sonna_editor/training/profile_runner.py` now narrows datamodule datasets/registry after `setup()`, types checkpoint path args explicitly, and reads the named `ModelCheckpoint` callback's best path/score through helper functions. This keeps VS Code/Pylance clean without changing training behavior.
 - Foundation quality-gate diagnostics, 2026-06-10: `scripts/train_foundation_model.py` now writes `quality_gate_passed` and `foundation_quality_failures` back into `training_summary.json` before returning a promotion failure. `src/sonna_editor/training/profile_runner.py` records `hparams.max_epochs` in summaries, and `scripts/quick_diagnostic.py` prints backbone capacity, field-loss overrides, plus a train-median baseline comparison for failed gate fields when train/test Parquet paths are present.
 - Foundation visual checkpoint selection, 2026-06-10: foundation training now passes `checkpoint_monitor="val_visual_score"` into `train_profile()`. `SonnaLightningModule` logs `val_visual_score`, a lower-is-better visual composite over Exposure, WB, tone, presence, HSL average, and key collapse ratios. `train_profile()` still records best true val-loss separately while exporting the checkpoint selected by the configured monitor.
 - Foundation quality-gate tiering, 2026-06-10: foundation promotion now distinguishes hard failures from warnings. Hard failures still block promotion unless explicitly overridden after review; moderate misses are persisted as `foundation_quality_warnings`, printed to stderr, and allowed to promote so useful checkpoints are not blocked by one noisy slider.
@@ -303,7 +323,7 @@ Lite checkpoints are marked with `profile_type: mode_b_initial` in the sidecar J
 - Mode B root-cause fix, 2026-06-02: stale `model-v0.1.0` was built with inherited final-layer base weights plus preset bias shifts, matching the observed double-apply failure. A corrected `model-v0.2.0` Lite profile was published, stale `model-v0.1.0` artifacts were removed, and `preset.adjuster` now guards auto exposure with upper-tone percentiles after real-folder testing showed mean-only exposure could still over-lift shadow-heavy event frames.
 - Training warning cleanup, 2026-06-01: current training suppresses the upstream Lightning `LeafSpec` deprecation and optional Torch Triton FLOP-counter warning, and adjusts `log_every_n_steps` for tiny datasets. A one-epoch smoke run on the local 132-row split with two workers completed without those three warnings.
 - Quick diagnostic clarity fixes, 2026-06-02 and 2026-06-04: `scripts/quick_diagnostic.py` reports train/val/test row counts for older summaries that do not embed those fields by reading split parquet metadata. The latest output adds recommended-score targets beside each critical metric, marks passing metrics with green-circle `OK`, treats missing `published_model` as normal for foundation runs, and prints foundation-aware next steps instead of a generic "run training" checklist.
-- Mac setup runbook, 2026-06-03: `MAC_SETUP.md` documents Apple Silicon setup from system tools through backend/frontend startup, Personal AI, Lite profiles, processing, fine-tuning, diagnostics, and CLI equivalents for frontend-capable steps.
+- Mac setup runbook, updated 2026-06-12: `MAC_SETUP.md` documents Apple Silicon setup from system tools through one-command startup, the legacy two-terminal startup reference, Personal AI, Lite profiles, processing, fine-tuning, diagnostics, and CLI equivalents for frontend-capable steps.
 - Foundation/Lite decoupling, 2026-06-03 and paired-image path removal 2026-06-05: Lite profile creation now resolves the configured foundation checkpoint through `sonna_editor.foundation.resolve_foundation_checkpoint()` instead of using the active Personal AI profile. `scripts/train_foundation_model.py` is the canonical CLI for real-parameter foundation training from RAW+XMP or prepared catalog splits, then promotion into the repo-local hidden foundation folder. The old paired rendered-image foundation trainer and hybrid decoder checkpoint path were removed.
 - Local FiveK folder review, 2026-06-05: the current extracted folder is `C:\Users\vikas.DESKTOP-61LEE8B\Downloads\fivek_dataset\fivek_dataset`. It contains 5,000 `.dng` inputs under `raw_photos\HQa*`, `raw_photos\fivek.lrcat`, Lightroom `.lrprev` preview files, text/license/category files, and helper/catalog-data folders. The Lightroom catalog has 60,000 `Adobe_images` rows over the same 5,000 DNG files, with 12 virtual-copy/recipe variants per DNG and expert collections A/B/C/D/E at 5,000 rows each. The catalog route is now the supported FiveK foundation path.
 - FiveK catalog slider route, 2026-06-05: `scripts/build_dataset_from_catalog.py` now supports `--collection-name "C"` and `--include-unedited-looking`. Use these together for a FiveK Expert C slider-regression foundation experiment. FiveK develop blobs are sparse, so missing/default sliders would otherwise be mistaken for an unedited photo. Do not mix all 60,000 FiveK catalog rows in one plain unconditioned slider model; train one expert collection first, then audit collapse before using it as an active foundation.

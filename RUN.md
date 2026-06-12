@@ -67,7 +67,45 @@ Preferred torch device: cuda
 GPU: NVIDIA GeForce RTX 3050
 ```
 
-## 3. Backend API
+## 3. Start The App
+
+From the repo root, use the one-command launcher.
+
+Windows PowerShell:
+
+```powershell
+.\run_saha.cmd
+```
+
+macOS/Linux shell:
+
+```bash
+bash run_saha.sh
+```
+
+The launcher creates the repo-local runtime folders, installs frontend npm
+dependencies if `saha-app/node_modules/` is missing, then runs the Electron dev
+app. Electron reuses an existing backend on port `8765` or starts
+`scripts/serve.py` itself and shuts it down when the app quits.
+
+Prerequisites for both Windows and macOS: `uv` and Node.js LTS must be on
+`PATH`. If either is missing, the launcher prints a setup message instead of
+failing deep inside the app startup.
+
+For a fully explicit command, the wrappers call:
+
+```bash
+uv run python scripts/run_app.py
+```
+
+Pass `--skip-install` if you want the launcher to fail instead of running
+`npm install` when frontend dependencies are missing.
+
+PowerShell users can also run `.\run_saha.ps1`; the `.cmd` wrapper is the
+lowest-friction Windows option because it avoids script execution-policy
+prompts.
+
+## 4. Manual Backend API
 
 ```bash
 uv run python scripts/serve.py --port 8765
@@ -75,7 +113,7 @@ uv run python scripts/serve.py --port 8765
 
 The API should respond at `http://127.0.0.1:8765/api/health`.
 
-## 4. Electron UI
+## 5. Manual Electron UI
 
 Open a second terminal:
 
@@ -88,7 +126,7 @@ npm run dev
 Electron starts the React UI and connects it to the backend. In development it
 can also spawn the backend itself when `uv` is on `PATH`.
 
-## 5. Optional DNG Converter
+## 6. Optional DNG Converter
 
 For DNG conversion workflows, install Adobe DNG Converter and either use the
 default installer path or set:
@@ -103,7 +141,7 @@ PowerShell equivalent:
 $env:SONNA_DNG_CONVERTER = "C:\Path\To\Adobe DNG Converter.exe"
 ```
 
-## 6. Train A Profile
+## 7. Train A Profile
 
 Training needs target Lightroom slider values. RAW files alone are not enough
 for supervised training. Use one of these dataset sources:

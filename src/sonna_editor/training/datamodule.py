@@ -77,6 +77,9 @@ def _scene_stats_from_row(row: pd.Series, hist: torch.Tensor) -> torch.Tensor:
     missing = False
     for field in SCENE_STAT_FIELDS:
         value = row.get(field)
+        if value is None:
+            missing = True
+            break
         try:
             f = float(value)
         except (TypeError, ValueError):
@@ -191,7 +194,7 @@ class SonnaDataset(Dataset):
     def __len__(self) -> int:
         return len(self._df)
 
-    def __getitem__(self, idx: int) -> tuple[torch.Tensor, dict[str, torch.Tensor], torch.Tensor]:
+    def __getitem__(self, idx: int) -> tuple[torch.Tensor, dict[str, torch.Tensor | str], torch.Tensor]:
         row = self._df.iloc[idx]
 
         # --- Image ---
@@ -218,7 +221,7 @@ class SonnaDataset(Dataset):
 
         hist = _decode_histogram(row["histogram"])
 
-        metadata: dict[str, torch.Tensor] = {
+        metadata: dict[str, torch.Tensor | str] = {
             "iso":            torch.tensor(_safe_float(row.get("iso")),            dtype=torch.float32),
             "shutter_speed":  torch.tensor(_safe_float(row.get("shutter_speed")), dtype=torch.float32),
             "aperture":       torch.tensor(_safe_float(row.get("aperture")),       dtype=torch.float32),
@@ -304,25 +307,42 @@ class SonnaDataModule(pl.LightningDataModule):
 
         if self.registry is None:
             self.registry = build_registry(df_train)
+        registry = self.registry
 
         if self.sample_weight_col and self.sample_weight_col in df_train.columns:
-            self._train_weights = df_train[self.sample_weight_col].fillna(1.0).tolist()
+            self._train_weights = [float(value) for value in df_train[self.sample_weight_col].fillna(1.0).tolist()]
 
         train_aug = TrainingAugmentation()
         val_aug   = ValidationAugmentation()
 
         self._train_ds = SonnaDataset(
-            df_train, train_aug, self.registry, self.slider_set_version
+            df_train, train_aug, registry, self.slider_set_version
         )
         self._val_ds = SonnaDataset(
-            df_val, val_aug, self.registry, self.slider_set_version
+            df_val, val_aug, registry, self.slider_set_version
         )
         self._test_ds = SonnaDataset(
-            df_test, val_aug, self.registry, self.slider_set_version
+            df_test, val_aug, registry, self.slider_set_version
         )
+
+    def _require_train_dataset(self) -> SonnaDataset:
+        if self._train_ds is None:
+            raise RuntimeError("SonnaDataModule.setup() must be called before train_dataloader().")
+        return self._train_ds
+
+    def _require_val_dataset(self) -> SonnaDataset:
+        if self._val_ds is None:
+            raise RuntimeError("SonnaDataModule.setup() must be called before val_dataloader().")
+        return self._val_ds
+
+    def _require_test_dataset(self) -> SonnaDataset:
+        if self._test_ds is None:
+            raise RuntimeError("SonnaDataModule.setup() must be called before test_dataloader().")
+        return self._test_ds
 
     def train_dataloader(self) -> DataLoader:
         pin_memory = supports_pinned_memory()
+        train_ds = self._require_train_dataset()
         weights = self._train_weights
         if weights is not None:
             first = weights[0]
@@ -331,13 +351,14 @@ class SonnaDataModule(pl.LightningDataModule):
             use_sampler = False
 
         if use_sampler:
+            assert weights is not None
             sampler = WeightedRandomSampler(
                 weights=weights,
                 num_samples=len(weights),
                 replacement=True,
             )
             return DataLoader(
-                self._train_ds,
+                train_ds,
                 batch_size=self.batch_size,
                 sampler=sampler,
                 num_workers=self.num_workers,
@@ -345,7 +366,7 @@ class SonnaDataModule(pl.LightningDataModule):
                 pin_memory=pin_memory,
             )
         return DataLoader(
-            self._train_ds,
+            train_ds,
             batch_size=self.batch_size,
             shuffle=True,
             num_workers=self.num_workers,
@@ -354,8 +375,9 @@ class SonnaDataModule(pl.LightningDataModule):
         )
 
     def val_dataloader(self) -> DataLoader:
+        val_ds = self._require_val_dataset()
         return DataLoader(
-            self._val_ds,
+            val_ds,
             batch_size=self.batch_size,
             shuffle=False,
             num_workers=self.num_workers,
@@ -364,8 +386,9 @@ class SonnaDataModule(pl.LightningDataModule):
         )
 
     def test_dataloader(self) -> DataLoader:
+        test_ds = self._require_test_dataset()
         return DataLoader(
-            self._test_ds,
+            test_ds,
             batch_size=self.batch_size,
             shuffle=False,
             num_workers=self.num_workers,

@@ -10,7 +10,7 @@ import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Callable, Iterable, Optional
+from typing import Callable, Iterable, Optional, cast
 from PIL import Image
 
 from sonna_editor import config
@@ -79,7 +79,7 @@ _RGB_TONE_CURVE_PREFIXES: tuple[str, ...] = (
 
 
 def _apply_wb_skip_substitution(
-    slider_dict: dict[str, float],
+    slider_dict: dict[str, float | None] | dict[str, float],
     effective_skip: frozenset[str],
     as_shot_wb: tuple[float, float] | None,
 ) -> None:
@@ -104,7 +104,9 @@ def _apply_wb_skip_substitution(
         slider_dict["Tint"] = float(as_shot_wb[1])
 
 
-def _stabilise_rgb_tone_curve_endpoints(slider_dict: dict[str, float]) -> None:
+def _stabilise_rgb_tone_curve_endpoints(
+    slider_dict: dict[str, float | None] | dict[str, float],
+) -> None:
     """Keep RGB tone-curve black/white endpoints neutral.
 
     Lightroom per-channel tone curves are powerful enough to colour-cast the
@@ -155,7 +157,7 @@ TEMPERATURE_LOG_CLAMP: tuple[float, float] = (
 )
 
 
-def _apply_temperature_clamp(slider_dict: dict[str, float]) -> None:
+def _apply_temperature_clamp(slider_dict: dict[str, float | None]) -> None:
     """Apply the Temperature epistemic clamp in-place.
 
     Mutates `slider_dict["Temperature"]` if present and non-zero. Silent —
@@ -456,7 +458,7 @@ def process_shoot_with_model(
         photo_start = time.monotonic()
         if is_mode_b_initial:
             assert mode_b_preset is not None
-            full_slider_dict = _mode_b_adjusted_values_for_photo(
+            full_slider_dict: dict[str, float | None] = _mode_b_adjusted_values_for_photo(
                 previews[i],
                 metadatas[i],
                 mode_b_preset,
@@ -464,14 +466,17 @@ def process_shoot_with_model(
             )
         else:
             assert preds is not None
-            full_slider_dict = predictions_to_dict(preds, batch_idx=i)  # all model fields
+            full_slider_dict = cast(
+                dict[str, float | None],
+                predictions_to_dict(preds, batch_idx=i).copy(),
+            )  # all model fields
             # Epistemic clamp on Temperature — bounded to training data range.
             # See TEMPERATURE_LOG_CLAMP definition above for rationale.
             _apply_temperature_clamp(full_slider_dict)
             _stabilise_rgb_tone_curve_endpoints(full_slider_dict)
         full_predictions_by_file[raw_path.name] = full_slider_dict
 
-        filtered_slider_dict = {
+        filtered_slider_dict: dict[str, float | None] = {
             k: v for k, v in full_slider_dict.items()
             if k not in effective_skip
         }

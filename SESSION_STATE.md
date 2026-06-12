@@ -1,13 +1,18 @@
 # Session State - Sonna Editor
 
-**Saved:** 2026-06-10 local time
-**Current phase/task:** Foundation tone/presence retry support after RAW+XMP quality-gate miss.
+**Saved:** 2026-06-12 local time
+**Current phase/task:** One-command cross-platform app startup and documentation alignment.
 
 ## Current Workspace
 
 - Repo path: `C:\Users\vikas.DESKTOP-61LEE8B\Projects\SonnaEditor`
 - Branch: `main`, tracking `origin/main`
 - Recent committed history in this checkout: `aac360a feat: Enhance dataset building and training scripts` on top of four earlier commits.
+- Current worktree includes the launcher/docs updates plus unrelated existing
+  code/test modifications under `scripts\train_foundation_model.py`,
+  `src\sonna_editor\data\dataset.py`, `src\sonna_editor\foundation.py`,
+  `src\sonna_editor\training\profile_runner.py`, and focused tests. The
+  launcher/docs pass did not revert or normalize those code changes.
 - Training/profile caches were intentionally cleared for a fresh dataset reset.
 - Cleared repo-local generated artifacts: `data\training_workspace\sonna_personal_001_dataset`, `data\models`, `data\parquet`, `data\captures`, `data\thumbnails`, `data\audits`, `data\dbg`, `data\raw\sonna_training`, `.pytest_cache`, `.ruff_cache`.
 - Cleared frontend active-profile pointer: `.saha\active_profile.txt`.
@@ -44,6 +49,195 @@ wheels on Windows/Linux x86_64, while macOS resolves the matching public wheels.
 
 ## What Changed This Session
 
+- Ran the full local verification flow after the Pylance cleanup passes:
+  - `uv run python scripts\verify_environment.py` passed `11/11` checks on
+    Python 3.11.15, uv 0.11.17, PyTorch `2.11.0+cu128`, CUDA on the local RTX
+    3050, and the default Adobe DNG Converter path.
+  - `uv run ruff check .` passed.
+  - `uv run python -m compileall -q src scripts tests` passed.
+  - `npm run build:vite` passed in `saha-app\` after rerunning outside the
+    sandbox because the sandboxed attempt hit the Windows
+    `CreateProcessAsUserW failed: 1312` runner issue.
+  - `uv run pytest -q` passed after the foundation CLI fix:
+    `753 passed, 45 skipped, 1 warning` in `199.33s`. The remaining warning is
+    the known PyTorch scalar-conversion warning in
+    `tests\test_losses.py::test_per_row_mask_all_bad_returns_zero_loss`.
+  - `git diff --check` passed with only Git line-ending notices.
+- Smoke-checked documented entry points:
+  - `uv run python scripts\run_app.py --help` passed.
+  - `cmd /c run_saha.cmd --help` passed after rerunning outside the sandbox for
+    the same Windows process-launch issue.
+  - `uv run python scripts\serve.py --help` passed.
+  - `uv run python scripts\train_profile.py --help` passed.
+  - `uv run python scripts\quick_diagnostic.py --help` passed.
+- The whole-flow smoke check found a real mismatch:
+  `scripts\train_foundation_model.py --help` did not expose the documented
+  `--tone-presence-retry` or repeatable `--field-loss-weight FIELD=WEIGHT`
+  flags, so the foundation retry recipe described in `HANDOVER.md`,
+  `CLI_COMMANDS.md`, `FOUNDATION_TRAINING.md`, and `RUN.md` was not actually
+  runnable from the foundation CLI.
+- Fixed the foundation CLI mismatch:
+  `scripts\train_foundation_model.py` now exposes `--tone-presence-retry` and
+  repeatable `--field-loss-weight FIELD=WEIGHT`, prepends the reviewed retry
+  recipe weights for Exposure2012, Whites2012, Blacks2012, Highlights2012,
+  Shadows2012, Vibrance, and Saturation, and preserves explicit per-field
+  overrides by appending them after the preset before forwarding into
+  `train_profile()`.
+- Added regression coverage in `tests\test_train_foundation_model.py` for
+  parser defaults, parser acceptance of the retry/field-weight flags, retry
+  recipe construction, and explicit-only field-weight forwarding.
+- Verification for the foundation CLI fix:
+  - `uv run ruff check scripts\train_foundation_model.py tests\test_train_foundation_model.py` passed.
+  - `uv run python -m py_compile scripts\train_foundation_model.py tests\test_train_foundation_model.py` passed.
+  - `uv run pytest tests\test_train_foundation_model.py -q` passed:
+    `17 passed`.
+  - `uv run python scripts\train_foundation_model.py --help` now shows both
+    `--tone-presence-retry` and `--field-loss-weight FIELD=WEIGHT`.
+- Fixed the pasted Pylance diagnostics in
+  `src\sonna_editor\model\architecture.py` by casting the registered
+  `focal_bins` buffer back to `torch.Tensor` before `torch.bucketize()` and
+  routing the dynamic `torch.jit.is_scripting()` call through `Any` so Pylance
+  no longer treats it as a private/export issue.
+- Verification for the architecture cleanup:
+  - `uv run ruff check src\sonna_editor\model\architecture.py tests\test_training.py` passed.
+  - `uv run python -m py_compile src\sonna_editor\model\architecture.py tests\test_training.py` passed.
+  - `uv run pytest tests\test_training.py -q` passed: `77 passed`.
+- Fixed the pasted Pylance diagnostics in
+  `src\sonna_editor\finetune\delta.py` by narrowing the
+  `scipy.stats.spearmanr()` result to scalar `float` values before calling
+  `np.isnan`, `abs`, `round`, and threshold comparisons.
+- Verification for the finetune delta cleanup:
+  - `uv run ruff check src\sonna_editor\finetune\delta.py tests\test_finetune_delta.py` passed.
+  - `uv run python -m py_compile src\sonna_editor\finetune\delta.py tests\test_finetune_delta.py` passed.
+  - `uv run pytest tests\test_finetune_delta.py -q` passed: `17 passed`.
+- Fixed two follow-up Pylance diagnostics:
+  `scripts\run_v1_pilot.py` now filters sample-prediction metadata to tensor
+  values before calling `.unsqueeze()`, and
+  `src\sonna_editor\finetune\capture.py` now casts through `Any` inside the
+  safe float helper so Pylance accepts the guarded conversion.
+- Verification for the follow-up diagnostics:
+  - `uv run ruff check scripts\run_v1_pilot.py src\sonna_editor\finetune\capture.py` passed.
+  - `uv run python -m py_compile scripts\run_v1_pilot.py src\sonna_editor\finetune\capture.py` passed.
+  - `uv run python scripts\run_v1_pilot.py --help` passed; it printed the
+    existing Torch/Triton warning after showing help.
+- Fixed the latest pasted Pylance batch in RAW preview extraction, fine-tune
+  capture/retrain, inference postprocessing, Mode B checkpoint tests, training
+  metadata tests, and weighted-loss gradient assertions. The cleanup adds
+  explicit byte/array coercion for rawpy thumbnails, a safe float coercion for
+  captured edit deltas, a mock-compatible checkpoint callback fallback in
+  fine-tune retraining, typed preset/metadata test helpers, and explicit casts
+  where model predictions intentionally widen from `float` to `float | None`.
+- Verification for the latest Pylance batch:
+  - `uv run ruff check ...` over the affected source/tests passed.
+  - `uv run python -m py_compile ...` over the affected source/tests passed.
+  - Focused pytest passed:
+    `tests\test_catalog_dataset.py tests\test_checkpoint_builder.py tests\test_finetune_delta.py tests\test_inference_v2.py tests\test_losses.py tests\test_training.py tests\test_finetune_retrain.py tests\test_finetune_capture.py tests\test_inference_pipeline_integration.py -q`
+    returned `227 passed, 1 warning` in `63.67s`. The warning is the existing
+    PyTorch scalar-conversion warning in `tests\test_losses.py`.
+- Fixed the pasted Pylance diagnostics across data extraction/XMP parsing,
+  fine-tune capture, inference pipeline typing, Mode B survey/checkpoint
+  helpers, weighted loss buffers/metadata, datamodule dataset narrowing,
+  unfreeze callback access, and the named tests. The cleanup mostly switches
+  exact mutable `dict` parameters to covariant `Mapping` where appropriate,
+  narrows optional/rawpy/Pillow/lxml values, adds overloads for
+  `WeightedSliderLoss.forward(return_components=True)`, and adds test-local
+  assertions/casts for intentional fakes.
+- Verification for this broad Pylance cleanup:
+  - `uv run ruff check ...` over all files named in the diagnostic batch passed.
+  - `uv run python -m py_compile ...` over all files named in the diagnostic batch passed.
+  - Focused pytest across touched modules/tests passed:
+    `417 passed, 35 skipped, 1 warning` in `134.70s`.
+- Fixed the pasted Pylance diagnostics in legacy v1 training scripts:
+  `scripts\run_v1_pilot.py` and
+  `scripts\train_v1_2_0_full_production.py`.
+  The cleanup replaces `Path.is_mount()` with `os.path.ismount()` for the
+  mount check, narrows optional datamodule datasets/registries after `setup()`,
+  keeps named `ModelCheckpoint` callback variables for best checkpoint
+  path/score reads, guards optional `__doc__`, and casts catalog included-row
+  counts before percentage math.
+- Verification for the legacy v1 script static-analysis cleanup:
+  - `uv run ruff check scripts\run_v1_pilot.py scripts\train_v1_2_0_full_production.py` passed.
+  - `uv run python -m py_compile scripts\run_v1_pilot.py scripts\train_v1_2_0_full_production.py` passed.
+  - `uv run python scripts\train_v1_2_0_full_production.py --help` passed.
+  - `uv run python scripts\run_v1_pilot.py --help` passed.
+- Fixed the pasted Pylance diagnostics in:
+  `scripts\quick_diagnostic.py`, `scripts\finetune_profile.py`,
+  `src\sonna_editor\data\audit.py`, and `src\sonna_editor\data\dataset.py`.
+  The changes narrow optional/regex/pandas/sklearn group values without
+  changing runtime behavior.
+- Verification for this static-analysis cleanup:
+  - `uv run ruff check scripts\quick_diagnostic.py scripts\finetune_profile.py src\sonna_editor\data\audit.py src\sonna_editor\data\dataset.py` passed.
+  - `uv run python -m py_compile scripts\quick_diagnostic.py scripts\finetune_profile.py src\sonna_editor\data\audit.py src\sonna_editor\data\dataset.py` passed.
+  - `uv run pytest tests\test_dataset.py tests\test_audit.py tests\test_quick_diagnostic.py -q` passed: `65 passed, 1 skipped`.
+  - `uv run python scripts\finetune_profile.py --list-versions --output-dir v1_learning` passed.
+  - `uv run pyright ...` could not run because `pyright` is not installed in the uv environment.
+- Fixed the pasted Pylance diagnostics in
+  `src\sonna_editor\training\profile_runner.py`:
+  - narrowed datamodule train/val/test datasets after `setup()` before calling
+    `len()`
+  - checked the optional registry before reading embedding maps
+  - typed `resume_from_checkpoint` / `base_model_checkpoint` as optional
+    `Path` values and guarded the warm-start path
+  - kept a named `ModelCheckpoint` callback and reads best checkpoint path/score
+    through helper functions instead of `trainer.checkpoint_callback`, whose
+    Lightning type is too generic for Pylance
+- Restored `_parse_field_loss_weight_overrides`, the repeatable
+  `--field-loss-weight FIELD=WEIGHT` CLI argument, and the matching
+  `_apply_training_overrides()` hook because tests and current foundation retry
+  docs still rely on named slider loss overrides.
+- Verification for the Pylance/profile runner cleanup:
+  - `uv run ruff check src\sonna_editor\training\profile_runner.py` passed.
+  - `uv run python -m py_compile src\sonna_editor\training\profile_runner.py`
+    passed.
+  - Focused profile-runner/foundation tests passed together:
+    `tests\test_training.py::test_parse_field_loss_weight_overrides_accepts_repeatable_fields`,
+    `test_parse_field_loss_weight_overrides_rejects_unknown_field`,
+    `test_apply_training_overrides_updates_named_slider_weights`,
+    `test_dataset_summary_payload_records_rows_and_split_paths`, and
+    `test_train_profile_log_interval_adapts_to_small_dataset`, plus
+    `tests\test_train_foundation_model.py`: `19 passed`.
+- Added a one-command local app launcher for client/operator startup:
+  `scripts\run_app.py`, plus root wrappers `run_saha.cmd`, `run_saha.ps1`,
+  and `run_saha.sh`.
+  The launcher creates repo-local runtime folders, runs `npm install` only if
+  `saha-app\node_modules\` is missing, checks that Node/npm are available, then
+  starts the existing Electron dev command. Electron continues to own backend
+  startup/shutdown and reuses any existing API on port `8765`.
+- Added `.gitattributes` line-ending rules for launcher portability:
+  `.sh`/`.py` and `.gitattributes` stay LF for macOS/Linux, while
+  `.cmd`/`.ps1` normalize to CRLF for Windows.
+- Updated `README.md`, `RUN.md`, `CLI_COMMANDS.md`, `HANDOVER.md`, and
+  `project_knowledge.md` so the preferred client startup is now
+  `.\run_saha.cmd` on Windows or `bash run_saha.sh` on macOS/Linux, with the
+  two-terminal backend/frontend flow kept as the debugging fallback.
+- Verification for the launcher update:
+  - `uv run ruff check scripts\run_app.py` passed.
+  - `uv run python -m py_compile scripts\run_app.py` passed.
+  - `uv run python scripts\run_app.py --help` passed and showed the expected
+    `--skip-install` option.
+  - `cmd /c run_saha.cmd --help` passed and printed the same launcher help
+    without starting Electron.
+  - Direct byte check confirmed `run_saha.sh` currently has LF-only line
+    endings, so `bash run_saha.sh` is safe for Mac clones.
+  - `npm run build:vite` passed in `saha-app\` after rerunning outside the
+    sandbox because the first sandboxed attempts failed during Windows process
+    setup, not during Vite build execution.
+- Documentation alignment pass kept the old two-terminal startup commands in
+  `RUN.md`, `CLI_COMMANDS.md`, `README.md`, and `MAC_SETUP.md` as explicit
+  manual/debugging references while making the one-command launcher the
+  preferred startup path.
+- `MAC_SETUP.md` now uses `bash run_saha.sh` as the primary zsh startup command
+  and preserves the old `uv run python scripts/serve.py --port 8765` plus
+  `cd saha-app && npm install && npm run dev` flow under a legacy two-terminal
+  reference section.
+- `README.md` now shows separate Windows and macOS/Linux quick starts so both
+  Darshil's Windows workflow and the client's Mac workflow are visible at the
+  top-level docs.
+- Verification for the docs alignment:
+  - `rg` confirmed the startup docs now show one-command startup first, with
+    old backend/frontend commands only as manual/debugging references.
+  - `git diff --check` passed; remaining line-ending messages are Git
+    autocrlf warnings on text files, not whitespace errors.
 - Investigated Darshil's pasted Mac foundation diagnostics for
   `foundation-sonna-raw-xmp-002-tone-presence`. The run used real scale
   splits (`5,021/865/1,172` train/val/test rows), so this is not the earlier

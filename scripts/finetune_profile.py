@@ -40,10 +40,15 @@ def _print_rule(char: str = "-", width: int = 60) -> None:
 
 def _list_versions(output_dir: Path) -> None:
     pattern = re.compile(r"model-v(\d+)\.(\d+)\.(\d+)")
-    ckpts = sorted(
-        [p for p in output_dir.glob("model-v*.ckpt") if pattern.search(p.name)],
-        key=lambda p: [int(x) for x in pattern.search(p.name).groups()],
-    )
+    versioned_ckpts: list[tuple[Path, tuple[int, int, int]]] = []
+    for path in output_dir.glob("model-v*.ckpt"):
+        match = pattern.search(path.name)
+        if match is None:
+            continue
+        version = (int(match.group(1)), int(match.group(2)), int(match.group(3)))
+        versioned_ckpts.append((path, version))
+
+    ckpts = [path for path, _ in sorted(versioned_ckpts, key=lambda item: item[1])]
     if not ckpts:
         print(f"No versioned checkpoints found in {output_dir}")
         return

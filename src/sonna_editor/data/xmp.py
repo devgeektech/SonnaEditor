@@ -4,8 +4,9 @@ import logging
 import re
 import uuid
 from pathlib import Path
+from typing import Mapping
 
-from lxml import etree
+import lxml.etree as etree
 
 from sonna_editor.config import SLIDER_FIELDS
 
@@ -508,10 +509,10 @@ def read_xmp(path: Path) -> dict[str, float | str | None]:
 
 def write_xmp(
     path: Path,
-    settings: dict[str, float | str | None],
+    settings: Mapping[str, float | str | None],
     source_raw_path: Path | None = None,
     as_shot_wb: tuple[float, float] | None = None,
-    extra_attributes: dict[str, str] | None = None,
+    extra_attributes: Mapping[str, str] | None = None,
 ) -> None:
     """Write a Lightroom-compatible XMP sidecar to path.
 

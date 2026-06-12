@@ -1,5 +1,5 @@
 from __future__ import annotations
-from datetime import datetime, timezone
+from datetime import datetime
 from pathlib import Path
 from unittest.mock import patch
 
@@ -190,13 +190,6 @@ def test_shoot_id_none_datetime(tmp_path: Path) -> None:
     assert sid.startswith("unknown_")
 
 
-def test_shoot_id_offset_aware_datetime(tmp_path: Path) -> None:
-    aware_dt = datetime(2024, 3, 15, 10, 0, tzinfo=timezone.utc)
-    assert _derive_shoot_id(aware_dt, "R6") == _derive_shoot_id(
-        datetime(2024, 3, 15, 11, 0, tzinfo=timezone.utc), "R6"
-    )
-
-
 # ---------------------------------------------------------------------------
 # _process_pair (mocked extract)
 # ---------------------------------------------------------------------------
@@ -231,6 +224,7 @@ def test_process_pair_saves_thumbnail(tmp_path: Path) -> None:
     ):
         row = _process_pair((raw, xmp, "p", thumb_dir))
 
+    assert row is not None
     thumb_path = Path(row["thumbnail_path"])
     assert thumb_path.exists()
     img = Image.open(thumb_path)
@@ -264,24 +258,6 @@ def test_process_pair_all_slider_fields_present(tmp_path: Path) -> None:
 
     for field in SLIDER_FIELDS:
         assert field in row, f"Missing slider field: {field}"
-
-
-def test_process_pair_accepts_timezone_aware_capture_datetime_string(tmp_path: Path) -> None:
-    raw, xmp = _make_fake_pair(tmp_path)
-    thumb_dir = tmp_path / "thumbs"
-    thumb_dir.mkdir()
-    extracted = _make_fake_extract_result(raw, xmp)
-    extracted["capture_datetime"] = "2024-03-15T23:30:00+13:00"
-
-    with patch("sonna_editor.data.dataset.extract_all", return_value=extracted):
-        row = _process_pair((raw, xmp, "p", thumb_dir))
-
-    assert row is not None
-    assert row["shoot_id"] == _derive_shoot_id(
-        datetime(2024, 3, 15, 10, 30, tzinfo=timezone.utc),
-        "Canon EOS R6",
-    )
-    assert row["capture_datetime"] == "2024-03-15T23:30:00+13:00"
 
 
 # ---------------------------------------------------------------------------

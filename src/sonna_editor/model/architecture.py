@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional, cast
 
 import torch
 import torch.nn as nn
@@ -169,7 +169,8 @@ class MetadataEncoder(nn.Module):
         )
 
     def _focal_onehot(self, focal_mm: torch.Tensor) -> torch.Tensor:
-        idx = torch.bucketize(focal_mm, self.focal_bins)  # [B], values 0-7
+        focal_bins = cast(torch.Tensor, self.focal_bins)
+        idx = torch.bucketize(focal_mm, focal_bins)  # [B], values 0-7
         return nn.functional.one_hot(idx, num_classes=8).float()
 
     def forward(self, metadata: dict[str, torch.Tensor]) -> torch.Tensor:
@@ -244,7 +245,8 @@ class MetadataEncoder(nn.Module):
         # NaN-proofing: assert no non-finite values flowed into the fusion MLP.
         # Cheap (one reduction op per batch) and gives a clear failure point if
         # any future input path skips a clamp.
-        if torch.jit.is_scripting() is False and not torch.isfinite(concat).all():
+        is_scripting = cast(Any, torch.jit).is_scripting()
+        if is_scripting is False and not torch.isfinite(concat).all():
             bad_rows = (~torch.isfinite(concat).all(dim=-1)).nonzero(as_tuple=True)[0]
             raise RuntimeError(
                 f"MetadataEncoder produced non-finite concat tensor on "

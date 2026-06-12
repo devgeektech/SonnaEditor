@@ -3,8 +3,6 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-import pytest
-
 from sonna_editor import config
 from sonna_editor.foundation import (
     describe_foundation_checkpoint,
@@ -13,7 +11,6 @@ from sonna_editor.foundation import (
     promote_foundation_checkpoint,
     resolve_foundation_checkpoint,
     rollback_foundation_checkpoint,
-    validate_foundation_checkpoint,
 )
 
 
@@ -98,16 +95,6 @@ def test_foundation_promotion_keeps_history_and_falls_back_when_active_removed(
     promoted_second.unlink()
 
     assert resolve_foundation_checkpoint() == promoted_first
-
-
-def test_validate_foundation_checkpoint_rejects_invalid_checkpoint_content(
-    tmp_path: Path,
-) -> None:
-    bad_ckpt = tmp_path / "foundation-bad.ckpt"
-    bad_ckpt.write_text("not a torch checkpoint", encoding="utf-8")
-
-    with pytest.raises(ValueError, match="not a valid PyTorch checkpoint"):
-        validate_foundation_checkpoint(bad_ckpt)
 
 
 def test_foundation_auto_versions_and_explicit_rollback(

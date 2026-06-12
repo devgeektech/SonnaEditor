@@ -20,6 +20,7 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import os
 import shutil
 import subprocess
 import sys
@@ -99,7 +100,9 @@ def _mount_point(path: Path) -> str:
     # Walk to an existing ancestor for is_mount() to work
     while not p.exists():
         p = p.parent
-    while not p.is_mount():
+    while not os.path.ismount(str(p)):
+        if p.parent == p:
+            break
         p = p.parent
     return str(p)
 
@@ -458,7 +461,7 @@ def build_and_split_dataset(workers: int) -> tuple[Path, Path, Path]:
     train_df, val_df, test_df = split_dataset(df)
     save_split(train_df, val_df, test_df, splits_dir)
 
-    n = stats["included"]
+    n = int(stats["included"])
     print("  Shoot-level splits (val+test shoots withheld whole):")
     print(f"    train: {len(train_df):,} ({100*len(train_df)/n:.0f}%)")
     print(f"    val:   {len(val_df):,} ({100*len(val_df)/n:.0f}%)")
@@ -599,12 +602,17 @@ def run_training(
     )
     dm.prepare_data()
     dm.setup("fit")
+    train_ds = dm._train_ds
+    val_ds = dm._val_ds
+    test_ds = dm._test_ds
+    reg = dm.registry
+    if train_ds is None or val_ds is None or test_ds is None or reg is None:
+        raise RuntimeError("SonnaDataModule did not initialise datasets and registry.")
 
     log.info(
         "Dataset: train=%d  val=%d  test=%d",
-        len(dm._train_ds), len(dm._val_ds), len(dm._test_ds),
+        len(train_ds), len(val_ds), len(test_ds),
     )
-    reg = dm.registry
     log.info(
         "Registry: %d camera bodies  %d lenses  %d profiles  %d WB presets",
         len(reg.camera_bodies), len(reg.lenses),
@@ -675,7 +683,7 @@ def run_training(
         raise
 
     total_sec = time.monotonic() - start_time
-    best_ckpt = trainer.checkpoint_callback.best_model_path or None
+    best_ckpt = ckpt_callback.best_model_path or None
 
     # Test on best checkpoint
     log.info("Running test set evaluation on best checkpoint...")
@@ -693,8 +701,9 @@ def run_training(
     # Sample predictions on 5 val photos
     sample_preds = _sample_predictions(module, dm, n=5)
 
+    best_score = ckpt_callback.best_model_score
     summary = {
-        "best_val_loss": float(trainer.checkpoint_callback.best_model_score or 0.0),
+        "best_val_loss": float(best_score.item()) if best_score is not None else 0.0,
         "best_checkpoint": best_ckpt,
         "final_model": str(final_model_path),
         "epochs_trained": int(trainer.current_epoch) + 1,
@@ -734,13 +743,19 @@ def _sample_predictions(
     module.model.to(device)
 
     val_ds = dm._val_ds
+    if val_ds is None:
+        raise RuntimeError("SonnaDataModule validation dataset is not initialised.")
     indices = list(range(min(n, len(val_ds))))
 
     for idx in indices:
         try:
             img, metadata, target = val_ds[idx]
             img_batch = img.unsqueeze(0).to(device)
-            meta_batch = {k: v.unsqueeze(0).to(device) for k, v in metadata.items()}
+            meta_batch = {
+                k: v.unsqueeze(0).to(device)
+                for k, v in metadata.items()
+                if isinstance(v, torch.Tensor)
+            }
 
             with torch.no_grad():
                 raw_pred = module.model(img_batch, meta_batch)

@@ -178,7 +178,40 @@ npm install
 cd ..
 ```
 
+The one-command launcher in the next section also runs `npm install`
+automatically when `saha-app/node_modules/` is missing. Keeping this explicit
+command here is useful for setup checks and troubleshooting.
+
 ## 5. Start The App
+
+Preferred Mac/zsh command from the repo root:
+
+```bash
+bash run_saha.sh
+```
+
+This creates the repo-local runtime folders, checks for `uv` and Node/npm,
+installs frontend dependencies if needed, then starts the Electron app. The
+Electron main process starts or reuses the FastAPI backend on
+`http://127.0.0.1:8765` and shuts down its own backend process when the app
+quits.
+
+The explicit equivalent is:
+
+```bash
+uv run python scripts/run_app.py
+```
+
+Use this only if you want to pass launcher flags such as:
+
+```bash
+uv run python scripts/run_app.py --skip-install
+```
+
+### Legacy Two-Terminal Reference
+
+Keep this path for debugging backend/frontend issues or reading backend logs
+separately.
 
 Terminal 1, start the backend:
 
@@ -196,6 +229,7 @@ Terminal 2, start the Electron frontend:
 
 ```bash
 cd saha-app
+npm install
 npm run dev
 ```
 
@@ -628,8 +662,9 @@ npm install
 cd ..
 ```
 
-Restart both backend and frontend after pulling code. A live backend keeps old
-Python code in memory.
+Restart the app after pulling code. If you are using the legacy two-terminal
+flow, restart both backend and frontend. A live backend keeps old Python code
+in memory.
 
 ## 15. Mac Notes
 

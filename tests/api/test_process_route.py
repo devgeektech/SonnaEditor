@@ -306,7 +306,9 @@ def test_process_skip_fields_forwarded(
                 break
             time.sleep(0.05)
 
-    assert list(captured.get("extra_skip_fields") or []) == ["Tint"]
+    extra_skip_fields = captured.get("extra_skip_fields")
+    assert isinstance(extra_skip_fields, list)
+    assert extra_skip_fields == ["Tint"]
 
 
 def test_profile_endpoint_returns_default_skip_fields(

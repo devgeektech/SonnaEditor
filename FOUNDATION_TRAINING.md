@@ -229,6 +229,9 @@ The reviewed shortcut for this situation is:
 It applies stronger retry weights to Exposure2012, Whites2012, Blacks2012,
 Highlights2012, Shadows2012, Vibrance, and Saturation. Explicit
 `--field-loss-weight FIELD=WEIGHT` flags still override this preset per field.
+As of the 2026-06-12 full-flow verification, both flags are exposed by
+`scripts\train_foundation_model.py --help` and forwarded to the packaged
+trainer.
 
 The trainer supports repeatable named slider overrides:
 

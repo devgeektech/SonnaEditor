@@ -3,12 +3,13 @@ from __future__ import annotations
 import io
 from datetime import datetime
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 import rawpy
 from PIL import Image
 from PIL.ExifTags import TAGS
-from lxml import etree
+import lxml.etree as etree
 
 from sonna_editor.config import IMAGE_RESOLUTION, SCENE_STAT_FIELDS, SLIDER_FIELDS
 from sonna_editor.data.xmp import compute_as_shot_wb, read_xmp
@@ -34,6 +35,10 @@ _TIFF_NS = "http://ns.adobe.com/tiff/1.0/"
 _AUX_NS = "http://ns.adobe.com/exif/1.0/aux/"
 _EXIF_EX_NS = "http://cipa.jp/exif/1.0/"
 _RDF_NS = "http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+_RAWPY_THUMB_JPEG: Any = getattr(getattr(rawpy, "ThumbFormat"), "JPEG")
+_RAWPY_NO_THUMBNAIL_ERROR: type[BaseException] = getattr(
+    rawpy, "LibRawNoThumbnailError", Exception
+)
 
 
 # -----------------------------------------------------------------------
@@ -48,7 +53,23 @@ def _resize_to_long_edge(img: Image.Image, target: int) -> Image.Image:
         new_w, new_h = target, round(h * target / w)
     else:
         new_w, new_h = round(w * target / h), target
-    return img.resize((new_w, new_h), Image.LANCZOS)
+    return img.resize((new_w, new_h), Image.Resampling.LANCZOS)
+
+
+def _thumb_data_as_bytes(data: Any) -> bytes:
+    if isinstance(data, bytes):
+        return data
+    if isinstance(data, bytearray):
+        return bytes(data)
+    if isinstance(data, memoryview):
+        return data.tobytes()
+    return np.asarray(data, dtype=np.uint8).tobytes()
+
+
+def _thumb_data_as_array(data: Any) -> np.ndarray:
+    if isinstance(data, (bytes, bytearray, memoryview)):
+        return np.frombuffer(data, dtype=np.uint8)
+    return np.asarray(data, dtype=np.uint8)
 
 
 def _parse_exif_rational(value: str) -> float | None:
@@ -166,12 +187,12 @@ def extract_preview(path: Path, target_size: int = IMAGE_RESOLUTION) -> Image.Im
     with rawpy.imread(str(path)) as raw:
         try:
             thumb = raw.extract_thumb()
-            if thumb.format == rawpy.ThumbFormat.JPEG:
-                img = Image.open(io.BytesIO(thumb.data)).convert("RGB")
+            if thumb.format == _RAWPY_THUMB_JPEG:
+                img = Image.open(io.BytesIO(_thumb_data_as_bytes(thumb.data))).convert("RGB")
             else:
                 # Bitmap thumb — wrap directly
-                img = Image.fromarray(thumb.data).convert("RGB")
-        except rawpy.LibRawNoThumbnailError:
+                img = Image.fromarray(_thumb_data_as_array(thumb.data)).convert("RGB")
+        except _RAWPY_NO_THUMBNAIL_ERROR:
             # Full RAW decode at half size as fallback
             rgb = raw.postprocess(
                 use_camera_wb=True,
@@ -232,9 +253,9 @@ def extract_metadata(path: Path) -> dict:
                 meta["as_shot_wb"] = None
 
             thumb = raw.extract_thumb()
-            img = Image.open(io.BytesIO(
-                thumb.data if thumb.format == rawpy.ThumbFormat.JPEG else b""
-            ))
+            if thumb.format != _RAWPY_THUMB_JPEG:
+                raise ValueError("RAW thumbnail does not contain JPEG EXIF data")
+            img = Image.open(io.BytesIO(_thumb_data_as_bytes(thumb.data)))
             exif = img.getexif()
             exif_ifd = exif.get_ifd(0x8769)  # ExifIFD
 

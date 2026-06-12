@@ -114,7 +114,8 @@ ETA_BUDGET_HOURS               = 12.0
 
 
 def _parse_args() -> argparse.Namespace:
-    p = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
+    doc = __doc__ or ""
+    p = argparse.ArgumentParser(description=doc.split("\n\n")[0])
     p.add_argument(
         "--force", action="store_true",
         help="If model-v1.2.0-full-production.ckpt already exists, overwrite it.",
@@ -167,15 +168,21 @@ def main() -> None:
     )
     dm.prepare_data()
     dm.setup("fit")
+    train_ds = dm._train_ds
+    val_ds = dm._val_ds
+    test_ds = dm._test_ds
+    reg = dm.registry
+    if train_ds is None or val_ds is None or test_ds is None or reg is None:
+        raise RuntimeError("SonnaDataModule did not initialise datasets and registry.")
     log.info(
         "Dataset: train=%d val=%d test=%d  registry: %d bodies / %d lenses / %d profiles / %d wb_presets",
-        len(dm._train_ds), len(dm._val_ds), len(dm._test_ds),
-        len(dm.registry.camera_bodies), len(dm.registry.lenses),
-        len(dm.registry.camera_profiles), len(dm.registry.wb_presets),
+        len(train_ds), len(val_ds), len(test_ds),
+        len(reg.camera_bodies), len(reg.lenses),
+        len(reg.camera_profiles), len(reg.wb_presets),
     )
 
     model = SonnaEditor(
-        registry=dm.registry,
+        registry=reg,
         freeze_backbone=True,
         slider_set_version="v1",
         use_wb_metadata_skip=False,
@@ -189,15 +196,16 @@ def main() -> None:
 
     ckpt_dir = OUTPUT_DIR / "checkpoints"
     tb_logger = TensorBoardLogger(save_dir=str(OUTPUT_DIR), name="tensorboard")
+    ckpt_callback = ModelCheckpoint(
+        dirpath=str(ckpt_dir),
+        filename="v1.2.0-prod-{epoch:03d}-val{val_loss:.4f}",
+        monitor="val_loss",
+        mode="min",
+        save_top_k=3,
+        auto_insert_metric_name=False,
+    )
     callbacks: list[pl.Callback] = [
-        ModelCheckpoint(
-            dirpath=str(ckpt_dir),
-            filename="v1.2.0-prod-{epoch:03d}-val{val_loss:.4f}",
-            monitor="val_loss",
-            mode="min",
-            save_top_k=3,
-            auto_insert_metric_name=False,
-        ),
+        ckpt_callback,
         EarlyStopping(
             monitor="val_loss",
             patience=EARLY_STOPPING_PATIENCE,
@@ -242,7 +250,7 @@ def main() -> None:
         "critical_mae.check_after=%d  loss_balance.check_after=%d  "
         "eta_budget=%.1fh. "
         "Loss: sign_wrong=%.2f tint_bucket=%.2f temp_bucket=%.2f spread=%.2f",
-        model._arch_version, _cfg.IMAGE_RESOLUTION, len(dm._train_ds), MAX_EPOCHS,
+        model._arch_version, _cfg.IMAGE_RESOLUTION, len(train_ds), MAX_EPOCHS,
         FREEZE_BACKBONE_EPOCHS, EARLY_STOPPING_PATIENCE,
         OVERCORRECTION_CHECK_AFTER, CRITICAL_MAE_CHECK_AFTER,
         LOSS_BALANCE_CHECK_AFTER, ETA_BUDGET_HOURS,
@@ -251,15 +259,16 @@ def main() -> None:
     )
     trainer.fit(lm, datamodule=dm)
 
-    best_ckpt = trainer.checkpoint_callback.best_model_path
+    best_ckpt = ckpt_callback.best_model_path
     log.info("Best checkpoint: %s", best_ckpt)
     test_results = trainer.test(lm, datamodule=dm, ckpt_path=best_ckpt) if best_ckpt else []
 
     lm.model.save_checkpoint(FINAL_CKPT)
     log.info("Saved final model → %s", FINAL_CKPT)
 
+    best_score = ckpt_callback.best_model_score
     summary = {
-        "best_val_loss": float(trainer.checkpoint_callback.best_model_score or 0.0),
+        "best_val_loss": float(best_score.item()) if best_score is not None else 0.0,
         "best_checkpoint": best_ckpt,
         "final_model": str(FINAL_CKPT),
         "epochs_trained": trainer.current_epoch,
@@ -271,9 +280,9 @@ def main() -> None:
             "train_parquet": str(TRAIN_PARQUET),
             "val_parquet": str(VAL_PARQUET),
             "test_parquet": str(TEST_PARQUET),
-            "train_rows": len(dm._train_ds),
-            "val_rows": len(dm._val_ds),
-            "test_rows": len(dm._test_ds),
+            "train_rows": len(train_ds),
+            "val_rows": len(val_ds),
+            "test_rows": len(test_ds),
             "max_epochs": MAX_EPOCHS,
             "freeze_backbone_epochs": FREEZE_BACKBONE_EPOCHS,
             "early_stopping_patience": EARLY_STOPPING_PATIENCE,

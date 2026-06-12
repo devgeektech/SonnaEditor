@@ -38,7 +38,7 @@ def test_catalog_row_includes_as_shot_wb(
         lambda image: np.zeros((3, 32), dtype=np.float32),
     )
 
-    sliders = {field: None for field in catalog_dataset.SLIDER_FIELDS}
+    sliders: dict[str, float | None] = {field: None for field in catalog_dataset.SLIDER_FIELDS}
     row = catalog_dataset._process_catalog_row(
         (str(raw_path), None, "sonna_v2", str(thumbnail_dir), sliders)
     )
@@ -55,14 +55,17 @@ class _FakeCatalogConnection:
 
 
 def _edited_slider_dict() -> dict[str, float | None]:
-    sliders = {field: None for field in catalog_dataset.SLIDER_FIELDS}
+    sliders: dict[str, float | None] = {
+        field: None for field in catalog_dataset.SLIDER_FIELDS
+    }
     for field in catalog_dataset._SCALAR_SLIDER_FIELDS[:30]:
         sliders[field] = 10.0
     return sliders
 
 
 def _unedited_slider_dict() -> dict[str, float | None]:
-    return {field: None for field in catalog_dataset.SLIDER_FIELDS}
+    sliders: dict[str, float | None] = {field: None for field in catalog_dataset.SLIDER_FIELDS}
+    return sliders
 
 
 def test_catalog_builder_skips_unedited_rows_by_default(

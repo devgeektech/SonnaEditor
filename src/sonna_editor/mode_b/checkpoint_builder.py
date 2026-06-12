@@ -48,6 +48,7 @@ import json
 import math
 import re
 from pathlib import Path
+from typing import Mapping
 from typing import Final
 
 import torch
@@ -161,7 +162,7 @@ def _extract_survey_offsets(survey: dict) -> dict[str, float]:
     return offsets
 
 
-def _preset_value(preset: dict, field: str) -> float:
+def _preset_value(preset: Mapping[str, object], field: str) -> float:
     """Pick the preset value for a field, falling back to LR_DEFAULTS.
 
     read_xmp() returns float for numeric values, str for non-numeric, None
@@ -175,7 +176,7 @@ def _preset_value(preset: dict, field: str) -> float:
 
 
 def compute_bias_vector(
-    preset: dict,
+    preset: Mapping[str, object],
     survey: dict,
     *,
     slider_set_version: str = "v1",

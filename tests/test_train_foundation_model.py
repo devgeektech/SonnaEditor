@@ -1,13 +1,11 @@
 from __future__ import annotations
 
 import argparse
-import sys
 from pathlib import Path
 
 import pytest
 
 import scripts.train_foundation_model as foundation_cli
-from sonna_editor import config
 
 
 def test_batch_size_attempts_halves_to_one() -> None:
@@ -61,99 +59,6 @@ def test_train_profile_with_cuda_oom_retry_does_not_hide_non_cuda_errors(monkeyp
         foundation_cli._train_profile_with_cuda_oom_retry(argparse.Namespace(batch_size=16))
 
 
-def test_main_fails_fast_on_invalid_active_foundation_checkpoint(
-    monkeypatch,
-    tmp_path: Path,
-) -> None:
-    monkeypatch.setattr(config, "FOUNDATION_REPO_DIR", tmp_path / "foundation")
-    bad_ckpt = tmp_path / "bad-foundation.ckpt"
-    bad_ckpt.write_text("not a torch checkpoint", encoding="utf-8")
-    monkeypatch.setattr(
-        foundation_cli,
-        "_active_foundation_or_none",
-        lambda: bad_ckpt,
-    )
-    monkeypatch.setattr(
-        sys,
-        "argv",
-        [
-            "train_foundation_model.py",
-            "--splits-dir",
-            str(tmp_path / "splits"),
-        ],
-    )
-
-    with pytest.raises(RuntimeError, match="If you want a brand-new foundation build, rerun with --no-warm-start"):
-        foundation_cli.main()
-
-
-def test_main_skips_warm_start_with_no_warm_start_flag(
-    monkeypatch,
-    tmp_path: Path,
-) -> None:
-    monkeypatch.setattr(config, "FOUNDATION_REPO_DIR", tmp_path / "foundation")
-    bad_ckpt = tmp_path / "bad-foundation.ckpt"
-    bad_ckpt.write_text("not a torch checkpoint", encoding="utf-8")
-    monkeypatch.setattr(
-        foundation_cli,
-        "_active_foundation_or_none",
-        lambda: bad_ckpt,
-    )
-    monkeypatch.setattr(
-        sys,
-        "argv",
-        [
-            "train_foundation_model.py",
-            "--splits-dir",
-            str(tmp_path / "splits"),
-            "--no-warm-start",
-            "--field-loss-weight",
-            "Whites2012=6",
-            "--field-loss-weight",
-            "Vibrance=4",
-        ],
-    )
-
-    run_dir = tmp_path / "run"
-    run_dir.mkdir()
-    monkeypatch.setattr(
-        foundation_cli,
-        "_resolve_splits",
-        lambda args, run_dir: tmp_path / "splits",
-    )
-    monkeypatch.setattr(
-        foundation_cli,
-        "_validate_foundation_split_size",
-        lambda *_, **kwargs: {"train": 100, "val": 10, "test": 10},
-    )
-    monkeypatch.setattr(
-        foundation_cli,
-        "_build_dataset_from_raw_xmp",
-        lambda args, run_dir: tmp_path / "splits",
-    )
-    captured_train_args: list[argparse.Namespace] = []
-
-    def fake_train_profile_with_cuda_oom_retry(args: argparse.Namespace) -> dict:
-        captured_train_args.append(args)
-        return {"final_model": str(tmp_path / "model.ckpt")}
-
-    monkeypatch.setattr(
-        foundation_cli,
-        "_train_profile_with_cuda_oom_retry",
-        fake_train_profile_with_cuda_oom_retry,
-    )
-    monkeypatch.setattr(
-        foundation_cli,
-        "promote_foundation_checkpoint",
-        lambda *args, **kwargs: tmp_path / "foundation" / "checkpoints" / "foundation-v1.ckpt",
-    )
-
-    # Should not raise due to the corrupted active foundation checkpoint.
-    foundation_cli.main()
-    assert captured_train_args[0].field_loss_weight == ["Whites2012=6", "Vibrance=4"]
-    assert captured_train_args[0].checkpoint_monitor == "val_visual_score"
-
-
 def test_foundation_parser_defaults_train_final_backbone_stage(monkeypatch) -> None:
     monkeypatch.setattr(
         "sys.argv",
@@ -171,67 +76,51 @@ def test_foundation_parser_defaults_train_final_backbone_stage(monkeypatch) -> N
     assert args.min_foundation_train_rows == 75
     assert args.allow_small_foundation_dataset is False
     assert args.allow_quality_gate_failure is False
+    assert args.tone_presence_retry is False
     assert args.field_loss_weight == []
 
 
-def test_foundation_parser_accepts_repeatable_field_loss_weight(monkeypatch) -> None:
+def test_foundation_parser_accepts_tone_presence_and_field_loss(monkeypatch) -> None:
     monkeypatch.setattr(
         "sys.argv",
         [
             "train_foundation_model.py",
             "--splits-dir",
             "data/training_workspace/fivek/splits_v2_stratified",
-            "--field-loss-weight",
-            "Whites2012=6",
-            "--field-loss-weight",
-            "Blacks2012=6",
-        ],
-    )
-
-    args = foundation_cli._parse_args()
-
-    assert args.field_loss_weight == ["Whites2012=6", "Blacks2012=6"]
-
-
-def test_tone_presence_retry_adds_reviewed_field_weights(monkeypatch) -> None:
-    monkeypatch.setattr(
-        "sys.argv",
-        [
-            "train_foundation_model.py",
-            "--splits-dir",
-            "data/training_workspace/sonna/splits_v2_stratified",
-            "--tone-presence-retry",
-        ],
-    )
-
-    args = foundation_cli._parse_args()
-    weights = foundation_cli._field_loss_weights_for_recipe(args)
-
-    assert "Exposure2012=10" in weights
-    assert "Whites2012=10" in weights
-    assert "Highlights2012=8" in weights
-    assert "Vibrance=6" in weights
-
-
-def test_tone_presence_retry_respects_explicit_field_weight(monkeypatch) -> None:
-    monkeypatch.setattr(
-        "sys.argv",
-        [
-            "train_foundation_model.py",
-            "--splits-dir",
-            "data/training_workspace/sonna/splits_v2_stratified",
             "--tone-presence-retry",
             "--field-loss-weight",
-            "Exposure2012=12",
+            "Whites2012=9",
+            "--field-loss-weight",
+            "Vibrance=4.5",
         ],
     )
 
     args = foundation_cli._parse_args()
-    weights = foundation_cli._field_loss_weights_for_recipe(args)
 
-    assert "Exposure2012=12" in weights
-    assert "Exposure2012=10" not in weights
-    assert "Whites2012=10" in weights
+    assert args.tone_presence_retry is True
+    assert args.field_loss_weight == ["Whites2012=9", "Vibrance=4.5"]
+
+
+def test_tone_presence_retry_prepends_recipe_and_keeps_explicit_overrides() -> None:
+    args = argparse.Namespace(
+        tone_presence_retry=True,
+        field_loss_weight=["Whites2012=9", "Vibrance=4.5"],
+    )
+
+    weights = foundation_cli._foundation_field_loss_weight_args(args)
+
+    assert "Exposure2012=7" in weights
+    assert "Whites2012=6" in weights
+    assert weights[-2:] == ["Whites2012=9", "Vibrance=4.5"]
+
+
+def test_foundation_field_loss_weights_no_retry_returns_explicit_only() -> None:
+    args = argparse.Namespace(
+        tone_presence_retry=False,
+        field_loss_weight=["Saturation=3.5"],
+    )
+
+    assert foundation_cli._foundation_field_loss_weight_args(args) == ["Saturation=3.5"]
 
 
 def test_validate_foundation_split_size_blocks_tiny_production_run(monkeypatch, tmp_path: Path) -> None:
@@ -265,7 +154,7 @@ def test_validate_foundation_split_size_allows_explicit_small_ablation(monkeypat
     assert counts["train"] == 132
 
 
-def test_foundation_quality_gate_flags_hard_failures_and_warnings() -> None:
+def test_foundation_quality_gate_flags_overfit_and_bad_metrics() -> None:
     summary = {
         "best_val_loss": 0.017,
         "test_results": {
@@ -275,11 +164,11 @@ def test_foundation_quality_gate_flags_hard_failures_and_warnings() -> None:
         },
     }
 
-    failures, warnings = foundation_cli._foundation_quality_report(summary)
+    failures = foundation_cli._foundation_quality_failures(summary)
 
     assert any("test_loss" in failure for failure in failures)
+    assert any("Exposure2012" in failure for failure in failures)
     assert any("Shadows2012" in failure for failure in failures)
-    assert any("Exposure2012" in warning for warning in warnings)
 
 
 def test_foundation_quality_gate_uses_all_slider_mae_fallback() -> None:
@@ -293,35 +182,9 @@ def test_foundation_quality_gate_uses_all_slider_mae_fallback() -> None:
         },
     }
 
-    failures, warnings = foundation_cli._foundation_quality_report(summary)
+    failures = foundation_cli._foundation_quality_failures(summary)
 
-    assert failures == []
-    assert any("Vibrance" in warning for warning in warnings)
-
-
-def test_write_quality_gate_result_updates_training_summary(tmp_path: Path) -> None:
-    training_dir = tmp_path / "training"
-    training_dir.mkdir()
-    summary_path = training_dir / "training_summary.json"
-    summary_path.write_text('{"test_results": {"test_loss": 0.1}}')
-
-    summary = {"test_results": {"test_loss": 0.1}}
-    failures = ["Exposure2012 MAE 0.3 exceeds 0.25"]
-
-    foundation_cli._write_quality_gate_result(
-        training_dir=training_dir,
-        summary=summary,
-        failures=failures,
-        warnings=["Whites2012 MAE 8 exceeds target 5"],
-    )
-
-    assert summary["quality_gate_passed"] is False
-    assert summary["foundation_quality_failures"] == failures
-    assert summary["foundation_quality_warnings"] == ["Whites2012 MAE 8 exceeds target 5"]
-    updated = summary_path.read_text()
-    assert '"quality_gate_passed": false' in updated
-    assert "Exposure2012" in updated
-    assert "Whites2012" in updated
+    assert any("Vibrance" in failure for failure in failures)
 
 
 def test_small_foundation_split_uses_low_capacity_default() -> None:

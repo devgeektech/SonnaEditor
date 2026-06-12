@@ -4,7 +4,7 @@ import math
 import tempfile
 import time
 from pathlib import Path
-from typing import Optional
+from typing import Literal, Mapping, Optional, overload
 
 import torch
 import torch.nn as nn
@@ -37,6 +37,9 @@ _EXPOSURE_IDX: int = SLIDER_FIELDS.index("Exposure2012")
 # we can spot patterns across epochs.
 _SKIPPED_LOG_PATH = Path(tempfile.gettempdir()) / "saha_skipped_rows.log"
 _skipped_log_inited = False
+
+
+MetadataValue = torch.Tensor | list[str] | str
 
 
 def _log_skipped(reasons: dict[str, int], invalid_rows: list[int],
@@ -138,11 +141,31 @@ class WeightedSliderLoss(nn.Module):
         self.register_buffer("_hi", hi)
         self.register_buffer("_w", weights)
 
+    @overload
+    def forward(
+        self,
+        predictions: torch.Tensor,
+        targets: torch.Tensor,
+        metadata: Optional[Mapping[str, MetadataValue]] = None,
+        *,
+        return_components: Literal[False] = False,
+    ) -> torch.Tensor: ...
+
+    @overload
+    def forward(
+        self,
+        predictions: torch.Tensor,
+        targets: torch.Tensor,
+        metadata: Optional[Mapping[str, MetadataValue]] = None,
+        *,
+        return_components: Literal[True],
+    ) -> dict[str, torch.Tensor]: ...
+
     def forward(
         self,
         predictions: torch.Tensor,                  # [B, 135] — Temperature in log(K) space
         targets: torch.Tensor,                      # [B, 135] — Temperature in raw Kelvin; NaN = absent
-        metadata: Optional[dict[str, torch.Tensor]] = None,
+        metadata: Optional[Mapping[str, MetadataValue]] = None,
         *,
         return_components: bool = False,
     ) -> torch.Tensor | dict[str, torch.Tensor]:
@@ -202,7 +225,7 @@ class WeightedSliderLoss(nn.Module):
 
         if metadata is not None:
             ast = metadata.get("as_shot_temperature")
-            if ast is not None:
+            if isinstance(ast, torch.Tensor):
                 # Treat ≤0 or Inf as bad. NaN AsShot is still valid (the
                 # temp_bucket component already gates on as_shot_valid).
                 ast_bad = (torch.isinf(ast) | (ast <= 0)) & ~torch.isnan(ast)
@@ -210,7 +233,7 @@ class WeightedSliderLoss(nn.Module):
                     row_valid &= ~ast_bad
                     reasons["as_shot_temperature_inf_or_nonpositive"] = int(ast_bad.sum().item())
             atn = metadata.get("as_shot_tint")
-            if atn is not None:
+            if isinstance(atn, torch.Tensor):
                 atn_bad = torch.isinf(atn)
                 if atn_bad.any():
                     row_valid &= ~atn_bad
@@ -223,6 +246,8 @@ class WeightedSliderLoss(nn.Module):
             if isinstance(raw_paths, str):
                 # Single-row batch (rare) — wrap to list.
                 raw_paths = [raw_paths]
+            elif not isinstance(raw_paths, list) or not all(isinstance(path, str) for path in raw_paths):
+                raw_paths = None
             _log_skipped(reasons, bad_idx, raw_paths)
 
         # Replace non-finite predictions with zero for downstream arithmetic.
@@ -299,11 +324,15 @@ class WeightedSliderLoss(nn.Module):
         # Exposure2012 field weight can be diluted. This term keeps exposure
         # directly visible to the optimiser and gives low-luminance/high-lift
         # rows more influence without changing their target slider values.
+        scene_stats = None
+        if metadata is not None:
+            value = metadata.get("scene_stats")
+            scene_stats = value if isinstance(value, torch.Tensor) else None
         exposure_scene = self._exposure_scene_term(
             pred_exposure=predictions[:, _EXPOSURE_IDX],
             truth_exposure=targets[:, _EXPOSURE_IDX],
             tgt_mask=mask[:, _EXPOSURE_IDX],
-            scene_stats=metadata.get("scene_stats") if metadata is not None else None,
+            scene_stats=scene_stats,
         )
 
         # ── Term 3: per-bucket Temperature penalty (log-space) ──
@@ -312,7 +341,8 @@ class WeightedSliderLoss(nn.Module):
         # log-transformed above, so we can read it directly).
         as_shot_temp = None
         if metadata is not None:
-            as_shot_temp = metadata.get("as_shot_temperature")
+            value = metadata.get("as_shot_temperature")
+            as_shot_temp = value if isinstance(value, torch.Tensor) else None
         temp_bucket = self._temperature_bucket_term(
             pred_log_temp=predictions[:, _TEMPERATURE_IDX],
             tgt_log_temp=tgt[:, _TEMPERATURE_IDX],
@@ -338,7 +368,8 @@ class WeightedSliderLoss(nn.Module):
         # bias is introduced.
         as_shot_tint = None
         if metadata is not None:
-            as_shot_tint = metadata.get("as_shot_tint")
+            value = metadata.get("as_shot_tint")
+            as_shot_tint = value if isinstance(value, torch.Tensor) else None
         sign_wrong = self._sign_wrong_term(
             pred_log_temp=predictions[:, _TEMPERATURE_IDX],
             tgt_log_temp=tgt[:, _TEMPERATURE_IDX],
@@ -646,7 +677,7 @@ class WeightedSliderLoss(nn.Module):
         self,
         predictions: torch.Tensor,                  # [B, 135] (Temperature is log-K)
         targets:     torch.Tensor,                  # [B, 135] (Temperature in raw K)
-        metadata:    Optional[dict[str, torch.Tensor]] = None,
+        metadata:    Optional[Mapping[str, MetadataValue]] = None,
     ) -> dict[str, tuple[int, int]]:
         """Per-field (n_wrong, n_total) direction-mismatch counts on this batch.
 
@@ -676,8 +707,10 @@ class WeightedSliderLoss(nn.Module):
         as_shot_temp = None
         as_shot_tint = None
         if metadata is not None:
-            as_shot_temp = metadata.get("as_shot_temperature")
-            as_shot_tint = metadata.get("as_shot_tint")
+            temp_value = metadata.get("as_shot_temperature")
+            tint_value = metadata.get("as_shot_tint")
+            as_shot_temp = temp_value if isinstance(temp_value, torch.Tensor) else None
+            as_shot_tint = tint_value if isinstance(tint_value, torch.Tensor) else None
 
         # Range tensor (already on self._lo / self._hi)
         lo = self._lo
@@ -793,3 +826,6 @@ class WeightedSliderLoss(nn.Module):
             result[field] = float(abs_err.mean())
 
         return result
+    _lo: torch.Tensor
+    _hi: torch.Tensor
+    _w: torch.Tensor

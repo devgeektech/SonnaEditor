@@ -417,10 +417,11 @@ def audit_dataset(parquet_path: Path, output_dir: Path) -> dict:
     outliers = _find_outliers(df)
     stats = _slider_stats(df)
 
-    high_variance = [
-        f for f in SLIDER_FIELDS
-        if stats.loc[f, "std"] > _HIGH_VARIANCE_STD
-    ]
+    high_variance: list[str] = []
+    for field in SLIDER_FIELDS:
+        std_value = pd.to_numeric(pd.Series([stats.loc[field, "std"]]), errors="coerce").iloc[0]
+        if pd.notna(std_value) and float(std_value) > _HIGH_VARIANCE_STD:
+            high_variance.append(field)
 
     profile_counts = df["camera_profile"].value_counts() if "camera_profile" in df.columns else pd.Series(dtype=int)
     mixed_profiles = len(profile_counts) > 3

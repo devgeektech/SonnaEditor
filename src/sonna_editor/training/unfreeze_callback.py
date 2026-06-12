@@ -36,6 +36,7 @@ least surprise.
 from __future__ import annotations
 
 import logging
+from typing import cast
 
 import pytorch_lightning as pl
 import torch
@@ -72,9 +73,8 @@ class ResetEarlyStoppingOnUnfreeze(pl.Callback):
 
         # Find the EarlyStopping callback (there should be exactly one;
         # if there are several monitoring different metrics, reset them all).
-        es_callbacks = [
-            cb for cb in trainer.callbacks if isinstance(cb, EarlyStopping)
-        ]
+        trainer_callbacks = cast(list[pl.Callback], getattr(trainer, "callbacks", []))
+        es_callbacks = [cb for cb in trainer_callbacks if isinstance(cb, EarlyStopping)]
         if not es_callbacks:
             log.warning(
                 "ResetEarlyStoppingOnUnfreeze: no EarlyStopping callback found; "

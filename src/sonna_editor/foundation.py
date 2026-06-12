@@ -128,24 +128,6 @@ def _foundation_type_from_checkpoint(checkpoint_path: Path) -> str:
     )
 
 
-def validate_foundation_checkpoint(checkpoint_path: Path) -> None:
-    checkpoint_path = Path(checkpoint_path).expanduser()
-    if not checkpoint_path.exists():
-        raise FileNotFoundError(f"Foundation checkpoint does not exist: {checkpoint_path}")
-    if not checkpoint_path.is_file():
-        raise FileNotFoundError(f"Foundation checkpoint is not a file: {checkpoint_path}")
-    try:
-        ckpt = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
-    except Exception as exc:
-        raise ValueError(
-            f"Foundation checkpoint is not a valid PyTorch checkpoint: {checkpoint_path}"
-        ) from exc
-    if not isinstance(ckpt, dict):
-        raise ValueError(
-            f"Foundation checkpoint is not a valid PyTorch checkpoint dict: {checkpoint_path}"
-        )
-
-
 def _capabilities_for_foundation_type(foundation_type: str) -> list[str]:
     return ["backbone_features", "metadata_encoder", "slider_regression"]
 

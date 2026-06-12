@@ -4,7 +4,7 @@ This is the practical runbook for command-line data prep, Personal AI profiles,
 Lite profiles, processing, diagnostics, and fine-tuning. Foundation-only
 training, resume, and retrain commands live in `FOUNDATION_TRAINING.md`.
 
-## Current Local State (2026-06-03)
+## Current Local State (2026-06-12)
 
 - Python 3.11.15 via uv 0.11.17. `pyproject.toml` and `uv.lock` now require
   Python `3.11.*`; use `uv python pin 3.11` on Mac if uv tries a newer Python.
@@ -17,6 +17,14 @@ training, resume, and retrain commands live in `FOUNDATION_TRAINING.md`.
 - `data\training_workspace\sonna_personal_001_dataset\`, `data\models\`, `data\parquet\`, `data\captures\`, `data\thumbnails\`, `data\audits\`, `data\dbg\`, `data\raw\sonna_training\`, `.pytest_cache`, `.ruff_cache`, and `.saha\active_profile.txt` were removed or emptied.
 - There is currently no guaranteed local frontend-visible checkpoint in `v1_learning\`. Add fresh RAW+XMP data and train a Personal AI profile from the UI, or configure the hidden foundation checkpoint using `FOUNDATION_TRAINING.md`.
 - Runtime directories are now created automatically from the project root. A fresh clone will bootstrap repo-local `data\training_sources\`, `data\raw\`, `data\raw\sonna_training\`, `v1_learning\`, and `.saha\` on backend or CLI startup.
+- App startup is now wrapped by a one-command launcher. Use `.\run_saha.cmd`
+  on Windows and `bash run_saha.sh` on macOS/Linux. The old two-terminal
+  backend/frontend commands remain below as a debugging reference.
+- Latest full local verification on 2026-06-12 passed: environment `11/11`,
+  `uv run ruff check .`, `uv run python -m compileall -q src scripts tests`,
+  `npm run build:vite`, and full pytest (`753 passed, 45 skipped, 1 warning`).
+  The foundation CLI help now exposes the documented `--tone-presence-retry`
+  and repeatable `--field-loss-weight FIELD=WEIGHT` flags.
 - Lite profile creation now uses the configured foundation checkpoint. It does not depend on whichever Personal AI profile is active in the frontend.
 - Raw training photos should live in separate repo-local child folders under `data/training_sources/` by default. Generated datasets and foundation runs default to `data/training_workspace/` unless you override `SONNA_TRAINING_WORKSPACE`.
 - `scripts\train_profile.py` now logs default recipe values as `Training recipe ...`; only values explicitly supplied as CLI flags are logged as `Override ...`.
@@ -150,7 +158,9 @@ Do not reuse a previous --version-stem; old checkpoints are never overwritten.
    - This is now the only supported training entry point and includes the improved WB/Temperature/Tint recipe by default.
    - The training script saves the full run under your `--output-dir` and publishes a versioned checkpoint into `v1_learning/` by default so `/api/profiles` and the Electron frontend can see it.
 
-4. Run the backend and frontend.
+4. Run the app.
+   - Preferred one-command launcher: `.\run_saha.cmd` on Windows or
+     `bash run_saha.sh` on macOS/Linux.
    - Backend scans `v1_learning/model-v*.ckpt`.
    - Frontend calls `GET /api/profiles` and shows those profiles.
 
@@ -771,7 +781,35 @@ uv run python scripts\train_profile.py `
   --no-publish
 ```
 
-## 7. Start Backend And Frontend
+## 7. Start The App
+
+Preferred client command from the repo root:
+
+```powershell
+.\run_saha.cmd
+```
+
+macOS/Linux:
+
+```bash
+bash run_saha.sh
+```
+
+Equivalent explicit command:
+
+```powershell
+uv run python scripts\run_app.py
+```
+
+The launcher creates runtime folders, runs `npm install` only when
+`saha-app\node_modules\` is missing, then starts `npm run dev` in `saha-app`.
+The Electron main process starts or reuses the backend on port `8765`.
+PowerShell users can also run `.\run_saha.ps1`; `.\run_saha.cmd` is usually
+smoother on client machines because it avoids execution-policy prompts.
+Both machines need `uv` and Node.js LTS on `PATH`; missing tools are reported
+with a clear setup message.
+
+Manual two-terminal startup remains useful for debugging.
 
 Terminal 1:
 

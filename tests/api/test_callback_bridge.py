@@ -351,6 +351,8 @@ def test_pipeline_preserve_wb_compat_shim_equivalent_to_skip_fields(tmp_path: Pa
 
     via_shim = _run(preserve_wb=True, extra_skip_fields=[])
     via_explicit = _run(preserve_wb=False, extra_skip_fields=["Temperature", "Tint"])
+    assert via_shim is not None
+    assert via_explicit is not None
     assert set(via_shim.keys()) == set(via_explicit.keys()), (
         "preserve_wb shim and explicit skip_fields should produce identical XMP outputs"
     )

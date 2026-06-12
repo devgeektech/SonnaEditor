@@ -7,7 +7,7 @@ import io
 import json
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional
+from typing import Any, Mapping, Optional, cast
 
 import numpy as np
 import pandas as pd
@@ -65,9 +65,16 @@ def _compute_edit_lag(
     return (xmp_mtime_dt - run_dt).total_seconds()
 
 
+def _float_or_none(value: object) -> float | None:
+    try:
+        return float(cast(Any, value))
+    except (TypeError, ValueError):
+        return None
+
+
 def _build_deltas_json(
     predicted: dict[str, float],
-    final: dict[str, object],
+    final: Mapping[str, object],
     v1_skip_fields: frozenset[str],
 ) -> str:
     """
@@ -89,10 +96,13 @@ def _build_deltas_json(
     for field in predicted:
         final_val = final.get(field)
         if final_val is not None:
-            try:
-                delta = float(final_val) - float(predicted[field])
-            except (TypeError, ValueError, KeyError):
-                delta = None
+            final_float = _float_or_none(final_val)
+            predicted_float = _float_or_none(predicted.get(field))
+            delta = (
+                final_float - predicted_float
+                if final_float is not None and predicted_float is not None
+                else None
+            )
             result[field] = {"delta": delta, "source": _SOURCE_USER_FINAL}
         elif field in v1_skip_fields:
             result[field] = {"delta": None, "source": _SOURCE_MODEL_FILTERED}
@@ -176,7 +186,7 @@ def capture_user_edits(
 
         # --- Capture time ---
         capture_dt = meta.get("capture_datetime")
-        capture_time = capture_dt.isoformat() if capture_dt else None
+        capture_time = capture_dt.isoformat() if isinstance(capture_dt, datetime) else None
 
         # --- Build deltas JSON ---
         predicted = predictions_by_file[raw_path.name]

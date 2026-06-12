@@ -523,7 +523,9 @@ def test_sign_wrong_gradient_direction() -> None:
     # log_T moves DOWN — toward truth — i.e. negative grad would push it down).
     # MSE alone already pushes pred toward truth (down). The sign-wrong term
     # adds extra push in the same direction. Either way: gradient[T] > 0.
-    g_temp = pred.grad[:, _TEMP_IDX]
+    grad = pred.grad
+    assert grad is not None
+    g_temp = grad[:, _TEMP_IDX]
     assert (g_temp > 0).all(), f"Expected positive gradient on log_T, got {g_temp.tolist()}"
     assert float(sw) > 0.0  # confirmation the term was active
 
@@ -584,7 +586,9 @@ def test_per_row_mask_all_bad_returns_zero_loss() -> None:
     assert "_all_rows_skipped" in components, "all-skipped flag should be set"
     assert float(components["total"]) == 0.0, "all-skipped batch should be zero loss"
     components["total"].backward()
-    assert torch.isfinite(pred.grad).all(), "gradient should be all-finite after all-row skip"
+    grad = pred.grad
+    assert grad is not None
+    assert torch.isfinite(grad).all(), "gradient should be all-finite after all-row skip"
 
 
 def test_per_row_mask_handles_non_finite_predictions() -> None:

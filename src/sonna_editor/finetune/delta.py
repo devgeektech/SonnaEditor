@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import Any, cast
 
 import numpy as np
 import pandas as pd
@@ -145,7 +146,9 @@ def analyse_deltas(captures: pd.DataFrame) -> dict:
                 import warnings
                 with warnings.catch_warnings():
                     warnings.simplefilter("ignore", stats.ConstantInputWarning)
-                    r, p = stats.spearmanr(aligned_meta, aligned_delta)
+                    corr = cast(Any, stats.spearmanr(aligned_meta, aligned_delta))
+                    r = float(corr.statistic)
+                    p = float(corr.pvalue)
                 if np.isnan(r):
                     continue
             except Exception:

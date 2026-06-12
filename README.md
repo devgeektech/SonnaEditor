@@ -20,7 +20,7 @@ sidecars for new shoots.
   through the CUDA 12.8 wheel index and is verified on an NVIDIA GeForce RTX
   3050. macOS resolves the matching public `torch==2.11.0` /
   `torchvision==0.26.0` wheels.
-- Training/profile caches were cleared on 2026-06-03 so a fresh dataset can be
+- Training/profile caches are currently cleared so a fresh dataset can be
   added. There is currently no guaranteed local dataset or visible checkpoint.
 - Current training defaults use geometry-only augmentation, Exposure loss
   weight 5.0, and output-head target-prior calibration from the training split.
@@ -43,9 +43,20 @@ sidecars for new shoots.
 
 ## Quick Start
 
+Windows:
+
 ```powershell
 uv sync --extra dev
 uv run python scripts/verify_environment.py
+.\run_saha.cmd
+```
+
+macOS/Linux:
+
+```bash
+uv sync --extra dev
+uv run python scripts/verify_environment.py
+bash run_saha.sh
 ```
 
 The project requires Python `3.11.*`; do not create the uv environment with
@@ -74,7 +85,29 @@ On Windows/Linux x86_64, `uv sync --extra dev` installs CUDA-enabled PyTorch
 from the pinned PyTorch CUDA 12.8 index. If no NVIDIA GPU is available, the app
 still runs with CPU fallback, but training will be slow.
 
-Run the backend:
+Start the app with one command from the repo root:
+
+```powershell
+.\run_saha.cmd
+```
+
+On macOS/Linux:
+
+```bash
+bash run_saha.sh
+```
+
+The launcher installs frontend dependencies the first time if
+`saha-app/node_modules/` is missing, starts Electron, and Electron starts or
+reuses the local backend on `127.0.0.1:8765`.
+
+PowerShell users can also run `.\run_saha.ps1`; the `.cmd` wrapper avoids
+PowerShell execution-policy prompts on client machines.
+
+Prerequisites for both machines: `uv` and Node.js LTS must be on `PATH`.
+If either is missing, the launcher prints a clear setup message.
+
+Manual backend/frontend startup is still available for debugging.
 
 ```powershell
 uv run python scripts/serve.py --port 8765

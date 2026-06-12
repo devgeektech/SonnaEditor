@@ -347,12 +347,11 @@ def _print_median_baseline_comparison(
         print(f"\nMedian baseline comparison skipped: could not read parquet splits ({exc}).")
         return
 
-    failing_fields = [
-        field
-        for field, limit in _FIELD_USABLE_LIMITS.items()
-        if _finite_number(per_field.get(field)) is not None
-        and _finite_number(per_field.get(field)) > limit
-    ]
+    failing_fields: list[str] = []
+    for field, limit in _FIELD_USABLE_LIMITS.items():
+        model_mae = _finite_number(per_field.get(field))
+        if model_mae is not None and model_mae > limit:
+            failing_fields.append(field)
     if not failing_fields:
         return
 

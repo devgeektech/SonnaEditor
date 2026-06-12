@@ -160,11 +160,12 @@ def compute_offset(key: str, answer: int) -> float:
 
 def normalise_lite_answers(answers: dict[str, int]) -> dict[str, int]:
     """Validate Lite survey answers and return all six answers in display order."""
-    missing = set(QUESTION_ORDER) - set(answers.keys())
+    expected = set(str(key) for key in QUESTION_ORDER)
+    missing = expected - set(answers.keys())
     if missing:
         raise ValueError(f"Missing keys in survey answers: {sorted(missing)}")
 
-    extra = set(answers.keys()) - set(QUESTION_ORDER)
+    extra = set(answers.keys()) - expected
     if extra:
         raise ValueError(f"Unknown survey keys: {sorted(extra)}")
 

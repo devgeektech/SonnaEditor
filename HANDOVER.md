@@ -5,11 +5,11 @@
 **Platforms:** macOS, Windows, and Linux
 **Reference hardware:** M1 Pro MacBook Pro, 32GB RAM
 **Status:** v1.2.0 production shipped; v2 training prep active on the current Windows CUDA workstation; Phase 8 (team distribution) deferred
-**Last updated:** 2026-06-09
+**Last updated:** 2026-06-12
 
 ---
 
-## Current workspace state (2026-06-09)
+## Current workspace state (2026-06-12)
 
 This checkout is a Windows development/training workspace at `C:\Users\vikas.DESKTOP-61LEE8B\Projects\SonnaEditor`.
 
@@ -18,6 +18,7 @@ This checkout is a Windows development/training workspace at `C:\Users\vikas.DES
 - **Local dataset/checkpoints:** training/profile caches were intentionally cleared for a fresh dataset reset, and previous trained profile/foundation checkpoint files were cleared again before the new FiveK foundation run. The duplicate generated dataset folder `v1_learning\dataset` was removed. `v1_learning\` has no trained profile checkpoint and is reserved for frontend-visible published profile checkpoint/sidecar files only. `SonnaEditorFoundation\checkpoints\` is empty, and `foundation_manifest.json` is reset to an empty schema-v2 manifest. The next successful foundation training run will promote a new checkpoint as the default base for Personal AI / Mode A and Lite / Mode B.
 - **Tracked foundation checkpoint cleanup:** on 2026-06-10 the previously pushed foundation checkpoint artifacts (`foundation-fivek-catalog-expert-c-001.*` and `foundation-sonna-raw-xmp-001.*`) were removed from the parent repo worktree and the foundation manifest was reset. A Mac RAW+XMP foundation run is expected to produce the next checkpoint to add and push through Git LFS.
 - **Runtime layout:** the app now auto-creates repo-local working directories on startup, including `data\training_sources\`, `data\raw\`, `data\raw\sonna_training\`, `v1_learning\`, and `.saha\`. A fresh clone no longer depends on pre-existing gitignored folders or user-home `~\.saha` state.
+- **Client startup:** the preferred local app launch is now one command from the repo root: `.\run_saha.cmd` on Windows or `bash run_saha.sh` on macOS/Linux. These wrappers call `uv run python scripts/run_app.py`, which creates runtime folders, checks for Node/npm, installs frontend npm dependencies only when `saha-app/node_modules` is missing, then starts the existing Electron dev command. Electron starts or reuses the FastAPI backend on port `8765`. `run_saha.ps1` is also available for PowerShell users. `.gitattributes` pins `.sh` to LF and Windows wrappers to CRLF so clones behave correctly on both OS families.
 - **RAW format scanning:** supported RAW extensions are now centralised in `config.SUPPORTED_RAW_EXTENSIONS` and shared by dataset builds, folder/API scans, preset processing, model inference, and fine-tune capture. The current scanned formats are `.cr2`, `.cr3`, `.nef`, `.arw`, `.raf`, `.orf`, `.rw2`, `.pef`, `.dng`, `.x3f`, `.rwl`, and `.srw`. Actual preview/metadata extraction still depends on `rawpy`/LibRaw support for the specific camera file, and DNG conversion depends on Adobe DNG Converter support.
 - **Dataset timestamp handling:** RAW+XMP dataset shoot bucketing now normalizes timezone-aware capture timestamps to naive UTC before computing 12-hour shoot IDs, preventing Mac builds from failing on offset-aware ISO timestamps with `can't subtract offset-naive and offset-aware datetimes`.
 - **Production profile UX boundary:** the frontend now exposes two profile creation paths: Personal AI from RAW+XMP warm-started from the hidden foundation checkpoint, and Lite from preset plus the six-question survey. Foundation model training is CLI-only with `scripts/train_foundation_model.py`.
@@ -41,7 +42,20 @@ This checkout is a Windows development/training workspace at `C:\Users\vikas.DES
 - **Anti-collapse and retention diagnostics:** `scripts/analyse_prediction_collapse.py` reports per-slider prediction/target spread and collapsed sliders. `scripts/analyse_backbone_drift.py` compares ConvNeXt `backbone_features` tensors between a foundation checkpoint and a trained Personal AI checkpoint so FiveK/RAW+XMP feature retention can be measured instead of guessed. `scripts/audit_dataset_diversity.py` reports scene/edit diversity buckets. On the previous 27-photo validation split, existing `model-v2.0.0` showed 14 collapsed sliders and Exposure2012 std_ratio ~0.115; the rejected scene-stats candidate showed 29 collapsed sliders and near-zero Exposure spread despite lower test MAE. The previous diagnostic dataset was only 189 photos / 35 shoots, with 16 bright scenes and 9 cool-WB scenes. Those local dataset/checkpoint caches were later cleared for a fresh reset.
 - **Dark low-light exposure failure:** Diagnosis on `0H5A4599` showed the expected/training XMP had `Exposure2012=+1.11`, while the then-active `model-v2.0.0` wrote about `+0.105`. Other key tone/WB sliders and curves were close, so the root cause was not XMP writing or tone-curve endpoints; it was Exposure2012 prediction collapse. Across the previous 189-row dataset, target Exposure std was ~0.454 but model output std was ~0.061, and the darkest luminance quartile needed ~`+0.695` while the model predicted ~`+0.090`.
 - **Inference colour-cast fix:** `src/sonna_editor/inference/pipeline.py` now stabilises RGB tone-curve endpoints before writing XMP. Diagnosis from `0H5A3190A-2.xmp`: WB/Tint were close to the expected output, but Green/Blue tone-curve white endpoints below `255/255` made neutral whites render pink/red in Lightroom. The pipeline preserves RGB black endpoints at `0/0` and white endpoints at `255/255` while leaving middle curve points model-driven.
-- **Verified this pass:** the latest focused training-capacity/diagnostics check passed with `uv run ruff check src\sonna_editor\model\architecture.py src\sonna_editor\training\module.py src\sonna_editor\training\profile_runner.py src\sonna_editor\training\diagnostics.py scripts\train_foundation_model.py tests\test_training.py tests\test_train_foundation_model.py` and focused pytest for the new freeze/diagnostic/foundation defaults (`10 passed`). Earlier full cleanup verification also passed `uv run ruff check .`, `uv run python -m compileall -q src scripts tests`, `npm run build:vite`, focused foundation/profile tests, focused mypy for the foundation CLI/helpers, and split full-suite pytest. Current split pytest result from that pass: `653 passed, 11 skipped` for the suite excluding `test_extract.py`/`test_xmp.py`, plus `71 passed, 34 skipped` for those fixture-dependent RAW/XMP tests. Private RAW/XMP fixture tests now skip when local fixtures are absent or unreadable.
+- **Verified this pass:** full local verification on 2026-06-12 passed after the
+  Pylance cleanup and foundation CLI repair. `scripts\verify_environment.py`
+  passed `11/11`; `uv run ruff check .` passed; `uv run python -m compileall -q
+  src scripts tests` passed; `npm run build:vite` passed in `saha-app\` after
+  rerunning outside the Windows sandbox runner; `uv run pytest -q` passed with
+  `753 passed, 45 skipped, 1 warning`; and `git diff --check` reported only Git
+  line-ending notices. Smoke checks for `scripts\run_app.py --help`,
+  `run_saha.cmd --help`, `scripts\serve.py --help`, `scripts\train_profile.py
+  --help`, `scripts\quick_diagnostic.py --help`, and
+  `scripts\train_foundation_model.py --help` passed. The verification surfaced
+  and fixed a foundation CLI drift: `--tone-presence-retry` and repeatable
+  `--field-loss-weight FIELD=WEIGHT` are now exposed and forwarded by
+  `scripts\train_foundation_model.py`, with regression coverage in
+  `tests\test_train_foundation_model.py`.
 
 ---
 

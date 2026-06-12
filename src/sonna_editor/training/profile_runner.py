@@ -21,7 +21,7 @@ import sys
 import warnings
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, cast
 
 warnings.filterwarnings(
     "ignore",
@@ -164,16 +164,6 @@ def _parse_args() -> argparse.Namespace:
                    help="Optional version stem, e.g. v2.0.0 or model-v2.0.0")
     p.add_argument("--no-publish", action="store_true",
                    help="Only save output-dir/model.ckpt; do not copy a versioned profile for the UI")
-    p.add_argument(
-        "--checkpoint-monitor",
-        choices=("val_loss", "val_visual_score"),
-        default="val_loss",
-        help=(
-            "Metric used to select/export the best checkpoint. Foundation runs "
-            "use val_visual_score so key visual sliders are balanced instead of "
-            "selecting only by total validation loss."
-        ),
-    )
     return p.parse_args()
 
 
@@ -330,6 +320,28 @@ def _load_best_weights_into_model(model, best_ckpt: str) -> None:
     model.load_state_dict(state, strict=True)
 
 
+def _require_setup_value(value: Any | None, name: str) -> Any:
+    """Return a datamodule value that must exist after setup()."""
+    if value is None:
+        raise RuntimeError(f"SonnaDataModule.setup() did not initialise {name}.")
+    return value
+
+
+def _checkpoint_best_path(checkpoint: ModelCheckpoint) -> str:
+    """Return Lightning's best-checkpoint path without relying on trainer typing."""
+    return str(getattr(checkpoint, "best_model_path", "") or "")
+
+
+def _checkpoint_best_score(checkpoint: ModelCheckpoint) -> float:
+    """Return Lightning's best score as a plain float."""
+    score = getattr(checkpoint, "best_model_score", None)
+    if score is None:
+        return 0.0
+    if isinstance(score, torch.Tensor):
+        return float(score.detach().cpu().item())
+    return float(score)
+
+
 def _slugify(value: str) -> str:
     slug = re.sub(r"[^a-z0-9]+", "-", value.lower()).strip("-")
     return slug or "sonna-trained-profile"
@@ -451,6 +463,10 @@ def _log_startup_diagnostics(
         trainable_parameter_breakdown,
     )
 
+    train_ds = _require_setup_value(dm._train_ds, "train dataset")
+    val_ds = _require_setup_value(dm._val_ds, "validation dataset")
+    test_ds = _require_setup_value(dm._test_ds, "test dataset")
+
     counts = parameter_counts(model)
     loader_diag = dataloader_diagnostics(train_loader)
     max_steps = getattr(args, "max_steps", None)
@@ -474,14 +490,14 @@ def _log_startup_diagnostics(
     )
     log.info(
         "  Dataset images: train=%d  val=%d  test=%d  total=%d",
-        len(dm._train_ds),
-        len(dm._val_ds),
-        len(dm._test_ds),
-        len(dm._train_ds) + len(dm._val_ds) + len(dm._test_ds),
+        len(train_ds),
+        len(val_ds),
+        len(test_ds),
+        len(train_ds) + len(val_ds) + len(test_ds),
     )
     log.info(
         "  Training samples: %d  batch_size=%d  batches_per_epoch=%d",
-        len(dm._train_ds),
+        len(train_ds),
         args.batch_size,
         loader_diag["batches_per_epoch"],
     )
@@ -535,10 +551,10 @@ def _log_startup_diagnostics(
     return {
         "parameter_counts": counts,
         "dataset": {
-            "train_rows": len(dm._train_ds),
-            "val_rows": len(dm._val_ds),
-            "test_rows": len(dm._test_ds),
-            "total_rows": len(dm._train_ds) + len(dm._val_ds) + len(dm._test_ds),
+            "train_rows": len(train_ds),
+            "val_rows": len(val_ds),
+            "test_rows": len(test_ds),
+            "total_rows": len(train_ds) + len(val_ds) + len(test_ds),
         },
         "dataloader": loader_diag,
         "estimated_optimizer_steps": estimated_steps,
@@ -564,6 +580,9 @@ def _dataset_summary_payload(
     dm: Any,
     num_train_batches: int,
 ) -> dict[str, Any]:
+    train_ds = _require_setup_value(dm._train_ds, "train dataset")
+    val_ds = _require_setup_value(dm._val_ds, "validation dataset")
+    test_ds = _require_setup_value(dm._test_ds, "test dataset")
     train_path = Path(args.train_parquet)
     val_path = Path(args.val_parquet)
     test_path = Path(args.test_parquet)
@@ -571,10 +590,10 @@ def _dataset_summary_payload(
     if train_path.parent == val_path.parent == test_path.parent:
         splits_dir = str(train_path.parent)
     return {
-        "train_rows": len(dm._train_ds),
-        "val_rows": len(dm._val_ds),
-        "test_rows": len(dm._test_ds),
-        "total_rows": len(dm._train_ds) + len(dm._val_ds) + len(dm._test_ds),
+        "train_rows": len(train_ds),
+        "val_rows": len(val_ds),
+        "test_rows": len(test_ds),
+        "total_rows": len(train_ds) + len(val_ds) + len(test_ds),
         "train_parquet": str(train_path),
         "val_parquet": str(val_path),
         "test_parquet": str(test_path),
@@ -619,20 +638,7 @@ def _warm_start_model_from_checkpoint(
     and skip categorical embedding tables while copying shared visual/metadata
     layers and heads.
     """
-    try:
-        ckpt = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
-    except Exception as exc:
-        raise ValueError(
-            "Warm-start failed because the active foundation checkpoint is invalid or corrupted. "
-            f"If you intended a fresh foundation training run, rerun with --no-warm-start. "
-            f"Checkpoint path: {checkpoint_path}"
-        ) from exc
-    if not isinstance(ckpt, dict) or "model_state" not in ckpt:
-        raise ValueError(
-            "Warm-start failed because the active foundation checkpoint is not a valid foundation checkpoint dict. "
-            f"If you intended a fresh foundation training run, rerun with --no-warm-start. "
-            f"Checkpoint path: {checkpoint_path}"
-        )
+    ckpt = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
     state: dict[str, torch.Tensor] = ckpt["model_state"]
     arch_config = ckpt.get("arch_config", {}) or {}
     source_slider_set_version = arch_config.get("slider_set_version")
@@ -760,10 +766,13 @@ def train_profile(args: argparse.Namespace) -> dict:
     )
     dm.prepare_data()
     dm.setup("fit")
+    train_ds = _require_setup_value(dm._train_ds, "train dataset")
+    val_ds = _require_setup_value(dm._val_ds, "validation dataset")
+    test_ds = _require_setup_value(dm._test_ds, "test dataset")
 
     log.info(
         "Dataset: train=%d  val=%d  test=%d",
-        len(dm._train_ds), len(dm._val_ds), len(dm._test_ds),
+        len(train_ds), len(val_ds), len(test_ds),
     )
     train_loader = dm.train_dataloader()
     num_train_batches = len(train_loader)
@@ -780,6 +789,8 @@ def train_profile(args: argparse.Namespace) -> dict:
             log_every_n_steps,
         )
     reg = dm.registry
+    if reg is None:
+        raise RuntimeError("SonnaDataModule.setup() did not initialise the registry.")
     log.info(
         "Registry: %d bodies  %d makes  %d models  %d lenses  %d profiles  %d WB presets",
         len(reg.camera_bodies), len(reg.camera_makes), len(reg.camera_models),
@@ -789,8 +800,8 @@ def train_profile(args: argparse.Namespace) -> dict:
     # -----------------------------------------------------------------------
     # Model
     # -----------------------------------------------------------------------
-    resume_checkpoint = getattr(args, "resume_from_checkpoint", None)
-    base_model_checkpoint = getattr(args, "base_model_checkpoint", None)
+    resume_checkpoint = cast(Path | None, getattr(args, "resume_from_checkpoint", None))
+    base_model_checkpoint = cast(Path | None, getattr(args, "base_model_checkpoint", None))
     if resume_checkpoint and base_model_checkpoint:
         raise ValueError(
             "Use either --resume-from-checkpoint for an interrupted run or "
@@ -811,6 +822,8 @@ def train_profile(args: argparse.Namespace) -> dict:
             log.info("Resuming trainer state from %s", resume_checkpoint)
             model = SonnaEditor.from_checkpoint(resume_checkpoint)
         else:
+            if base_model_checkpoint is None:
+                raise RuntimeError("Warm-start checkpoint path was not initialised.")
             log.info("Warm-starting model weights from %s", base_model_checkpoint)
             model = _warm_start_model_from_checkpoint(
                 model_cls=SonnaEditor,
@@ -877,43 +890,25 @@ def train_profile(args: argparse.Namespace) -> dict:
     # -----------------------------------------------------------------------
     ckpt_dir = args.output_dir / "checkpoints"
     tb_logger = TensorBoardLogger(save_dir=str(args.output_dir), name="tensorboard")
-    checkpoint_monitor = getattr(args, "checkpoint_monitor", "val_loss")
-    checkpoint_filename = (
-        "epoch={epoch:03d}-visual={val_visual_score:.4f}-val_loss={val_loss:.4f}"
-        if checkpoint_monitor == "val_visual_score"
-        else "epoch={epoch:03d}-val_loss={val_loss:.4f}"
-    )
+
     checkpoint_callback = ModelCheckpoint(
         dirpath=str(ckpt_dir),
-        filename=checkpoint_filename,
-        monitor=checkpoint_monitor,
+        filename="epoch={epoch:03d}-val_loss={val_loss:.4f}",
+        monitor="val_loss",
         mode="min",
         save_top_k=3,
         auto_insert_metric_name=False,
     )
-    val_loss_callback = checkpoint_callback
-    if checkpoint_monitor != "val_loss":
-        val_loss_callback = ModelCheckpoint(
-            dirpath=str(ckpt_dir),
-            filename="val-loss-epoch={epoch:03d}-val_loss={val_loss:.4f}",
-            monitor="val_loss",
-            mode="min",
-            save_top_k=1,
-            auto_insert_metric_name=False,
-        )
-
     callbacks = [
         checkpoint_callback,
         EarlyStopping(
-            monitor=checkpoint_monitor,
+            monitor="val_loss",
             patience=10,
             mode="min",
             verbose=True,
         ),
         LearningRateMonitor(logging_interval="epoch"),
     ]
-    if val_loss_callback is not checkpoint_callback:
-        callbacks.append(val_loss_callback)
     if getattr(args, "on_epoch_complete", None) is not None or getattr(args, "cancel_event", None) is not None:
         callbacks.append(
             _ProfileEpochBridgeCallback(
@@ -952,18 +947,14 @@ def train_profile(args: argparse.Namespace) -> dict:
             "train_rows": dataset_summary["train_rows"],
             "val_rows": dataset_summary["val_rows"],
             "test_rows": dataset_summary["test_rows"],
-            "best_val_loss": float(val_loss_callback.best_model_score or 0.0),
-            "best_checkpoint": checkpoint_callback.best_model_path,
-            "checkpoint_monitor": checkpoint_monitor,
-            "best_checkpoint_score": float(checkpoint_callback.best_model_score or 0.0),
+            "best_val_loss": _checkpoint_best_score(checkpoint_callback),
+            "best_checkpoint": _checkpoint_best_path(checkpoint_callback),
             "final_model": None,
             "published_model": None,
             "test_results": {},
             "epochs_trained": trainer.current_epoch,
             "hparams": {
                 "arch_version": lightning_module.model._arch_version,
-                "max_epochs": args.max_epochs,
-                "checkpoint_monitor": checkpoint_monitor,
                 "lr": args.lr,
                 "weight_decay": args.weight_decay,
                 "batch_size": args.batch_size,
@@ -980,6 +971,9 @@ def train_profile(args: argparse.Namespace) -> dict:
                 "target_prior_init": not args.no_target_prior_init,
                 "base_model_checkpoint": str(base_model_checkpoint) if base_model_checkpoint else None,
                 "foundation_provenance": foundation_provenance,
+                "field_loss_weights": _parse_field_loss_weight_overrides(
+                    getattr(args, "field_loss_weight", []) or []
+                ),
             },
             "startup_diagnostics": startup_diagnostics,
         }
@@ -991,7 +985,7 @@ def train_profile(args: argparse.Namespace) -> dict:
     # -----------------------------------------------------------------------
     # Test on best checkpoint
     # -----------------------------------------------------------------------
-    best_ckpt = checkpoint_callback.best_model_path
+    best_ckpt = _checkpoint_best_path(checkpoint_callback)
     log.info("Best checkpoint: %s", best_ckpt)
     if best_ckpt:
         test_results = trainer.test(lightning_module, datamodule=dm, ckpt_path=best_ckpt)
@@ -1005,8 +999,7 @@ def train_profile(args: argparse.Namespace) -> dict:
     # -----------------------------------------------------------------------
     # Save final model + summary
     # -----------------------------------------------------------------------
-    best_val_loss = float(val_loss_callback.best_model_score or 0.0)
-    best_checkpoint_score = float(checkpoint_callback.best_model_score or 0.0)
+    best_val_loss = _checkpoint_best_score(checkpoint_callback)
     display_name = args.profile_name or "Sonna trained profile"
     final_model_path = args.output_dir / "model.ckpt"
     if best_ckpt:
@@ -1023,7 +1016,7 @@ def train_profile(args: argparse.Namespace) -> dict:
             slider_set_version=lightning_module.model._slider_set_version,
             arch_version=lightning_module.model._arch_version,
             use_wb_metadata_skip=lightning_module.model._use_wb_metadata_skip,
-            train_rows=len(dm._train_ds),
+            train_rows=len(train_ds),
             val_loss=best_val_loss,
             foundation_provenance=foundation_provenance,
         ),
@@ -1040,7 +1033,7 @@ def train_profile(args: argparse.Namespace) -> dict:
             slider_set_version=lightning_module.model._slider_set_version,
             arch_version=lightning_module.model._arch_version,
             use_wb_metadata_skip=lightning_module.model._use_wb_metadata_skip,
-            train_rows=len(dm._train_ds),
+            train_rows=len(train_ds),
             val_loss=best_val_loss,
             foundation_provenance=foundation_provenance,
         )
@@ -1054,8 +1047,6 @@ def train_profile(args: argparse.Namespace) -> dict:
         "test_rows": dataset_summary["test_rows"],
         "best_val_loss": best_val_loss,
         "best_checkpoint": best_ckpt,
-        "checkpoint_monitor": checkpoint_monitor,
-        "best_checkpoint_score": best_checkpoint_score,
         "final_model": str(final_model_path),
         "published_model": published_model_path,
         "test_results": test_results[0] if test_results else {},
@@ -1063,8 +1054,6 @@ def train_profile(args: argparse.Namespace) -> dict:
         "epochs_trained": trainer.current_epoch,
         "hparams": {
             "arch_version": lightning_module.model._arch_version,
-            "max_epochs": args.max_epochs,
-            "checkpoint_monitor": checkpoint_monitor,
             "lr": args.lr,
             "weight_decay": args.weight_decay,
             "batch_size": args.batch_size,

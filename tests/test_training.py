@@ -5,11 +5,13 @@ import argparse
 import io
 import math
 from pathlib import Path
+from typing import cast
 
 import numpy as np
 import pandas as pd
 import pytest
 import torch
+import pytorch_lightning as pl
 from PIL import Image
 
 from sonna_editor import config
@@ -240,6 +242,12 @@ def test_decode_histogram_non_negative() -> None:
     assert (hist >= 0).all()
 
 
+def _metadata_tensor(metadata: dict[str, torch.Tensor | str], key: str) -> torch.Tensor:
+    value = metadata[key]
+    assert isinstance(value, torch.Tensor)
+    return value
+
+
 # ---------------------------------------------------------------------------
 # build_registry
 # ---------------------------------------------------------------------------
@@ -286,7 +294,10 @@ def test_foundation_warm_start_keeps_training_registry(tmp_path: Path) -> None:
     train_reg.wb_presets = {"unknown": 0, "Train WB": 1}
     base = SonnaEditor(registry=base_reg, freeze_backbone=True, _pretrained_backbone=False)
     with torch.no_grad():
-        base.tone_head[-1].bias.fill_(0.123)
+        final_tone = base.tone_head[-1]
+        assert isinstance(final_tone, torch.nn.Linear)
+        assert final_tone.bias is not None
+        final_tone.bias.fill_(0.123)
         base.metadata_encoder.make_emb.weight.fill_(9.0)
     ckpt = tmp_path / "foundation.ckpt"
     base.save_checkpoint(ckpt)
@@ -341,18 +352,18 @@ def test_dataset_metadata_keys(dataset: SonnaDataset) -> None:
 
 def test_dataset_metadata_histogram_shape(dataset: SonnaDataset) -> None:
     _, metadata, _ = dataset[0]
-    assert metadata["histogram"].shape == (96,)
+    assert _metadata_tensor(metadata, "histogram").shape == (96,)
 
 
 def test_dataset_metadata_scene_stats_shape(dataset: SonnaDataset) -> None:
     _, metadata, _ = dataset[0]
-    assert metadata["scene_stats"].shape == (6,)
+    assert _metadata_tensor(metadata, "scene_stats").shape == (6,)
 
 
 def test_dataset_metadata_ids_are_long(dataset: SonnaDataset) -> None:
     _, metadata, _ = dataset[0]
     for key in ("camera_body_id", "lens_id", "camera_profile_id", "wb_preset_id"):
-        assert metadata[key].dtype == torch.long, f"{key} should be long"
+        assert _metadata_tensor(metadata, key).dtype == torch.long, f"{key} should be long"
 
 
 def test_dataset_target_shape(dataset: SonnaDataset) -> None:
@@ -694,17 +705,17 @@ def test_dataset_metadata_includes_as_shot_when_columns_present(
     ds = SonnaDataset(df, ValidationAugmentation(), registry)
     _, metadata, _ = ds[0]
     assert "as_shot_temperature" in metadata and "as_shot_tint" in metadata
-    assert metadata["as_shot_temperature"].item() == pytest.approx(5200.0)
-    assert metadata["as_shot_tint"].item() == pytest.approx(3.0)
+    assert _metadata_tensor(metadata, "as_shot_temperature").item() == pytest.approx(5200.0)
+    assert _metadata_tensor(metadata, "as_shot_tint").item() == pytest.approx(3.0)
 
 
 def test_dataset_metadata_as_shot_nan_when_column_missing(dataset: SonnaDataset) -> None:
     """When parquet lacks AsShot columns, metadata still has the keys (NaN)."""
     _, metadata, _ = dataset[0]
     assert "as_shot_temperature" in metadata
-    assert math.isnan(metadata["as_shot_temperature"].item())
+    assert math.isnan(_metadata_tensor(metadata, "as_shot_temperature").item())
     assert "as_shot_tint" in metadata
-    assert math.isnan(metadata["as_shot_tint"].item())
+    assert math.isnan(_metadata_tensor(metadata, "as_shot_tint").item())
 
 
 # ---------------------------------------------------------------------------
@@ -935,7 +946,7 @@ def test_dataset_summary_payload_records_rows_and_split_paths(tmp_path: Path) ->
         },
     )()
 
-    payload = _dataset_summary_payload(args=args, dm=_FakeDataModule(), num_train_batches=1)
+    payload = _dataset_summary_payload(args=cast(argparse.Namespace, args), dm=_FakeDataModule(), num_train_batches=1)
 
     assert payload["train_rows"] == 3
     assert payload["val_rows"] == 2
@@ -1003,7 +1014,7 @@ def test_overcorrection_callback_warns_when_threshold_crossed(capsys) -> None:
     ]
     pl_module = _FakeModule(per_batch)
     trainer = _FakeTrainer(current_epoch=5)
-    cb.on_validation_epoch_end(trainer, pl_module)
+    cb.on_validation_epoch_end(cast(pl.Trainer, trainer), cast(pl.LightningModule, pl_module))
     assert trainer.should_stop is False, "warning callback must not halt training"
     out = capsys.readouterr().out
     assert "overcorrection warning" in out
@@ -1016,7 +1027,7 @@ def test_overcorrection_callback_skips_warmup(capsys) -> None:
     per_batch = [{"Temperature": (90, 100)}]
     pl_module = _FakeModule(per_batch)
     trainer = _FakeTrainer(current_epoch=0)   # before check_after_epoch
-    cb.on_validation_epoch_end(trainer, pl_module)
+    cb.on_validation_epoch_end(cast(pl.Trainer, trainer), cast(pl.LightningModule, pl_module))
     assert trainer.should_stop is False
     assert capsys.readouterr().out == "", "no warning should fire during warmup"
 
@@ -1027,7 +1038,7 @@ def test_overcorrection_callback_clean_when_under_threshold(capsys) -> None:
     per_batch = [{"Temperature": (20, 100), "Tint": (24, 100), "Exposure2012": (0, 50)}]
     pl_module = _FakeModule(per_batch)
     trainer = _FakeTrainer(current_epoch=5)
-    cb.on_validation_epoch_end(trainer, pl_module)
+    cb.on_validation_epoch_end(cast(pl.Trainer, trainer), cast(pl.LightningModule, pl_module))
     assert trainer.should_stop is False
     assert capsys.readouterr().out == ""
 
@@ -1043,7 +1054,7 @@ def test_overcorrection_callback_aggregates_batches(capsys) -> None:
     ]
     pl_module = _FakeModule(per_batch)
     trainer = _FakeTrainer(current_epoch=5)
-    cb.on_validation_epoch_end(trainer, pl_module)
+    cb.on_validation_epoch_end(cast(pl.Trainer, trainer), cast(pl.LightningModule, pl_module))
     assert trainer.should_stop is False
     assert "overcorrection warning" in capsys.readouterr().out
 
@@ -1056,7 +1067,7 @@ def test_overcorrection_callback_ignores_low_sample_fields(capsys) -> None:
     per_batch = [{"Temperature": (3, 3), "Tint": (10, 100)}]  # Temp 100% but only n=3
     pl_module = _FakeModule(per_batch)
     trainer = _FakeTrainer(current_epoch=5)
-    cb.on_validation_epoch_end(trainer, pl_module)
+    cb.on_validation_epoch_end(cast(pl.Trainer, trainer), cast(pl.LightningModule, pl_module))
     assert trainer.should_stop is False
     assert capsys.readouterr().out == ""
 
@@ -1070,14 +1081,14 @@ def test_overcorrection_callback_warns_only_once_per_streak(capsys) -> None:
     trainer = _FakeTrainer(current_epoch=5)
 
     # First bad epoch → warns.
-    cb.on_validation_epoch_end(trainer, _FakeModule(per_batch_bad))
+    cb.on_validation_epoch_end(cast(pl.Trainer, trainer), cast(pl.LightningModule, _FakeModule(per_batch_bad)))
     assert "overcorrection warning" in capsys.readouterr().out
     # Second bad epoch in same streak → stays quiet.
-    cb.on_validation_epoch_end(trainer, _FakeModule(per_batch_bad))
+    cb.on_validation_epoch_end(cast(pl.Trainer, trainer), cast(pl.LightningModule, _FakeModule(per_batch_bad)))
     assert capsys.readouterr().out == ""
     # Clean epoch → resets the streak silently.
-    cb.on_validation_epoch_end(trainer, _FakeModule(per_batch_clean))
+    cb.on_validation_epoch_end(cast(pl.Trainer, trainer), cast(pl.LightningModule, _FakeModule(per_batch_clean)))
     assert capsys.readouterr().out == ""
     # New bad epoch after clean → warns again.
-    cb.on_validation_epoch_end(trainer, _FakeModule(per_batch_bad))
+    cb.on_validation_epoch_end(cast(pl.Trainer, trainer), cast(pl.LightningModule, _FakeModule(per_batch_bad)))
     assert "overcorrection warning" in capsys.readouterr().out

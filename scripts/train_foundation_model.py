@@ -15,7 +15,6 @@ from __future__ import annotations
 
 import argparse
 import gc
-import json
 import logging
 import os
 import sys
@@ -30,7 +29,6 @@ from sonna_editor.foundation import (
     ensure_foundation_repo_layout,
     promote_foundation_checkpoint,
     resolve_foundation_checkpoint,
-    validate_foundation_checkpoint,
 )
 from sonna_editor.training.profile_runner import train_profile
 
@@ -43,13 +41,13 @@ _DEFAULT_FOUNDATION_BACKBONE_LAYERS = "stage:7"
 _SMALL_FOUNDATION_BACKBONE_STRATEGY = "custom"
 _SMALL_FOUNDATION_BACKBONE_LAYERS = "none"
 _TONE_PRESENCE_RETRY_WEIGHTS: dict[str, float] = {
-    "Exposure2012": 10.0,
-    "Whites2012": 10.0,
-    "Blacks2012": 10.0,
-    "Highlights2012": 8.0,
-    "Shadows2012": 6.0,
-    "Vibrance": 6.0,
-    "Saturation": 6.0,
+    "Whites2012": 6.0,
+    "Blacks2012": 6.0,
+    "Highlights2012": 5.0,
+    "Shadows2012": 4.0,
+    "Vibrance": 4.0,
+    "Saturation": 4.0,
+    "Exposure2012": 7.0,
 }
 
 
@@ -96,26 +94,6 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--max-epochs", type=int, default=100)
     parser.add_argument("--batch-size", type=int, default=8)
     parser.add_argument("--image-resolution", type=int, default=config.IMAGE_RESOLUTION)
-    parser.add_argument(
-        "--field-loss-weight",
-        action="append",
-        default=[],
-        metavar="FIELD=WEIGHT",
-        help=(
-            "Override a named Lightroom slider loss weight during foundation "
-            "training. Repeatable, e.g. --field-loss-weight Whites2012=6."
-        ),
-    )
-    parser.add_argument(
-        "--tone-presence-retry",
-        action="store_true",
-        help=(
-            "Apply the reviewed foundation retry recipe for runs that pass WB/HSL "
-            "but fail tone/presence gates. This raises loss pressure on Exposure, "
-            "Whites, Blacks, Highlights, Shadows, Vibrance, and Saturation. "
-            "Explicit --field-loss-weight values override this preset per field."
-        ),
-    )
     parser.add_argument(
         "--min-foundation-train-rows",
         type=int,
@@ -172,6 +150,27 @@ def _parse_args() -> argparse.Namespace:
             "Start from pretrained/default weights instead of the active foundation "
             "checkpoint. By default each foundation run warm-starts from the active "
             "checkpoint and writes a new versioned checkpoint."
+        ),
+    )
+    parser.add_argument(
+        "--tone-presence-retry",
+        action="store_true",
+        help=(
+            "Apply the reviewed foundation retry loss weights for Exposure2012, "
+            "Whites2012, Blacks2012, Highlights2012, Shadows2012, Vibrance, "
+            "and Saturation. Explicit --field-loss-weight values override this "
+            "preset per field."
+        ),
+    )
+    parser.add_argument(
+        "--field-loss-weight",
+        action="append",
+        default=[],
+        metavar="FIELD=WEIGHT",
+        help=(
+            "Override any named Lightroom slider loss weight passed through to "
+            "train_profile.py. Repeatable, for example --field-loss-weight "
+            "Whites2012=6 --field-loss-weight Vibrance=4."
         ),
     )
     return parser.parse_args()
@@ -254,18 +253,18 @@ def _validate_foundation_split_size(
     return counts
 
 
-_FOUNDATION_METRIC_LIMITS: dict[str, tuple[float, float, str]] = {
-    "test_mae_temperature": (350.0, 500.0, "Temperature"),
-    "test_mae_tint": (8.0, 12.0, "Tint"),
-    "test_mae_exposure": (0.25, 0.50, "Exposure2012"),
-    "test_mae_shadows": (8.0, 15.0, "Shadows2012"),
-    "test_mae_highlights": (8.0, 18.0, "Highlights2012"),
-    "test_mae_whites": (5.0, 25.0, "Whites2012"),
-    "test_mae_blacks": (5.0, 25.0, "Blacks2012"),
-    "test_mae_clarity": (5.0, 10.0, "Clarity2012"),
-    "test_mae_vibrance": (5.0, 10.0, "Vibrance"),
-    "test_mae_saturation": (5.0, 10.0, "Saturation"),
-    "test_mae_hsl_avg": (10.0, 14.0, "HSL average"),
+_FOUNDATION_METRIC_LIMITS: dict[str, tuple[float, str]] = {
+    "test_mae_temperature": (350.0, "Temperature"),
+    "test_mae_tint": (8.0, "Tint"),
+    "test_mae_exposure": (0.25, "Exposure2012"),
+    "test_mae_shadows": (8.0, "Shadows2012"),
+    "test_mae_highlights": (8.0, "Highlights2012"),
+    "test_mae_whites": (5.0, "Whites2012"),
+    "test_mae_blacks": (5.0, "Blacks2012"),
+    "test_mae_clarity": (5.0, "Clarity2012"),
+    "test_mae_vibrance": (5.0, "Vibrance"),
+    "test_mae_saturation": (5.0, "Saturation"),
+    "test_mae_hsl_avg": (10.0, "HSL average"),
 }
 
 
@@ -297,9 +296,8 @@ def _foundation_metric_value(summary: dict[str, Any], key: str) -> float | None:
     return None
 
 
-def _foundation_quality_report(summary: dict[str, Any]) -> tuple[list[str], list[str]]:
+def _foundation_quality_failures(summary: dict[str, Any]) -> list[str]:
     failures: list[str] = []
-    warnings: list[str] = []
     best_val = summary.get("best_val_loss")
     test_results = summary.get("test_results") or {}
     test_loss = test_results.get("test_loss")
@@ -309,70 +307,17 @@ def _foundation_quality_report(summary: dict[str, Any]) -> tuple[list[str], list
         and best_val > 0
         and isinstance(test_loss, (int, float))
         and not isinstance(test_loss, bool)
+        and test_loss > best_val * 1.25
     ):
-        if test_loss > best_val * 1.35:
-            failures.append(
-                f"test_loss {test_loss:.6f} is more than 1.35x best_val_loss {best_val:.6f}"
-            )
-        elif test_loss > best_val * 1.25:
-            warnings.append(
-                f"test_loss {test_loss:.6f} is more than 1.25x best_val_loss {best_val:.6f}"
-            )
+        failures.append(
+            f"test_loss {test_loss:.6f} is more than 1.25x best_val_loss {best_val:.6f}"
+        )
 
-    for key, (warn_limit, hard_limit, label) in _FOUNDATION_METRIC_LIMITS.items():
+    for key, (limit, label) in _FOUNDATION_METRIC_LIMITS.items():
         value = _foundation_metric_value(summary, key)
-        if value is None:
-            continue
-        if value > hard_limit:
-            failures.append(f"{label} MAE {value:.4g} exceeds hard limit {hard_limit:g}")
-        elif value > warn_limit:
-            warnings.append(f"{label} MAE {value:.4g} exceeds target {warn_limit:g}")
-    return failures, warnings
-
-
-def _foundation_quality_failures(summary: dict[str, Any]) -> list[str]:
-    failures, _ = _foundation_quality_report(summary)
+        if value is not None and value > limit:
+            failures.append(f"{label} MAE {value:.4g} exceeds {limit:g}")
     return failures
-
-
-def _field_loss_weights_for_recipe(args: argparse.Namespace) -> list[str]:
-    weights = list(getattr(args, "field_loss_weight", []) or [])
-    if not getattr(args, "tone_presence_retry", False):
-        return weights
-
-    explicit_fields = {
-        raw.split("=", 1)[0].strip()
-        for raw in weights
-        if "=" in raw
-    }
-    for field, weight in _TONE_PRESENCE_RETRY_WEIGHTS.items():
-        if field not in explicit_fields:
-            weights.append(f"{field}={weight:g}")
-    return weights
-
-
-def _write_quality_gate_result(
-    *,
-    training_dir: Path,
-    summary: dict[str, Any],
-    failures: list[str],
-    warnings: list[str] | None = None,
-) -> None:
-    warnings = warnings or []
-    summary["quality_gate_passed"] = not failures
-    summary["foundation_quality_failures"] = failures
-    summary["foundation_quality_warnings"] = warnings
-    summary_path = training_dir / "training_summary.json"
-    if summary_path.exists():
-        try:
-            existing = json.loads(summary_path.read_text())
-            existing["quality_gate_passed"] = summary["quality_gate_passed"]
-            existing["foundation_quality_failures"] = failures
-            existing["foundation_quality_warnings"] = warnings
-            summary_path.write_text(json.dumps(existing, indent=2))
-            return
-        except Exception:
-            log.warning("Could not update quality gate result in %s", summary_path)
 
 
 def _foundation_capacity_for_split(
@@ -436,6 +381,18 @@ def _train_profile_with_cuda_oom_retry(train_args: argparse.Namespace) -> dict[s
             )
             _clear_cuda_after_failure()
     raise RuntimeError("Foundation training failed after reducing batch size to 1") from last_error
+
+
+def _foundation_field_loss_weight_args(args: argparse.Namespace) -> list[str]:
+    field_loss_weight = list(getattr(args, "field_loss_weight", []) or [])
+    if not bool(getattr(args, "tone_presence_retry", False)):
+        return field_loss_weight
+
+    preset = [
+        f"{field}={weight:g}"
+        for field, weight in _TONE_PRESENCE_RETRY_WEIGHTS.items()
+    ]
+    return [*preset, *field_loss_weight]
 
 
 def _active_foundation_or_none() -> Path | None:
@@ -505,15 +462,6 @@ def main() -> None:
     training_dir = run_dir / "training"
     training_dir.mkdir(parents=True, exist_ok=True)
     base_foundation = None if args.no_warm_start else _active_foundation_or_none()
-    if base_foundation is not None:
-        try:
-            validate_foundation_checkpoint(base_foundation)
-        except ValueError as exc:
-            raise RuntimeError(
-                "Active foundation checkpoint is invalid. "
-                "If you want a brand-new foundation build, rerun with --no-warm-start. "
-                f"Otherwise fix or replace {base_foundation}."
-            ) from exc
 
     splits_dir = _resolve_splits(args, run_dir)
     split_counts = _validate_foundation_split_size(
@@ -552,11 +500,10 @@ def main() -> None:
         no_wb_metadata_skip=False,
         no_target_prior_init=False,
         image_resolution=args.image_resolution,
-        checkpoint_monitor="val_visual_score",
         temperature_weight=4.0,
         tint_weight=4.0,
         exposure_weight=5.0,
-        field_loss_weight=_field_loss_weights_for_recipe(args),
+        field_loss_weight=_foundation_field_loss_weight_args(args),
         temperature_bucket_loss_weight=0.15,
         tint_bucket_loss_weight=2.0,
         spread_loss_weight=None,
@@ -574,13 +521,7 @@ def main() -> None:
     final_model = summary.get("final_model")
     if not final_model:
         raise RuntimeError("Training did not produce a final model checkpoint")
-    quality_failures, quality_warnings = _foundation_quality_report(summary)
-    _write_quality_gate_result(
-        training_dir=training_dir,
-        summary=summary,
-        failures=quality_failures,
-        warnings=quality_warnings,
-    )
+    quality_failures = _foundation_quality_failures(summary)
     if quality_failures and not args.allow_quality_gate_failure:
         formatted = "\n  - ".join(quality_failures)
         raise RuntimeError(
@@ -589,13 +530,6 @@ def main() -> None:
             f"{formatted}\n"
             "Inspect the run, add more data or tune the recipe, then rerun. "
             "Pass --allow-quality-gate-failure only after deliberate visual review."
-        )
-    if quality_warnings:
-        formatted = "\n  - ".join(quality_warnings)
-        print(
-            "Warning: foundation checkpoint has quality warnings and needs "
-            f"visual review:\n  - {formatted}",
-            file=sys.stderr,
         )
 
     promoted = promote_foundation_checkpoint(
