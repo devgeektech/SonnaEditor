@@ -70,7 +70,11 @@ This checkout is a Windows development/training workspace at `C:\Users\vikas.DES
   enabled, `src\sonna_editor\inference\straighten.py` estimates a small
   `CropAngle` from the extracted preview and writes crop-angle XMP metadata
   only when confidence is high enough. `sonna_predictions.json` records
-  per-photo straightening diagnostics. No model retraining is required.
+  per-photo straightening diagnostics. On 2026-06-15 the frontend dispatch was
+  repaired so a newly added unselected folder can still run as the next
+  single-folder job, with `auto_straighten` forwarded normally. The estimator
+  was also tightened with capped projection scoring and median-fallback
+  support gating. No model retraining is required.
 - **Verified this pass:** full local verification on 2026-06-12 passed after the
   Pylance cleanup and foundation CLI repair. `scripts\verify_environment.py`
   passed `11/11`; `uv run ruff check .` passed; `uv run python -m compileall -q

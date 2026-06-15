@@ -49,6 +49,26 @@ wheels on Windows/Linux x86_64, while macOS resolves the matching public wheels.
 
 ## What Changed This Session
 
+- Fixed the Auto straighten processing path:
+  - The Process view now correctly supports the intended single-folder fallback
+    again. Newly added folders are still unselected by default, but clicking
+    Process with no checked rows now processes the next queued folder instead
+    of leaving the Process button disabled. If one or more rows are checked,
+    the selected-folder flow is unchanged.
+  - `auto_straighten` is still included in the `/api/process` request payload
+    for both single-folder and selected-folder dispatch.
+  - `src\sonna_editor\inference\straighten.py` now uses a smaller capped set
+    of strongest edge points and an axis-support guard for the median fallback,
+    while preserving the high-confidence projection path that detects clear
+    tilted horizons/room geometry.
+  - Added regression coverage for room-like tilted geometry, random texture
+    skip behavior, and direct XMP serialization of `crs:HasCrop` /
+    `crs:CropAngle`.
+  - Verification passed:
+    `uv run pytest tests\test_straighten.py tests\test_xmp.py::TestExtraAttributes tests\api\test_callback_bridge.py::test_pipeline_auto_straighten_writes_crop_angle_and_sidecar tests\api\test_process_route.py::test_process_auto_straighten_forwarded -q`
+    (`12 passed`), `uv run ruff check src\sonna_editor\inference\straighten.py tests\test_straighten.py tests\test_xmp.py`,
+    and `npm run build:vite` in `saha-app\`.
+
 - Removed the login page "What's new" card and the compatibility/version strip
   underneath it.
 - Fixed AI Profiles selection stability: the "Your profiles" list now stays
@@ -748,6 +768,10 @@ wheels on Windows/Linux x86_64, while macOS resolves the matching public wheels.
   processing. It writes Lightroom `CropAngle` metadata only for confident small
   rotations and records skipped/applied diagnostics in `sonna_predictions.json`.
   It is independent of training and checkpoint versioning.
+- The Process UI supports both single-folder and selected-folder dispatch. With
+  no checked queued rows, Process runs the next queued folder; with checked rows,
+  it runs only the selected queued folders. Auto straighten follows the same
+  dispatch path and is forwarded to the backend in either mode.
 
 ## Next Suggested Step
 

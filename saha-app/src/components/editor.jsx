@@ -1057,17 +1057,23 @@ export function Editor({
     () => queue.filter((f) => f.status === 'queued' && f.selected).length,
     [queue],
   );
+  const nextQueuedIndex = useMemo(
+    () => queue.findIndex((f) => f.status === 'queued'),
+    [queue],
+  );
   const processRaws = useMemo(() => (
-    queue.reduce((sum, f) => {
-      if (f.status !== 'queued' || !f.selected) return sum;
-      return sum + (f.fileCount || 0);
-    }, 0)
-  ), [queue]);
+    selectedQueuedCount > 0
+      ? queue.reduce((sum, f) => {
+        if (f.status !== 'queued' || !f.selected) return sum;
+        return sum + (f.fileCount || 0);
+      }, 0)
+      : (nextQueuedIndex >= 0 ? queue[nextQueuedIndex].fileCount || 0 : 0)
+  ), [queue, selectedQueuedCount, nextQueuedIndex]);
   const hasQueuedFolders = useMemo(
     () => queue.some((f) => f.status === 'queued'),
     [queue],
   );
-  const hasProcessableFolders = selectedQueuedCount > 0;
+  const hasProcessableFolders = hasQueuedFolders;
 
   const visualState = useMemo(() => {
     if (isQueueRunning) return 'processing';
@@ -1198,9 +1204,9 @@ export function Editor({
   const beginDispatch = useCallback(() => {
     setError(null);
     setCancelRequested(false);
-    dispatchScopeRef.current = 'selected';
+    dispatchScopeRef.current = selectedQueuedCount > 0 ? 'selected' : 'single';
     setIsQueueRunning(true);
-  }, []);
+  }, [selectedQueuedCount]);
 
   // Two-step gate: if any 'queued' folder has cached XMP conflicts, raise
   // the overwrite dialog and wait. Re-evaluated fresh on every click —
@@ -1208,9 +1214,13 @@ export function Editor({
   // mis-remembering intent is expensive.
   const handleProcess = useCallback(() => {
     if (!canProcess) return;
-    const shouldProcess = (f) => f.status === 'queued' && f.selected;
+    const singleIndex = queue.findIndex((f) => f.status === 'queued');
+    const shouldProcess = (f, index) => (
+      f.status === 'queued'
+      && (selectedQueuedCount > 0 ? f.selected : index === singleIndex)
+    );
     const conflicts = queue
-      .filter((f) => shouldProcess(f) && (f.xmpConflictCount || 0) > 0)
+      .filter((f, index) => shouldProcess(f, index) && (f.xmpConflictCount || 0) > 0)
       .map((f) => ({
         folderName: folderBasename(f.folderPath),
         count: f.xmpConflictCount,
@@ -1224,7 +1234,7 @@ export function Editor({
       return;
     }
     beginDispatch();
-  }, [canProcess, queue, beginDispatch]);
+  }, [canProcess, queue, selectedQueuedCount, beginDispatch]);
 
   const handleConfirmOverwrite = useCallback(() => {
     setOverwriteConfirm(null);
@@ -1354,7 +1364,7 @@ export function Editor({
 
     const nextIndex = queue.findIndex((f) => (
       f.status === 'queued'
-      && f.selected
+      && (dispatchScopeRef.current === 'single' || f.selected)
     ));
     if (nextIndex < 0) {
       // Selected batch complete, or no queued work remains.

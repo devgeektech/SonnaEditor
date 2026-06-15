@@ -399,6 +399,15 @@ Lite checkpoints are marked with `profile_type: mode_b_initial` in the sidecar J
   when confidence passes conservative thresholds. The result is recorded under
   `auto_straighten` and `straightening` in `sonna_predictions.json`. No model
   retraining is required.
+- Auto straightening repair, 2026-06-15: `saha-app/src/components/editor.jsx`
+  again supports the intended single-folder processing fallback. Queued folders
+  remain unselected by default, but if no queued rows are checked, Process runs
+  the next queued folder; if any rows are checked, only selected folders run.
+  The same dispatch sends the `auto_straighten` flag to `/api/process`.
+  `src/sonna_editor/inference/straighten.py` now caps projection scoring to the
+  4,000 strongest edge points and adds axis-support gating for the median-angle
+  fallback, with coverage for room-like tilt, random texture skips, and actual
+  XMP crop-angle attributes.
 
 ## Important behavior notes
 
@@ -411,6 +420,11 @@ Lite checkpoints are marked with `profile_type: mode_b_initial` in the sidecar J
   and Lite processing. It writes Lightroom crop-angle metadata from preview
   geometry when confident; it does not use or update model checkpoints and it
   does not train on crop labels.
+- Process dispatch behavior: with no selected queued folders, the UI processes
+  the next queued folder as a single-folder run; with one or more selected
+  queued folders, it processes only those selected folders. This matters for
+  per-run options like Auto straighten because they are forwarded through the
+  same `job.start()` payload in both modes.
 - Raw metadata extraction uses embedded JPEG EXIF first, then supplements from a `.xmp` sidecar if present.
 - Fresh `arch_version=3` models consume preview-derived scene luminance statistics and use staged output-head conditioning. Existing `arch_version=1`/`2` checkpoints load unchanged and keep their saved head shapes.
 

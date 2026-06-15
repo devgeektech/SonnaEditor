@@ -24,6 +24,34 @@ def _tilted_line_image(angle_degrees: float) -> Image.Image:
     return image
 
 
+def _rotate_points(
+    points: list[tuple[float, float]],
+    angle_degrees: float,
+    centre: tuple[float, float],
+) -> list[tuple[float, float]]:
+    theta = math.radians(angle_degrees)
+    c = math.cos(theta)
+    s = math.sin(theta)
+    cx, cy = centre
+    rotated: list[tuple[float, float]] = []
+    for x, y in points:
+        x -= cx
+        y -= cy
+        rotated.append((cx + x * c - y * s, cy + x * s + y * c))
+    return rotated
+
+
+def _tilted_room_image(angle_degrees: float) -> Image.Image:
+    image = Image.new("RGB", (800, 533), (235, 235, 230))
+    draw = ImageDraw.Draw(image)
+    centre = (400.0, 266.0)
+    lines = [[(60.0, y), (740.0, y)] for y in (80.0, 160.0, 260.0, 380.0, 460.0)]
+    lines.extend([[(x, 60.0), (x, 480.0)] for x in (120.0, 300.0, 520.0, 680.0)])
+    for line in lines:
+        draw.line(_rotate_points(line, angle_degrees, centre), fill=(80, 80, 80), width=3)
+    return image
+
+
 def test_estimate_straighten_angle_detects_small_tilt() -> None:
     result = estimate_straighten_angle(_tilted_line_image(3.0))
 
@@ -39,6 +67,21 @@ def test_estimate_straighten_angle_leaves_blank_image_untouched() -> None:
     assert result.applied is False
     assert result.angle_degrees == 0.0
     assert result.reason == "no_edges"
+
+
+def test_estimate_straighten_angle_detects_room_geometry() -> None:
+    result = estimate_straighten_angle(_tilted_room_image(-2.0))
+
+    assert result.applied is True
+    assert result.angle_degrees == pytest.approx(2.0, abs=0.5)
+
+
+def test_estimate_straighten_angle_skips_random_texture() -> None:
+    noise = Image.effect_noise((640, 420), 60).convert("RGB")
+
+    result = estimate_straighten_angle(noise)
+
+    assert result.applied is False
 
 
 def test_crop_angle_attributes_only_for_applied_result() -> None:
