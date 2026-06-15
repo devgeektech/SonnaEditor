@@ -19,7 +19,9 @@ training, resume, and retrain commands live in `FOUNDATION_TRAINING.md`.
 - Runtime directories are now created automatically from the project root. A fresh clone will bootstrap repo-local `data\training_sources\`, `data\raw\`, `data\raw\sonna_training\`, `v1_learning\`, and `.saha\` on backend or CLI startup.
 - App startup is now wrapped by a one-command launcher. Use `.\run_saha.cmd`
   on Windows and `bash run_saha.sh` on macOS/Linux. The old two-terminal
-  backend/frontend commands remain below as a debugging reference.
+  backend/frontend commands remain below as a debugging reference. Electron's
+  backend readiness wait is 30s by default and can be overridden with
+  `SAHA_BACKEND_STARTUP_TIMEOUT_MS` for unusually slow cold starts.
 - Latest full local verification on 2026-06-12 passed: environment `11/11`,
   `uv run ruff check .`, `uv run python -m compileall -q src scripts tests`,
   `npm run build:vite`, and full pytest (`753 passed, 45 skipped, 1 warning`).
@@ -807,7 +809,9 @@ uv run python scripts\run_app.py
 
 The launcher creates runtime folders, runs `npm install` only when
 `saha-app\node_modules\` is missing, then starts `npm run dev` in `saha-app`.
-The Electron main process starts or reuses the backend on port `8765`.
+The Electron main process starts or reuses the backend on port `8765`. It waits
+up to 30s for `/api/health` before showing a backend startup error, with the
+deadline configurable through `SAHA_BACKEND_STARTUP_TIMEOUT_MS`.
 PowerShell users can also run `.\run_saha.ps1`; `.\run_saha.cmd` is usually
 smoother on client machines because it avoids execution-policy prompts.
 Both machines need `uv` and Node.js LTS on `PATH`; missing tools are reported

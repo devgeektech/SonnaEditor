@@ -5,11 +5,52 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Saha</title>
   <style>
+    :root,
+    html[data-theme="light"] {
+      --saha-bg-deep: #F7F3ED;
+      --saha-bg-panel: #FFFDF9;
+      --saha-bg-lifted: #EFE7DC;
+      --saha-bg-hover: #E7DCCF;
+      --saha-line: #D8CEC1;
+      --saha-line-soft: #E7DED3;
+      --saha-fg: #221B15;
+      --saha-fg-mute: #5F564E;
+      --saha-fg-dim: #7A7067;
+      --saha-fg-faint: #A3988D;
+      --saha-accent: #C76F35;
+      --saha-accent-soft: #A65A2B;
+      --saha-accent-tint: rgba(199, 111, 53, 0.14);
+      --saha-on-accent: #FFFFFF;
+      --saha-green: #4F8464;
+      --saha-amber: #A9792C;
+      --saha-red: #A24B45;
+      --saha-on-danger: #FFFFFF;
+    }
+    html[data-theme="dark"] {
+      --saha-bg-deep: #16140F;
+      --saha-bg-panel: #1F1D17;
+      --saha-bg-lifted: #2A2822;
+      --saha-bg-hover: #34322B;
+      --saha-line: #2C2A24;
+      --saha-line-soft: #24221C;
+      --saha-fg: #E8E6E0;
+      --saha-fg-mute: #B2ADA1;
+      --saha-fg-dim: #807A6D;
+      --saha-fg-faint: #5C574D;
+      --saha-accent: #D9864A;
+      --saha-accent-soft: #B66E3E;
+      --saha-accent-tint: rgba(217, 134, 74, 0.16);
+      --saha-on-accent: #1F130B;
+      --saha-green: #6E9B7E;
+      --saha-amber: #C49A5E;
+      --saha-red: #B7655E;
+      --saha-on-danger: #FFFFFF;
+    }
     html, body {
       margin: 0;
       padding: 0;
-      background: #16140F;
-      color: #E8E6E0;
+      background: var(--saha-bg-deep);
+      color: var(--saha-fg);
       font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif;
       overflow: hidden;
       height: 100%;

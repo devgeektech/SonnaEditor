@@ -295,16 +295,34 @@ def test_delete_profile_removes_generated_files(
     assert not preset.exists()
 
 
-def test_delete_active_profile_rejects(
+def test_delete_active_profile_clears_active_pointer_when_last_profile(
     client: TestClient, isolated_paths: dict[str, Path]
 ) -> None:
     ckpts = isolated_paths["checkpoints_dir"]
-    _make_ckpt(ckpts, "model-v1.2.3.ckpt")
+    ckpt = _make_ckpt(ckpts, "model-v1.2.3.ckpt")
 
     resp = client.delete("/api/profiles/dp-event-v1.2.3")
 
-    assert resp.status_code == 409
-    assert "Deactivate this profile first" in resp.json()["detail"]
+    assert resp.status_code == 200
+    assert not ckpt.exists()
+    assert not (isolated_paths["saha_dir"] / "active_profile.txt").exists()
+
+
+def test_delete_active_profile_promotes_remaining_profile(
+    client: TestClient, isolated_paths: dict[str, Path]
+) -> None:
+    ckpts = isolated_paths["checkpoints_dir"]
+    active_ckpt = _make_ckpt(ckpts, "model-v1.2.3.ckpt")
+    remaining_ckpt = _make_ckpt(ckpts, "model-v1.2.2.ckpt")
+    client.post("/api/profiles/dp-event-v1.2.3/activate")
+
+    resp = client.delete("/api/profiles/dp-event-v1.2.3")
+
+    assert resp.status_code == 200
+    assert not active_ckpt.exists()
+    assert remaining_ckpt.exists()
+    active_file = isolated_paths["saha_dir"] / "active_profile.txt"
+    assert active_file.read_text().strip() == "dp-event-v1.2.2"
 
 
 # ── /api/profiles/lite ──────────────────────────────────────────────────────

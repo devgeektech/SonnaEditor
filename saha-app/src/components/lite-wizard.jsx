@@ -1,16 +1,16 @@
 // Lite profile creation wizard — multi-step modal (4 visible steps; survey
-// step paginates internally through 6 questions).
+// step paginates internally through the AI-edited Lite parameters).
 //
 // Step 1 — Profile name
 // Step 2 — Preset upload (.xmp)
-// Step 3 — 6-question style survey (one question per screen)
+// Step 3 — style survey (one question per screen)
 // Step 4 — Confirmation summary + submit
 //
 // Modal is non-dismissable via backdrop click to protect partially-entered
 // progress. Escape and the explicit Cancel button trigger a native confirm
 // when state has been entered.
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import SONNA from '../tokens.js';
 import { createLiteProfile } from '../api/client.js';
@@ -24,9 +24,9 @@ const Tlabel = {
 };
 const Tnum = { fontFamily: M, fontVariantNumeric: 'tabular-nums' };
 
-// Survey content mirrors src/sonna_editor/mode_b/survey.py:QUESTIONS so the
-// labels the user sees match what the backend records in the survey JSON.
-// Tint uses the global-cast framing locked during the Mode B Step 1 work.
+// The Lite initial profile path only adapts Exposure, Temperature, and Tint
+// per photo; remaining legacy survey keys are submitted as neutral defaults
+// for backend sidecar compatibility.
 const SURVEY_QUESTIONS = [
   {
     key: 'exposure', title: 'Exposure',
@@ -64,45 +64,14 @@ const SURVEY_QUESTIONS = [
       [+2, 'Strongly magenta-shifted (warmer tones, lifted skin)'],
     ],
   },
-  {
-    key: 'contrast', title: 'Contrast',
-    prompt: 'Contrast feel?',
-    description: 'Captured as a Lite style preference; the preset still owns the initial look sliders.',
-    options: [
-      [-2, 'Flat / soft (low contrast, film-like)'],
-      [-1, 'Slightly flat'],
-      [0,  'Match the preset'],
-      [+1, 'Slightly punchy'],
-      [+2, 'Very punchy (high-contrast, commercial)'],
-    ],
-  },
-  {
-    key: 'saturation', title: 'Saturation',
-    prompt: 'Colour saturation feel?',
-    description: 'Captured as a Lite style preference; the preset still owns the initial look sliders.',
-    options: [
-      [-2, 'Muted / desaturated (editorial)'],
-      [-1, 'Slightly muted'],
-      [0,  'Match the preset'],
-      [+1, 'Slightly vibrant'],
-      [+2, 'Very vibrant (commercial / pop)'],
-    ],
-  },
-  {
-    key: 'shadows', title: 'Shadows',
-    prompt: 'Shadow handling?',
-    description: 'Captured as a Lite style preference; the preset still owns the initial look sliders.',
-    options: [
-      [-2, 'Deep / crushed (dramatic, detail loss in shadows)'],
-      [-1, 'Slightly deep'],
-      [0,  'Match the preset'],
-      [+1, 'Slightly lifted'],
-      [+2, 'Strongly lifted (open shadows, airy)'],
-    ],
-  },
 ];
 
 const STEPS = ['name', 'preset', 'survey', 'confirm'];
+const LEGACY_NEUTRAL_SURVEY_ANSWERS = {
+  contrast: 0,
+  saturation: 0,
+  shadows: 0,
+};
 
 function basenameOf(p) {
   if (!p) return '';
@@ -115,6 +84,56 @@ function labelForAnswer(questionKey, answer) {
   if (!q) return String(answer);
   const opt = q.options.find(([v]) => v === answer);
   return opt ? opt[1] : String(answer);
+}
+
+function previewSvg(questionKey, answer) {
+  const exposure = questionKey === 'exposure' ? answer : 0;
+  const temperature = questionKey === 'temperature' ? answer : 0;
+  const tint = questionKey === 'tint' ? answer : 0;
+  const brightness = 88 + exposure * 7;
+  const sky = temperature > 0 ? '#efd7a7' : temperature < 0 ? '#b9d3ed' : '#d6ddd8';
+  const mid = tint > 0 ? '#d9b7c5' : tint < 0 ? '#b7c9b1' : '#c7c0b5';
+  const land = exposure < 0 ? '#413b31' : '#786d5c';
+  const hazeOpacity = Math.max(0.08, 0.26 + exposure * 0.04);
+  const svg = `
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 84">
+      <defs>
+        <linearGradient id="sky" x1="0" x2="0" y1="0" y2="1">
+          <stop offset="0" stop-color="${sky}"/>
+          <stop offset="1" stop-color="${mid}"/>
+        </linearGradient>
+        <linearGradient id="field" x1="0" x2="1" y1="0" y2="1">
+          <stop offset="0" stop-color="${land}"/>
+          <stop offset="1" stop-color="#9a8467"/>
+        </linearGradient>
+      </defs>
+      <rect width="120" height="84" fill="url(#sky)"/>
+      <circle cx="88" cy="22" r="12" fill="#fff0c4" opacity="${0.42 + exposure * 0.06}"/>
+      <path d="M0 50 C22 39 39 43 56 35 C75 25 94 33 120 23 L120 84 L0 84 Z" fill="#5f6d64" opacity="0.72"/>
+      <path d="M0 60 C22 53 42 57 61 49 C83 40 101 46 120 38 L120 84 L0 84 Z" fill="url(#field)"/>
+      <path d="M10 72 C35 63 72 64 111 53" stroke="#f4efe6" stroke-width="5" opacity="${hazeOpacity}" fill="none"/>
+      <rect width="120" height="84" fill="#fff" opacity="${Math.max(0, (brightness - 88) / 100)}"/>
+      <rect width="120" height="84" fill="#000" opacity="${Math.max(0, (88 - brightness) / 110)}"/>
+    </svg>
+  `;
+  return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
+}
+
+function SurveyPreview({ questionKey, answer }) {
+  return (
+    <img
+      src={previewSvg(questionKey, answer)}
+      alt=""
+      draggable="false"
+      style={{
+        width: '100%',
+        aspectRatio: '1.42 / 1',
+        objectFit: 'cover',
+        borderRadius: 3,
+        display: 'block',
+      }}
+    />
+  );
 }
 
 // ── Step container chrome ────────────────────────────────
@@ -150,12 +169,19 @@ function StepHeader({ stepKind, surveyIndex }) {
 }
 
 function StepNameInput({ value, onChange, onNext }) {
+  const inputRef = useRef(null);
+
+  useEffect(() => {
+    const id = window.setTimeout(() => inputRef.current?.focus(), 0);
+    return () => window.clearTimeout(id);
+  }, []);
+
   return (
     <div style={{ padding: '20px 22px', flex: 1, minHeight: 0, overflow: 'auto' }}>
       <div style={{ fontSize: 13, color: SONNA.fg, marginBottom: 8 }}>Profile name</div>
       <input
+        ref={inputRef}
         type="text"
-        autoFocus
         value={value}
         onChange={(e) => onChange(e.target.value)}
         onKeyDown={(e) => {
@@ -235,17 +261,22 @@ function StepSurveyQuestion({ question, value, onChange }) {
         {question.description}
       </div>
 
-      <div style={{ marginTop: 16, display: 'flex', flexDirection: 'column', gap: 6 }}>
+      <div style={{
+        marginTop: 16,
+        display: 'grid',
+        gridTemplateColumns: 'repeat(5, minmax(0, 1fr))',
+        gap: 8,
+      }}>
         {question.options.map(([ans, label]) => {
           const selected = value === ans;
           return (
             <label key={ans} style={{
-              padding: '10px 14px',
+              padding: 4,
               background: selected ? SONNA.bgLifted : SONNA.bgPanel,
               border: `1px solid ${selected ? SONNA.ochre : SONNA.lineSoft}`,
               borderRadius: 3,
               cursor: 'pointer',
-              display: 'flex', alignItems: 'center', gap: 12,
+              display: 'flex', flexDirection: 'column', gap: 6,
               transition: 'border-color 100ms, background 100ms',
             }}>
               <input
@@ -253,10 +284,21 @@ function StepSurveyQuestion({ question, value, onChange }) {
                 name={`survey-${question.key}`}
                 checked={selected}
                 onChange={() => onChange(ans)}
-                style={{ accentColor: SONNA.ochre, flexShrink: 0 }}
+                aria-label={label}
+                style={{ position: 'absolute', opacity: 0, pointerEvents: 'none' }}
               />
-              <span style={{ fontSize: 12.5, color: SONNA.fg, lineHeight: 1.5 }}>
-                {label}
+              <SurveyPreview questionKey={question.key} answer={ans} />
+              <span style={{
+                ...Tnum,
+                height: 18,
+                borderRadius: 2,
+                background: selected ? SONNA.ochreTint : 'transparent',
+                color: selected ? SONNA.fg : SONNA.fgMute,
+                fontSize: 11,
+                fontWeight: selected ? 600 : 500,
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+              }}>
+                {ans > 0 ? `+${ans}` : ans}
               </span>
             </label>
           );
@@ -395,7 +437,10 @@ export function LiteProfileWizard({ onClose, onCreated }) {
     createLiteProfile({
       profile_name: profileName.trim(),
       preset_path: presetPath,
-      survey_answers: surveyAnswers,
+      survey_answers: {
+        ...LEGACY_NEUTRAL_SURVEY_ANSWERS,
+        ...surveyAnswers,
+      },
     }).then((res) => {
       setSubmitting(false);
       onCreated(res);
@@ -480,7 +525,7 @@ export function LiteProfileWizard({ onClose, onCreated }) {
           display: 'flex', alignItems: 'center', justifyContent: 'space-between',
         }}>
           <div id="lite-wizard-title" style={{
-            fontSize: 14, fontWeight: 600, color: SONNA.fg, letterSpacing: -0.1,
+            fontSize: 14, fontWeight: 600, color: SONNA.fg, letterSpacing: 0,
           }}>Create Lite profile</div>
           <button
             type="button"
@@ -534,9 +579,9 @@ export function LiteProfileWizard({ onClose, onCreated }) {
             disabled={!canAdvance || submitting}
             style={{
               height: 34, padding: '0 18px',
-              background: (canAdvance && !submitting) ? SONNA.ochre : SONNA.bgLifted,
+              background: (canAdvance && !submitting) ? SONNA.cta : SONNA.bgLifted,
               border: 'none', borderRadius: 3,
-              color: (canAdvance && !submitting) ? '#1A1209' : SONNA.fgFaint,
+              color: (canAdvance && !submitting) ? SONNA.onCta : SONNA.fgFaint,
               fontFamily: F, fontSize: 13, fontWeight: 600, letterSpacing: 0.1,
               cursor: (canAdvance && !submitting) ? 'pointer' : 'not-allowed',
             }}

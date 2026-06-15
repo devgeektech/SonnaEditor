@@ -197,6 +197,7 @@ class JobSnapshot(BaseModel):
     folder_path: Optional[str] = None
     profile_id: Optional[str] = None
     photos_total: Optional[int] = None
+    photos_prepared: Optional[int] = 0
     photos_processed: Optional[int] = 0
     photos_flagged: Optional[int] = 0
     photos_failed: Optional[int] = 0

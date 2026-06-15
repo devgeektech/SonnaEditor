@@ -289,6 +289,7 @@ def process_shoot_with_model(
     preserve_wb: bool = False,
     extra_skip_fields: Optional[Iterable[str]] = None,
     auto_straighten: bool = False,
+    on_photo_prepared: Optional[Callable[[dict], None]] = None,
     on_photo_complete: Optional[Callable[[dict], None]] = None,
     cancel_event: Optional[threading.Event] = None,
 ) -> dict:
@@ -336,6 +337,9 @@ def process_shoot_with_model(
                                thresholds. This is a postprocess feature, not a
                                model prediction, and is skipped entirely when
                                False.
+        on_photo_prepared:     Optional callback fired after preview/metadata
+                               extraction succeeds. Used for early UI progress
+                               before model prediction/XMP writing.
         on_photo_complete:     Optional callback fired after each XMP is written.
                                Receives a dict with keys: name, raw_path,
                                predicted_values, std (Tensor[135] or None),
@@ -405,24 +409,46 @@ def process_shoot_with_model(
     metadatas: list[dict] = []
     good_raws: list[Path] = []
     failures: list[dict] = []
+    cancelled = False
 
-    with ThreadPoolExecutor(max_workers=max_workers) as pool:
+    pool = ThreadPoolExecutor(max_workers=max_workers)
+    future_to_path = {}
+    try:
         future_to_path = {pool.submit(_extract_one, p, target_size): p for p in raws}
         for future in as_completed(future_to_path):
+            if cancel_event is not None and cancel_event.is_set():
+                cancelled = True
+                break
             raw_path = future_to_path[future]
             try:
                 preview, meta = future.result()
+                if cancel_event is not None and cancel_event.is_set():
+                    cancelled = True
+                    break
                 previews.append(preview)
                 metadatas.append(meta)
                 good_raws.append(raw_path)
+                if on_photo_prepared is not None:
+                    try:
+                        on_photo_prepared({
+                            "name": raw_path.name,
+                            "raw_path": str(raw_path),
+                        })
+                    except Exception as cb_exc:  # noqa: BLE001
+                        _logger.warning("on_photo_prepared raised %r; continuing", cb_exc)
             except Exception as exc:
                 failures.append({"path": str(raw_path), "error": str(exc)})
+    finally:
+        if cancelled:
+            for future in future_to_path:
+                future.cancel()
+        pool.shutdown(wait=not cancelled, cancel_futures=cancelled)
 
     if not good_raws:
         return {
             "processed": 0, "failed": len(failures),
             "failures": failures, "output_paths": [], "low_confidence": [],
-            "predictions_path": None,
+            "predictions_path": None, "cancelled": cancelled,
         }
 
     # Sort so output order matches filesystem order
@@ -430,6 +456,12 @@ def process_shoot_with_model(
     good_raws, previews, metadatas = [list(x) for x in zip(*combined)]
 
     # --- Inference / Lite adjustment ---
+    if cancel_event is not None and cancel_event.is_set():
+        return {
+            "processed": 0, "failed": len(failures),
+            "failures": failures, "output_paths": [], "low_confidence": [],
+            "predictions_path": None, "cancelled": True,
+        }
 
     if is_mode_b_initial:
         preds = None
@@ -462,9 +494,11 @@ def process_shoot_with_model(
         user_skip |= {"Temperature", "Tint"}
     effective_skip: frozenset[str] = _V1_SKIP_FIELDS | frozenset(user_skip)
 
-    cancelled = False
     for i, raw_path in enumerate(good_raws):
         photo_start = time.monotonic()
+        if cancel_event is not None and cancel_event.is_set():
+            cancelled = True
+            break
         if is_mode_b_initial:
             assert mode_b_preset is not None
             full_slider_dict: dict[str, float | None] = _mode_b_adjusted_values_for_photo(

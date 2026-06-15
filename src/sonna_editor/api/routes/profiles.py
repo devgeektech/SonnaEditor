@@ -82,6 +82,13 @@ def _write_active_id(profile_id: str) -> None:
     _ACTIVE_PROFILE_FILE.write_text(profile_id)
 
 
+def _clear_active_id() -> None:
+    try:
+        _ACTIVE_PROFILE_FILE.unlink(missing_ok=True)
+    except OSError:
+        pass
+
+
 def _read_sidecar(ckpt_path: Path) -> dict:
     sidecar = ckpt_path.with_suffix(".json")
     if not sidecar.exists():
@@ -206,12 +213,6 @@ def delete_profile(profile_id: str) -> DeleteProfileResponse:
     match = next((p for p in discovered if p.id == profile_id), None)
     if match is None:
         raise HTTPException(status_code=404, detail="Profile not found")
-    if match.is_active:
-        raise HTTPException(
-            status_code=409,
-            detail="Deactivate this profile first before deleting it.",
-        )
-
     ckpt_path = Path(match.checkpoint_path)
     deleted_paths: list[str] = []
 
@@ -230,6 +231,13 @@ def delete_profile(profile_id: str) -> DeleteProfileResponse:
         if path.exists():
             continue
         deleted_paths.append(str(path))
+
+    if match.is_active:
+        remaining = [p for p in _discover_profiles() if p.id != profile_id]
+        if remaining:
+            _write_active_id(remaining[0].id)
+        else:
+            _clear_active_id()
 
     return DeleteProfileResponse(profile_id=profile_id, deleted_paths=deleted_paths)
 

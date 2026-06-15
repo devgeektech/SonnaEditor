@@ -1,7 +1,7 @@
 # Session State - Sonna Editor
 
-**Saved:** 2026-06-12 local time
-**Current phase/task:** One-command cross-platform app startup and documentation alignment.
+**Saved:** 2026-06-15 local time
+**Current phase/task:** Frontend profile/login polish and fine-tuning analysis.
 
 ## Current Workspace
 
@@ -48,6 +48,130 @@ wheels on Windows/Linux x86_64, while macOS resolves the matching public wheels.
 - A fresh scene-stats candidate was trained at `data/models/sonna-v2-scene-stats-run01/`, but it was rejected for frontend use. It briefly published as `v1_learning/model-v2.0.1.*`, then those frontend-visible copies were removed after collapse analysis showed worse prediction spread than v2.0.0.
 
 ## What Changed This Session
+
+- Removed the login page "What's new" card and the compatibility/version strip
+  underneath it.
+- Fixed AI Profiles selection stability: the "Your profiles" list now stays
+  newest-first when a profile is activated instead of moving the active profile
+  to the top after the API refetch.
+- Removed the "Profiles directory" button from the AI Profiles left rail. The
+  backend path lookup remains only for the captures directory used by
+  fine-tuning.
+- Preserved loaded Home/Projects state across cosmetic logout/login within the
+  same app session by keeping the app screens mounted after the first sign-in.
+- Added confirmation before removing a folder from the Home queue, changed the
+  profile deletion confirmation to "Do you want to delete this profile -
+  <profile name>?", and introduced shared `SONNA.cta` / `SONNA.onCta` tokens so
+  orange CTA buttons such as Process Selected and New Project use the same
+  colour source.
+- Reviewed the existing fine-tuning path. Capture, delta preparation, versioned
+  retraining, CLI fine-tune, `/api/finetune`, and the AI Profiles captures panel
+  already exist; the practical next implementation gap is capture population
+  from processed folders plus better promotion/quality UX.
+- Verification:
+  - `npm run build:vite` passed in `saha-app\`.
+  - In-app Browser visual smoke could not run because the `iab` browser target
+    was unavailable in this session.
+
+- Fixed the renderer crash from the new nav tooltips:
+  - `saha-app\src\components\shell.jsx` now destructures `title` in the nav
+    item loop before using it for `title` / `aria-label`, resolving
+    `Uncaught ReferenceError: title is not defined`.
+  - App startup now defaults to light theme regardless of older saved dark
+    preference.
+  - `SahaLogin` receives the global theme controls and shows a compact theme
+    toggle inside the existing sign-in panel.
+  - Verification: `npm run build:vite` passed in `saha-app\`.
+
+- Reworked the Saha navigation toward the Imagen-style Home / AI Profiles /
+  Projects structure:
+  - Left rail now has three primary destinations: Home, AI Profiles, and
+    Projects, each with hover/help text.
+  - Home keeps the queue and selected profile controls mounted, so loaded
+    folders no longer disappear when switching pages.
+  - AI Profiles keeps profile creation and profile management.
+  - Projects shows loaded/current folder projects and run history in a compact
+    table sorted by loaded time.
+  - Removed the left-sidebar `Single` / `Selected` segmented controls. Folders
+    are unselected by default; if no boxes are checked, Process runs the next
+    queued folder only. If one or more folder checkboxes are checked, Process
+    runs the checked folders.
+  - Light theme is now the default startup theme at both HTML and React levels.
+
+- Tightened the UI/UX pass after user feedback:
+  - Theme tokens now resolve through global CSS variables in
+    `saha-app\src\index.html`, so dark/light switching applies across all
+    pages/tabs and module-level style constants cannot get stuck on stale
+    colours.
+  - `saha-app\src\App.jsx` applies the saved theme with `useLayoutEffect` so
+    page switches do not flash or render with the previous theme.
+  - Process queue now has explicit `Single` and `Selected` modes. Single mode
+    processes only the next queued folder; Selected mode shows row checkboxes
+    and processes only checked queued folders.
+  - The process button now shows the RAW count that will actually run for the
+    current mode.
+  - Process jobs now publish early `photo_prepared` progress during
+    preview/metadata extraction. The right-panel progress bar uses the max of
+    prepared and fully processed photos, while completion summaries still use
+    actual processed-output counts.
+  - Profile rows now use a three-dot actions menu with `Delete profile` under
+    the menu instead of an inline X button.
+  - The backend now allows deleting the active or last remaining profile. If
+    another profile remains, it becomes active automatically; if none remain,
+    the active-profile pointer is cleared.
+- Verification for the follow-up UI/UX pass:
+  - `npm run build:vite` passed in `saha-app\`.
+  - `uv run pytest tests\api\test_websocket.py tests\api\test_callback_bridge.py tests\api\test_profiles.py -q` passed: `39 passed`.
+  - `uv run ruff check ...` over touched Python source/tests passed.
+
+- Fixed the intermittent Windows startup dialog where Electron reported
+  "backend failed to start" even though Uvicorn came up on
+  `127.0.0.1:8765` shortly after:
+  - `saha-app\electron\main.js` now waits for backend readiness with a 30s
+    deadline instead of a 10s fixed attempt count.
+  - Each `/api/health` probe now gets a 1s response window instead of 200ms,
+    which is less brittle on cold Python/CUDA startup.
+  - The timeout remains configurable through
+    `SAHA_BACKEND_STARTUP_TIMEOUT_MS`, with invalid values falling back to 30s.
+  - Verification passed: `node --check saha-app\electron\main.js`,
+    `uv run pytest tests\api\test_health.py -q` (`1 passed`), and
+    `npm run build:vite` in `saha-app\`.
+
+- Added a proper dark/light theme toggle to the bottom-left rail button:
+  - `saha-app\src\tokens.js` now owns dark and light token sets with a matte
+    elegant orange accent.
+  - `saha-app\src\App.jsx` persists the selected theme in local storage and
+    passes theme controls into the shared shell.
+  - `saha-app\src\components\shell.jsx` now renders the bottom-left icon as a
+    working theme toggle instead of a disabled settings glyph.
+  - Accent button text now uses theme-safe contrast tokens across process,
+    profile, login, Lite, Personal wizard, and error-banner surfaces.
+  - Removed old hardcoded dark accent text colours and negative letter spacing
+    in the touched frontend surfaces so text stays visible in both themes.
+- Updated "Coming soon" badges to use the new matte orange accent treatment.
+- Fixed live process progress stream behavior:
+  - Websocket clients now receive an initial `job_snapshot` backfill on connect.
+  - Per-photo websocket messages include `photos_total` as well as
+    `photos_processed`.
+  - `useJob()` merges `job_snapshot` messages and carries `photos_total` into
+    the processing snapshot used by the right-panel progress bar.
+  - `tests\api\test_websocket.py` pins the snapshot and total-count behavior.
+- Verification:
+  - `npm run build:vite` passed in `saha-app\`.
+  - `uv run pytest tests\api\test_websocket.py tests\api\test_callback_bridge.py -q` passed: `16 passed`.
+  - `uv run ruff check src\sonna_editor\api\callbacks.py src\sonna_editor\api\routes\process.py tests\api\test_websocket.py` passed.
+  - In-app Browser visual smoke could not run because the `iab` browser target
+    was unavailable in this session.
+
+- Made the Profile screen's "Personal AI profile" creation tile a disabled
+  "Coming soon" affordance:
+  - `saha-app\src\components\profile-view.jsx` no longer imports or opens the
+    Personal AI wizard from that tile.
+  - The tile now shows a compact "Coming soon" badge, muted styling, disabled
+    cursor state, and a title tooltip.
+  - Lite profile creation remains available.
+- Verification:
+  - `npm run build:vite` passed in `saha-app\`.
 
 - Added an opt-in Lightroom-native auto straightening feature:
   - Frontend Process view now shows an `Auto straighten` checkbox.

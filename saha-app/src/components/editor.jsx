@@ -139,7 +139,15 @@ function StatusIcon({ status }) {
   );
 }
 
-function FolderRow({ folder, expanded, locked, onToggle, onRemove }) {
+function FolderRow({
+  folder,
+  expanded,
+  locked,
+  selectable,
+  onSelect,
+  onToggle,
+  onRemove,
+}) {
   const folderName = folderBasename(folder.folderPath);
 
   return (
@@ -151,6 +159,22 @@ function FolderRow({ folder, expanded, locked, onToggle, onRemove }) {
         border: `1px solid ${SONNA.lineSoft}`,
         borderRadius: 3,
       }}>
+        {selectable && (
+          <input
+            type="checkbox"
+            checked={!!folder.selected}
+            disabled={locked}
+            onChange={(e) => onSelect(e.target.checked)}
+            title="Include this folder in selected-folder processing"
+            style={{
+              width: 14,
+              height: 14,
+              accentColor: SONNA.ochre,
+              cursor: locked ? 'not-allowed' : 'pointer',
+              flexShrink: 0,
+            }}
+          />
+        )}
         <button onClick={onToggle} style={{
           width: 18, height: 18, padding: 0,
           background: 'transparent', border: 'none',
@@ -219,7 +243,15 @@ function FolderRow({ folder, expanded, locked, onToggle, onRemove }) {
   );
 }
 
-function LeftFolderQueue({ queue, expandedSet, locked, onAddFolder, onRemove, onToggleExpand }) {
+function LeftFolderQueue({
+  queue,
+  expandedSet,
+  locked,
+  onAddFolder,
+  onRemove,
+  onSelect,
+  onToggleExpand,
+}) {
   const totalRaws = queue.reduce((sum, f) => sum + (f.fileCount || 0), 0);
 
   return (
@@ -281,6 +313,8 @@ function LeftFolderQueue({ queue, expandedSet, locked, onAddFolder, onRemove, on
               folder={folder}
               expanded={expandedSet.has(i)}
               locked={locked}
+              selectable={folder.status === 'queued'}
+              onSelect={(selected) => onSelect(i, selected)}
               onToggle={() => onToggleExpand(i)}
               onRemove={() => onRemove(i)}
             />
@@ -323,6 +357,12 @@ function Section({ label, children, last }) {
 
 function ProfileSelect({ profiles, activeProfile, onPick, open, setOpen }) {
   const display = activeProfile;
+  const isLite = display?.profile_type === 'mode_b_initial';
+  const profileMeta = display
+    ? (isLite
+      ? 'Ready to Edit. Lite Profile.'
+      : `Ready to Edit${display.photo_count != null ? `. ${display.photo_count.toLocaleString()} images trained.` : ''}`)
+    : '';
   return (
     <div style={{ position: 'relative' }}>
       <div onClick={() => setOpen((v) => !v)} style={{
@@ -339,15 +379,12 @@ function ProfileSelect({ profiles, activeProfile, onPick, open, setOpen }) {
           background: display ? SONNA.ochre : SONNA.fgFaint, flexShrink: 0,
         }} />
         <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minWidth: 0 }}>
-          <span style={{ fontSize: 13, color: SONNA.fg, fontWeight: 500, letterSpacing: -0.1 }}>
+          <span style={{ fontSize: 13, color: SONNA.fg, fontWeight: 500, letterSpacing: 0 }}>
             {display ? (display.display_name || `${display.name} ${display.version}`) : 'No profile available'}
           </span>
           {display && (
             <span style={{ ...Tnum, fontSize: 10.5, color: SONNA.fgFaint, marginTop: 2 }}>
-              {display.photo_count != null
-                ? `${display.photo_count.toLocaleString()} photos`
-                : 'metadata unavailable'}
-              {display.trained_at && ` · trained ${display.trained_at.slice(0, 10)}`}
+              {profileMeta}
             </span>
           )}
         </div>
@@ -392,8 +429,8 @@ function CentreAction({
   onProcess,
   autoStraighten,
   onAutoStraightenChange,
-  totalRaws,
-  queueCount,
+  processRaws,
+  selectedQueuedCount,
   canProcess,
   error, onDismissError,
 }) {
@@ -469,17 +506,17 @@ function CentreAction({
             disabled={!canProcess}
             style={{
               width: '100%', height: 42,
-              background: canProcess ? SONNA.ochre : SONNA.bgLifted,
-              color: canProcess ? '#1A1209' : SONNA.fgMute,
+              background: canProcess ? SONNA.cta : SONNA.bgLifted,
+              color: canProcess ? SONNA.onCta : SONNA.fgMute,
               border: canProcess ? 'none' : `1px solid ${SONNA.line}`,
               borderRadius: 3,
               fontFamily: F, fontSize: 14, fontWeight: 600, letterSpacing: 0.2,
               display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 14,
               cursor: canProcess ? 'pointer' : 'not-allowed',
             }}>
-            <span>Process {queueCount === 1 ? 'Folder' : 'Folders'}</span>
+            <span>{selectedQueuedCount > 0 ? 'Process Selected' : 'Process Folder'}</span>
             <span style={{ ...Tnum, fontSize: 11, opacity: 0.7 }}>
-              {totalRaws > 0 ? `${totalRaws.toLocaleString()} RAWs · ⌘R` : '⌘R'}
+              {processRaws > 0 ? `${processRaws.toLocaleString()} RAWs · ⌘R` : '⌘R'}
             </span>
           </button>
         )}
@@ -582,7 +619,9 @@ function RightTransitioning({ queue }) {
 
 function RightProcessing({ snapshot, liveLog, wsStatus, onCancel, queue }) {
   const total = snapshot.photos_total || 0;
-  const done = snapshot.photos_processed || 0;
+  const processed = snapshot.photos_processed || 0;
+  const prepared = snapshot.photos_prepared || 0;
+  const done = Math.max(processed, prepared);
   const pct = total ? Math.round((done / total) * 100) : 0;
 
   // Queue position: 1-based index of the row currently running, derived from
@@ -641,7 +680,7 @@ function RightProcessing({ snapshot, liveLog, wsStatus, onCancel, queue }) {
         <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
           <span style={{
             ...Tnum, fontSize: 26, fontWeight: 300,
-            color: SONNA.fg, letterSpacing: -0.5, lineHeight: 1,
+            color: SONNA.fg, letterSpacing: 0, lineHeight: 1,
           }}>{pct}</span>
           <span style={{ fontSize: 13, color: SONNA.fgDim }}>%</span>
           <span style={{ flex: 1 }} />
@@ -889,7 +928,7 @@ function OverwriteConfirmDialog({ conflicts, totalCount, totalFolders, onCancel,
           borderBottom: `1px solid ${SONNA.lineSoft}`,
         }}>
           <div id="overwrite-dialog-title" style={{
-            fontSize: 14, fontWeight: 600, color: SONNA.fg, letterSpacing: -0.1,
+            fontSize: 14, fontWeight: 600, color: SONNA.fg, letterSpacing: 0,
           }}>Existing XMP sidecars detected</div>
         </div>
 
@@ -956,7 +995,16 @@ function OverwriteConfirmDialog({ conflicts, totalCount, totalFolders, onCancel,
 
 
 // ── Editor — top-level component ─────────────────────────
-export function Editor({ profiles = [], activeProfile, onActivateProfile, onNavigate }) {
+export function Editor({
+  profiles = [],
+  activeProfile,
+  onActivateProfile,
+  onNavigate,
+  theme,
+  onToggleTheme,
+  onLogout,
+  onProjectsChange,
+}) {
   // Multi-folder queue. Items shape:
   //   { folderPath, fileCount, fileList, status }
   // status ∈ "queued" | "processing" | "complete" | "failed" | "cancelled".
@@ -978,6 +1026,7 @@ export function Editor({ profiles = [], activeProfile, onActivateProfile, onNavi
   // Guards Case C against re-dispatching during the gap between setQueue
   // marking a folder as 'processing' and useJob.start setting job.current.
   const dispatchInFlightRef = useRef(false);
+  const dispatchScopeRef = useRef('single');
   // null when no dialog; { conflicts: [{folderName, count}], totalCount,
   // totalFolders } when Process Folders has found existing XMPs that would
   // be overwritten and is waiting on the user.
@@ -1004,10 +1053,21 @@ export function Editor({ profiles = [], activeProfile, onActivateProfile, onNavi
     () => queue.reduce((s, f) => s + (f.fileCount || 0), 0),
     [queue],
   );
+  const selectedQueuedCount = useMemo(
+    () => queue.filter((f) => f.status === 'queued' && f.selected).length,
+    [queue],
+  );
+  const processRaws = useMemo(() => (
+    queue.reduce((sum, f) => {
+      if (f.status !== 'queued' || !f.selected) return sum;
+      return sum + (f.fileCount || 0);
+    }, 0)
+  ), [queue]);
   const hasQueuedFolders = useMemo(
     () => queue.some((f) => f.status === 'queued'),
     [queue],
   );
+  const hasProcessableFolders = selectedQueuedCount > 0;
 
   const visualState = useMemo(() => {
     if (isQueueRunning) return 'processing';
@@ -1020,9 +1080,9 @@ export function Editor({ profiles = [], activeProfile, onActivateProfile, onNavi
   // (ready) and as a resume affordance after cancel (complete-with-queued).
   // The disable check is the boundary between "nothing to do" and "resume".
   const canProcess = !isQueueRunning
-    && hasQueuedFolders
+    && hasProcessableFolders
     && !!activeProfile
-    && totalRaws > 0;
+    && processRaws > 0;
 
   // The in-flight folder during processing drives the app shell title bar.
   const inFlightFolderPath = useMemo(() => {
@@ -1035,11 +1095,12 @@ export function Editor({ profiles = [], activeProfile, onActivateProfile, onNavi
   const clearRunState = useCallback(() => {
     job.reset();
     setRunResults([]);
-    setQueue((q) => q.map((f) => ({ ...f, status: 'queued' })));
+    setQueue((q) => q.map((f) => ({ ...f, status: 'queued', selected: false })));
     setIsQueueRunning(false);
     setCancelRequested(false);
     lastTerminalIdRef.current = null;
     dispatchInFlightRef.current = false;
+    dispatchScopeRef.current = 'single';
     recentQ.refetch();
   }, [job, recentQ]);
 
@@ -1076,13 +1137,36 @@ export function Editor({ profiles = [], activeProfile, onActivateProfile, onNavi
         // photo). See API: FolderScanResponse.xmp_conflict_count.
         xmpConflictCount: result.xmp_conflict_count || 0,
         status: 'queued',
+        selected: false,
+        loadedAt: Date.now(),
       }]);
     } catch (e) {
       setError({ source: 'scan', message: e.message });
     }
-  }, [runResults.length, hasQueuedFolders, clearRunState]);
+  }, [runResults.length, hasQueuedFolders, clearRunState, queue.length]);
+
+  useEffect(() => {
+    if (typeof onProjectsChange !== 'function') return;
+    onProjectsChange({
+      queue: queue.map((f) => ({
+        folderPath: f.folderPath,
+        fileCount: f.fileCount,
+        status: f.status,
+        selected: !!f.selected,
+        loadedAt: f.loadedAt || 0,
+      })),
+      runResults,
+      currentJob: job.current?.snapshot || null,
+    });
+  }, [onProjectsChange, queue, runResults, job.current?.snapshot]);
 
   const handleRemove = useCallback((index) => {
+    const folder = queue[index];
+    const folderName = folderBasename(folder?.folderPath || '');
+    const ok = window.confirm(
+      `Remove this folder from the queue - ${folderName || 'selected folder'}?`,
+    );
+    if (!ok) return;
     setQueue((q) => q.filter((_, i) => i !== index));
     setExpandedSet((s) => {
       // Indices shift left after removal; rebuild so expansion state tracks
@@ -1094,7 +1178,7 @@ export function Editor({ profiles = [], activeProfile, onActivateProfile, onNavi
       });
       return next;
     });
-  }, []);
+  }, [queue]);
 
   const handleToggleExpand = useCallback((index) => {
     setExpandedSet((s) => {
@@ -1105,9 +1189,16 @@ export function Editor({ profiles = [], activeProfile, onActivateProfile, onNavi
     });
   }, []);
 
+  const handleSelectFolder = useCallback((index, selected) => {
+    setQueue((q) => q.map((f, i) => (
+      i === index ? { ...f, selected } : f
+    )));
+  }, []);
+
   const beginDispatch = useCallback(() => {
     setError(null);
     setCancelRequested(false);
+    dispatchScopeRef.current = 'selected';
     setIsQueueRunning(true);
   }, []);
 
@@ -1117,8 +1208,9 @@ export function Editor({ profiles = [], activeProfile, onActivateProfile, onNavi
   // mis-remembering intent is expensive.
   const handleProcess = useCallback(() => {
     if (!canProcess) return;
+    const shouldProcess = (f) => f.status === 'queued' && f.selected;
     const conflicts = queue
-      .filter((f) => f.status === 'queued' && (f.xmpConflictCount || 0) > 0)
+      .filter((f) => shouldProcess(f) && (f.xmpConflictCount || 0) > 0)
       .map((f) => ({
         folderName: folderBasename(f.folderPath),
         count: f.xmpConflictCount,
@@ -1149,9 +1241,29 @@ export function Editor({ profiles = [], activeProfile, onActivateProfile, onNavi
   // resume by clicking Process Folders again (accidental-cancel recovery).
   const handleCancel = useCallback(() => {
     if (!isQueueRunning) return;
+    const snap = job.current?.snapshot;
+    const inFlightIndex = queue.findIndex((f) => f.status === 'processing');
+    if (inFlightIndex >= 0) {
+      setQueue((q) => q.map((f, i) => (
+        i === inFlightIndex ? { ...f, status: 'cancelled', selected: false } : f
+      )));
+      setRunResults((rs) => [...rs, {
+        folderPath: snap?.folder_path || queue[inFlightIndex]?.folderPath || '',
+        photosProcessed: snap?.photos_processed || 0,
+        photosFailed: snap?.photos_failed || 0,
+        durationSec: snap ? computeDurationSec(snap) : 0,
+        state: 'cancelled',
+        error: null,
+      }]);
+    }
     setCancelRequested(true);
     job.cancel();
-  }, [isQueueRunning, job]);
+    job.reset();
+    setIsQueueRunning(false);
+    setCancelRequested(false);
+    dispatchInFlightRef.current = false;
+    dispatchScopeRef.current = 'selected';
+  }, [isQueueRunning, job, queue]);
 
   const handleProcessAnother = useCallback(() => {
     clearRunState();
@@ -1220,6 +1332,8 @@ export function Editor({ profiles = [], activeProfile, onActivateProfile, onNavi
         // 'complete' (because runResults is non-empty).
         setIsQueueRunning(false);
         setCancelRequested(false);
+      } else if (dispatchScopeRef.current === 'single') {
+        setIsQueueRunning(false);
       }
       // Always reset job.current — either to let Case C dispatch the next,
       // or to clear the terminal snapshot before the run ends.
@@ -1238,9 +1352,12 @@ export function Editor({ profiles = [], activeProfile, onActivateProfile, onNavi
       return;
     }
 
-    const nextIndex = queue.findIndex((f) => f.status === 'queued');
+    const nextIndex = queue.findIndex((f) => (
+      f.status === 'queued'
+      && f.selected
+    ));
     if (nextIndex < 0) {
-      // All folders processed (or none queued to begin with).
+      // Selected batch complete, or no queued work remains.
       setIsQueueRunning(false);
       return;
     }
@@ -1280,7 +1397,7 @@ export function Editor({ profiles = [], activeProfile, onActivateProfile, onNavi
       }]);
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isQueueRunning, cancelRequested, job.current?.id, job.current?.snapshot?.state, queue, activeProfile, skipFields, autoStraighten]);
+  }, [isQueueRunning, cancelRequested, job.current?.id, job.current?.snapshot?.state, queue, activeProfile, skipFields, autoStraighten, selectedQueuedCount]);
 
 
   // Keyboard shortcuts (⌘O / ⌘R / ⌘.) — global for the editor.
@@ -1357,13 +1474,22 @@ export function Editor({ profiles = [], activeProfile, onActivateProfile, onNavi
 
   return (
     <>
-      <AppShell title="saha" folder={inFlightFolderPath} activeNav="process" onNavigate={onNavigate}>
+      <AppShell
+        title="saha"
+        folder={inFlightFolderPath}
+        activeNav="home"
+        onNavigate={onNavigate}
+        theme={theme}
+        onToggleTheme={onToggleTheme}
+        onLogout={onLogout}
+      >
         <LeftFolderQueue
           queue={queue}
           expandedSet={expandedSet}
           locked={isQueueRunning}
           onAddFolder={handleAddFolder}
           onRemove={handleRemove}
+          onSelect={handleSelectFolder}
           onToggleExpand={handleToggleExpand}
         />
         <CentreAction
@@ -1374,8 +1500,8 @@ export function Editor({ profiles = [], activeProfile, onActivateProfile, onNavi
           onProcess={handleProcess}
           autoStraighten={autoStraighten}
           onAutoStraightenChange={setAutoStraighten}
-          totalRaws={totalRaws}
-          queueCount={queue.length}
+          processRaws={processRaws}
+          selectedQueuedCount={selectedQueuedCount}
           canProcess={canProcess}
           error={error}
           onDismissError={() => setError(null)}

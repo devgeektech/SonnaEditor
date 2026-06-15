@@ -237,7 +237,7 @@ function TrainingProgress({ job, onCancel, onDone }) {
       )}
       {terminal ? (
         <button type="button" onClick={onDone} style={{
-          height: 34, background: SONNA.ochre, color: '#1A1209',
+          height: 34, background: SONNA.cta, color: SONNA.onCta,
           border: 'none', borderRadius: 3,
           fontFamily: F, fontSize: 13, fontWeight: 600,
           cursor: 'pointer',
@@ -401,7 +401,7 @@ export function PersonalProfileWizard({ onClose, onCreated }) {
           display: 'flex', alignItems: 'center', justifyContent: 'space-between',
         }}>
           <div id="personal-wizard-title" style={{
-            fontSize: 14, fontWeight: 600, color: SONNA.fg, letterSpacing: -0.1,
+            fontSize: 14, fontWeight: 600, color: SONNA.fg, letterSpacing: 0,
           }}>Create Personal AI profile</div>
           <button
             type="button"
@@ -454,9 +454,9 @@ export function PersonalProfileWizard({ onClose, onCreated }) {
               disabled={!canAdvance}
               style={{
                 height: 34, padding: '0 18px',
-                background: canAdvance ? SONNA.ochre : SONNA.bgLifted,
+                background: canAdvance ? SONNA.cta : SONNA.bgLifted,
                 border: 'none', borderRadius: 3,
-                color: canAdvance ? '#1A1209' : SONNA.fgFaint,
+                color: canAdvance ? SONNA.onCta : SONNA.fgFaint,
                 fontFamily: F, fontSize: 13, fontWeight: 600, letterSpacing: 0.1,
                 cursor: canAdvance ? 'pointer' : 'not-allowed',
               }}

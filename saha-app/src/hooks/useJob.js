@@ -95,6 +95,25 @@ export function useJob({ onError } = {}) {
   }, [flushPending]);
 
   const applyMessage = useCallback((msg) => {
+    if (msg.type === 'job_snapshot') {
+      const { type, ...snap } = msg;
+      setCurrent((prev) => prev
+        ? { ...prev, snapshot: { ...prev.snapshot, ...snap } }
+        : prev);
+      return;
+    }
+    if (msg.type === 'photo_prepared') {
+      pendingSnapshotRef.current = {
+        state: 'running',
+        photos_total: msg.photos_total,
+        photos_prepared: msg.photos_prepared,
+        photos_per_sec: msg.photos_per_sec,
+        eta_seconds: msg.eta_seconds,
+        current_photo: msg.name,
+      };
+      scheduleFlush();
+      return;
+    }
     if (msg.type === 'photo_complete') {
       pendingPhotosRef.current = [
         { name: msg.name, edit_summary: msg.edit_summary, status: msg.status },
@@ -102,6 +121,7 @@ export function useJob({ onError } = {}) {
       ];
       pendingSnapshotRef.current = {
         state: 'running',
+        photos_total: msg.photos_total,
         photos_processed: msg.photos_processed,
         photos_per_sec: msg.photos_per_sec,
         eta_seconds: msg.eta_seconds,

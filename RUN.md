@@ -86,7 +86,10 @@ bash run_saha.sh
 The launcher creates the repo-local runtime folders, installs frontend npm
 dependencies if `saha-app/node_modules/` is missing, then runs the Electron dev
 app. Electron reuses an existing backend on port `8765` or starts
-`scripts/serve.py` itself and shuts it down when the app quits.
+`scripts/serve.py` itself and shuts it down when the app quits. Backend startup
+readiness waits up to 30s by default, which avoids false failures on cold
+Windows/CUDA startup; set `SAHA_BACKEND_STARTUP_TIMEOUT_MS` only if a slower
+machine needs a longer wait.
 
 Prerequisites for both Windows and macOS: `uv` and Node.js LTS must be on
 `PATH`. If either is missing, the launcher prints a setup message instead of

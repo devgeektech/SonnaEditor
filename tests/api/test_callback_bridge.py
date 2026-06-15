@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json as _json
 import threading
+import time
 from pathlib import Path
 from unittest.mock import patch
 
@@ -67,6 +68,20 @@ def test_photo_callback_updates_record_and_persists(
         assert record.current_photo == "shot.cr3"
 
 
+def test_photo_prepared_callback_updates_record(
+    isolated_paths: dict[str, Path],
+) -> None:
+    record = jobs.create(kind="process", photos_total=2)
+    cb = callbacks.make_photo_prepared_callback(record, started_at=time.monotonic())
+
+    cb({"name": "shot.cr3", "raw_path": "/tmp/shot.cr3"})
+
+    with record.lock:
+        assert record.photos_prepared == 1
+        assert record.current_photo == "shot.cr3"
+        assert record.photos_per_sec > 0
+
+
 def test_photo_callback_swallows_exceptions(
     isolated_paths: dict[str, Path],
 ) -> None:
@@ -84,8 +99,10 @@ def test_pipeline_callback_and_cancel_kwargs_no_op_when_none() -> None:
     # Just verify signature accepts the kwargs and their defaults.
     import inspect
     sig = inspect.signature(pl.process_shoot_with_model)
+    assert "on_photo_prepared" in sig.parameters
     assert "on_photo_complete" in sig.parameters
     assert "cancel_event" in sig.parameters
+    assert sig.parameters["on_photo_prepared"].default is None
     assert sig.parameters["on_photo_complete"].default is None
     assert sig.parameters["cancel_event"].default is None
 

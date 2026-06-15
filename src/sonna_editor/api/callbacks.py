@@ -104,6 +104,47 @@ def _format_edit_summary(predicted: dict[str, float]) -> str:
 
 # ── Per-photo callback factory ─────────────────────────────────────────────
 
+def make_photo_prepared_callback(
+    record: jobs.JobRecord,
+    started_at: float,
+) -> Callable[[dict[str, Any]], None]:
+    """Build the preview/metadata-prepared callback for live early progress."""
+    def cb(photo: dict[str, Any]) -> None:
+        try:
+            with record.lock:
+                record.photos_prepared += 1
+                record.current_photo = photo["name"]
+                elapsed = max(time.monotonic() - started_at, 1e-6)
+                progress_units = max(record.photos_prepared, record.photos_processed)
+                record.photos_per_sec = round(progress_units / elapsed, 1)
+                remaining = (record.photos_total or progress_units) - progress_units
+                record.eta_seconds = (
+                    int(remaining / record.photos_per_sec)
+                    if record.photos_per_sec > 0 and remaining > 0
+                    else 0
+                )
+                prepared_now = record.photos_prepared
+                total_now = record.photos_total
+                pps_now = record.photos_per_sec
+                eta_now = record.eta_seconds
+
+            jobs.note_progress(record)
+
+            _broadcast(record, {
+                "type": "photo_prepared",
+                "name": photo["name"],
+                "photos_total": total_now,
+                "photos_prepared": prepared_now,
+                "photos_per_sec": pps_now,
+                "eta_seconds": eta_now,
+            })
+        except Exception as e:  # noqa: BLE001
+            _logger.warning("photo prepared callback failed for job %s: %s",
+                            record.job_id, e)
+
+    return cb
+
+
 def make_photo_callback(
     record: jobs.JobRecord,
     started_at: float,
@@ -139,6 +180,7 @@ def make_photo_callback(
                     else 0
                 )
                 processed_now = record.photos_processed
+                total_now = record.photos_total
                 pps_now = record.photos_per_sec
                 eta_now = record.eta_seconds
 
@@ -149,6 +191,7 @@ def make_photo_callback(
                 "name": photo["name"],
                 "edit_summary": _format_edit_summary(photo["predicted_values"]),
                 "status": photo["status"],
+                "photos_total": total_now,
                 "photos_processed": processed_now,
                 "photos_per_sec": pps_now,
                 "eta_seconds": eta_now,

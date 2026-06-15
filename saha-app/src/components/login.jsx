@@ -78,7 +78,17 @@ function AppleGlyph() {
   );
 }
 
-export function SahaLogin({ onSubmit }) {
+function ThemeIcon({ active }) {
+  const stroke = active ? SONNA.ochre : SONNA.fgMute;
+  return (
+    <svg width="15" height="15" viewBox="0 0 15 15" fill="none">
+      <circle cx="7.5" cy="7.5" r="3.2" stroke={stroke} strokeWidth="1.3" />
+      <path d="M7.5 1.2v1.7M7.5 12.1v1.7M13.8 7.5h-1.7M2.9 7.5H1.2M12 3l-1.2 1.2M4.2 10.8 3 12M12 12l-1.2-1.2M4.2 4.2 3 3" stroke={stroke} strokeWidth="1.3" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+export function SahaLogin({ onSubmit, theme = SONNA.theme, onToggleTheme }) {
   const handleSubmit = (e) => {
     if (e && typeof e.preventDefault === 'function') e.preventDefault();
     if (typeof onSubmit === 'function') onSubmit();
@@ -108,7 +118,7 @@ export function SahaLogin({ onSubmit }) {
         <div>
           <div style={{ ...Tlabel, color: SONNA.ochre, marginBottom: 14 }}>For working photographers</div>
           <div style={{
-            fontSize: 38, fontWeight: 300, letterSpacing: -0.8, lineHeight: 1.15,
+            fontSize: 38, fontWeight: 300, letterSpacing: 0, lineHeight: 1.15,
             color: SONNA.fg, maxWidth: 440,
           }}>
             Cull a wedding‑sized shoot
@@ -123,46 +133,7 @@ export function SahaLogin({ onSubmit }) {
           </div>
         </div>
 
-        {/* What's new card */}
-        <div style={{
-          marginTop: 4,
-          border: `1px solid ${SONNA.line}`, borderRadius: 4,
-          background: SONNA.bgDeep, padding: '14px 16px',
-        }}>
-          <div style={{ display: 'flex', alignItems: 'baseline', gap: 10 }}>
-            <span style={{ ...Tlabel, color: SONNA.ochre }}>What's new</span>
-            <span style={{ ...Tnum, fontSize: 10.5, color: SONNA.fgFaint }}>v0.4.2 · May 6</span>
-          </div>
-          <ul style={{
-            margin: '10px 0 0', padding: 0, listStyle: 'none',
-            display: 'flex', flexDirection: 'column', gap: 6,
-            fontSize: 12.5, color: SONNA.fgMute, lineHeight: 1.5,
-          }}>
-            <li style={{ display: 'flex', gap: 10 }}>
-              <span style={{ color: SONNA.ochre, ...Tnum }}>+</span>
-              <span>Sony A1 II and Fujifilm X‑H2S support</span>
-            </li>
-            <li style={{ display: 'flex', gap: 10 }}>
-              <span style={{ color: SONNA.ochre, ...Tnum }}>+</span>
-              <span>GPU acceleration where available, CPU fallback everywhere</span>
-            </li>
-            <li style={{ display: 'flex', gap: 10 }}>
-              <span style={{ color: SONNA.fgDim, ...Tnum }}>·</span>
-              <span>Profile sync across devices is back, fixed in this build</span>
-            </li>
-          </ul>
-        </div>
-
-        <div style={{
-          marginTop: 4, display: 'flex', alignItems: 'center', gap: 18,
-          ...Tnum, fontSize: 10.5, color: SONNA.fgFaint,
-        }}>
-          <span>v0.4.2 · build 4218</span>
-          <span style={{ width: 1, height: 9, background: SONNA.line }} />
-          <span>RAF · NEF · ARW · CR3 · DNG</span>
-          <span style={{ width: 1, height: 9, background: SONNA.line }} />
-          <span>macOS · Windows · Linux</span>
-        </div>
+        <div style={{ flex: 0.25 }} />
       </div>
 
       {/* ── RIGHT · sign-in form ───────────────────── */}
@@ -171,9 +142,32 @@ export function SahaLogin({ onSubmit }) {
         display: 'flex', flexDirection: 'column', justifyContent: 'center',
         position: 'relative',
       }}>
+        <button
+          type="button"
+          onClick={onToggleTheme}
+          title={`Switch to ${theme === 'dark' ? 'light' : 'dark'} theme`}
+          aria-label={`Switch to ${theme === 'dark' ? 'light' : 'dark'} theme`}
+          style={{
+            position: 'absolute',
+            top: 24,
+            right: 32,
+            width: 32,
+            height: 32,
+            padding: 0,
+            borderRadius: 6,
+            border: `1px solid ${SONNA.line}`,
+            background: SONNA.bgPanel,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            cursor: 'pointer',
+          }}
+        >
+          <ThemeIcon active={theme === 'light'} />
+        </button>
         <div style={{ maxWidth: 380, width: '100%', margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 24 }}>
           <div>
-            <div style={{ fontSize: 22, fontWeight: 400, color: SONNA.fg, letterSpacing: -0.3 }}>
+            <div style={{ fontSize: 22, fontWeight: 400, color: SONNA.fg, letterSpacing: 0 }}>
               Sign in
             </div>
             <div style={{ marginTop: 6, fontSize: 13, color: SONNA.fgMute }}>
@@ -209,7 +203,7 @@ export function SahaLogin({ onSubmit }) {
                 display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
               }}>
                 <svg width="9" height="9" viewBox="0 0 9 9" fill="none">
-                  <path d="M1.5 4.5L3.5 6.5L7.5 2.5" stroke="#1A1209" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+                  <path d="M1.5 4.5L3.5 6.5L7.5 2.5" stroke={SONNA.onAccent} strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
                 </svg>
               </span>
               Stay signed in on this device
@@ -219,7 +213,7 @@ export function SahaLogin({ onSubmit }) {
           <button
             type="submit"
             style={{
-              height: 40, background: SONNA.ochre, color: '#1A1209',
+              height: 40, background: SONNA.cta, color: SONNA.onCta,
               border: 'none', borderRadius: 3,
               fontFamily: F, fontSize: 13, fontWeight: 600, letterSpacing: 0.2,
               display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 12,

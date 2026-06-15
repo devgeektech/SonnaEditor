@@ -70,6 +70,7 @@ def main() -> None:
 
     if not node_modules.exists():
         if args.skip_install:
+            
             raise SystemExit(
                 "saha-app/node_modules is missing. Run without --skip-install "
                 "or install frontend dependencies manually."
