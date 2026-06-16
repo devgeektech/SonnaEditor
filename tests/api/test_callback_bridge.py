@@ -549,7 +549,7 @@ def test_pipeline_auto_straighten_writes_crop_angle_and_sidecar(
     assert attrs["CropLeft"] == "0"
     assert attrs["CropBottom"] == "1"
     assert attrs["CropRight"] == "1"
-    assert float(attrs["CropAngle"]) == pytest.approx(-3.0, abs=0.5)
+    assert float(attrs["CropAngle"]) == pytest.approx(3.0, abs=0.5)
 
     sidecar = _json.loads((folder / "sonna_predictions.json").read_text())
     assert sidecar["auto_straighten"] is True

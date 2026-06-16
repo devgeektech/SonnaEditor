@@ -106,7 +106,7 @@ def test_estimate_straighten_angle_detects_small_tilt() -> None:
     assert result.applied is True
     assert result.reason == "applied"
     assert result.confidence >= 0.18
-    assert result.angle_degrees == pytest.approx(-3.0, abs=0.5)
+    assert result.angle_degrees == pytest.approx(3.0, abs=0.5)
     assert result.line_count > 0
     assert result.total_line_length > 0
 
@@ -123,28 +123,28 @@ def test_estimate_straighten_angle_detects_room_geometry() -> None:
     result = estimate_straighten_angle(_tilted_room_image(-2.0))
 
     assert result.applied is True
-    assert result.angle_degrees == pytest.approx(2.0, abs=0.5)
+    assert result.angle_degrees == pytest.approx(-2.0, abs=0.5)
 
 
 def test_estimate_straighten_angle_detects_faint_geometry() -> None:
     result = estimate_straighten_angle(_faint_tilted_room_image(2.5))
 
     assert result.applied is True
-    assert result.angle_degrees == pytest.approx(-2.5, abs=0.7)
+    assert result.angle_degrees == pytest.approx(2.5, abs=0.7)
 
 
 def test_estimate_straighten_angle_detects_short_segments() -> None:
     result = estimate_straighten_angle(_short_segment_image(-2.0))
 
     assert result.applied is True
-    assert result.angle_degrees == pytest.approx(2.0, abs=0.7)
+    assert result.angle_degrees == pytest.approx(-2.0, abs=0.7)
 
 
 def test_estimate_straighten_angle_detects_fragmented_horizon() -> None:
     result = estimate_straighten_angle(_fragmented_horizon_image(2.0))
 
     assert result.applied is True
-    assert result.angle_degrees == pytest.approx(-2.0, abs=0.8)
+    assert result.angle_degrees == pytest.approx(2.0, abs=0.8)
 
 
 def test_estimate_straighten_angle_skips_random_texture() -> None:
@@ -164,7 +164,7 @@ def test_crop_angle_attributes_only_for_applied_result() -> None:
     assert crop_angle_attributes(applied)["CropLeft"] == "0"
     assert crop_angle_attributes(applied)["CropBottom"] == "1"
     assert crop_angle_attributes(applied)["CropRight"] == "1"
-    assert crop_angle_attributes(applied)["CropAngle"].startswith("-")
+    assert crop_angle_attributes(applied)["CropAngle"].startswith("+")
     assert crop_angle_attributes(skipped) == {}
 
 

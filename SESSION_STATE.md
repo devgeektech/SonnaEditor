@@ -103,6 +103,11 @@ x86_64, while macOS resolves the matching public wheels.
     Classic still displayed Angle `0.00`. The XMP lacked full-frame crop bounds,
     so `crop_angle_attributes()` now writes `CropTop=0`, `CropLeft=0`,
     `CropBottom=1`, and `CropRight=1` with every applied `CropAngle`.
+  - Follow-up screenshot validation on `0H5A6236.CR3` showed Lightroom applied
+    the crop metadata but in the opposite direction (`-1.96` vs the user's
+    manual correct direction `+5.94`). The OpenCV residual-to-Lightroom mapping
+    was reversed; `estimate_straighten_angle()` now keeps the residual sign for
+    Lightroom `CropAngle` instead of negating it.
   - Added `opencv-python-headless==4.13.0.92` to `pyproject.toml` / `uv.lock`.
   - Added regression coverage for room-like tilted geometry, random texture
     skip behavior, and direct XMP serialization of `crs:HasCrop` /

@@ -84,7 +84,11 @@ This checkout is a Windows development/training workspace at `C:\Users\vikas.DES
   check with user-supplied `0H5A6295_.xmp` showed angle-only crop metadata
   (`HasCrop` + `CropAngle`) can still display as Angle `0.00`; applied
   straightening now writes full-frame `CropTop/CropLeft/CropBottom/CropRight`
-  bounds with every `CropAngle`. No model retraining is required.
+  bounds with every `CropAngle`. A follow-up screenshot on `0H5A6236.CR3`
+  showed the earlier OpenCV-to-Lightroom sign mapping was reversed (`-1.96`
+  from Saha vs `+5.94` manual correction); the estimator now keeps the OpenCV
+  residual sign for Lightroom `CropAngle` instead of negating it. No model
+  retraining is required.
 - **Verified this pass:** full local verification on 2026-06-12 passed after the
   Pylance cleanup and foundation CLI repair. `scripts\verify_environment.py`
   passed `11/11`; `uv run ruff check .` passed; `uv run python -m compileall -q

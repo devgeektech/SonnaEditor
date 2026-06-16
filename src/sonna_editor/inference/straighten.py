@@ -246,7 +246,10 @@ def estimate_straighten_angle(image: Image.Image) -> StraightenResult:
     line_count_score = min(1.0, residual.size / 4.0)
     line_length_score = min(1.0, float(weights.sum()) / (min(gray.shape) * 1.2))
     confidence = concentration * max(support, 0.0) * max(line_count_score, line_length_score)
-    angle = -float(median_residual)
+    # Lightroom's CropAngle sign is the visible correction direction. OpenCV
+    # line residuals already describe that direction for Lightroom's crop
+    # slider, so keep the sign instead of negating it.
+    angle = float(median_residual)
     angle = max(-_MAX_APPLY_ANGLE, min(_MAX_APPLY_ANGLE, angle))
 
     abs_angle = abs(angle)

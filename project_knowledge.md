@@ -435,6 +435,11 @@ Lite checkpoints are marked with `profile_type: mode_b_initial` in the sidecar J
   The missing piece was full-frame crop bounds. Applied straightening now also
   writes `CropTop=0`, `CropLeft=0`, `CropBottom=1`, and `CropRight=1` with
   every `CropAngle`.
+- Auto straightening sign fix, 2026-06-17: screenshot validation on
+  `0H5A6236.CR3` showed Lightroom was applying the crop metadata but in the
+  opposite direction (`-1.96` from Saha vs `+5.94` manual correction). The
+  OpenCV axis residual now maps directly to Lightroom `CropAngle`; the old
+  negation was removed.
 
 ## Important behavior notes
 
