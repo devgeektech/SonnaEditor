@@ -874,3 +874,16 @@ class TestExtraAttributes:
         text = out.read_text()
         assert 'crs:Exposure2012="+0.5"' in text  # slider write still happens
         assert 'crs:LensProfileEnable="1"' in text
+
+    def test_write_xmp_with_crop_angle_attributes(self, tmp_path: Path) -> None:
+        out = tmp_path / "straightened.xmp"
+
+        write_xmp(
+            out,
+            {"Exposure2012": 0.5},
+            extra_attributes={"HasCrop": "True", "CropAngle": "-2.25"},
+        )
+
+        text = out.read_text()
+        assert 'crs:HasCrop="True"' in text
+        assert 'crs:CropAngle="-2.25"' in text

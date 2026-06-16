@@ -112,6 +112,10 @@ class ProcessRequest(BaseModel):
     # zero / no entry for HSL/etc). Model still predicts these; they remain
     # in sonna_predictions.json for finetune capture but don't reach the XMP.
     skip_fields: list[str] = Field(default_factory=list)
+    # Optional Lightroom-native straightening postprocess. When enabled, the
+    # backend estimates a small crop angle from the RAW preview and writes it
+    # only if confidence is high enough. No model retraining is involved.
+    auto_straighten: bool = False
 
 
 class FinetuneRequest(BaseModel):
@@ -193,6 +197,7 @@ class JobSnapshot(BaseModel):
     folder_path: Optional[str] = None
     profile_id: Optional[str] = None
     photos_total: Optional[int] = None
+    photos_prepared: Optional[int] = 0
     photos_processed: Optional[int] = 0
     photos_flagged: Optional[int] = 0
     photos_failed: Optional[int] = 0

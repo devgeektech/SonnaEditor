@@ -6,10 +6,11 @@ This is the cross-platform local runbook for macOS, Windows, and Linux.
 
 The repo is uv-managed and pinned to Python `3.11.*` through `.python-version`,
 `pyproject.toml`, and `uv.lock`. Direct runtime/dev dependencies are exact-pinned
-in `pyproject.toml` to reduce Mac resolver drift. On Windows/Linux x86_64,
-`torch` and `torchvision` resolve from the PyTorch CUDA 12.8 wheel index, which
-keeps NVIDIA GPU support intact after `uv sync --extra dev`. macOS resolves the
-matching public PyTorch wheels.
+in `pyproject.toml` to reduce Mac resolver drift. Auto straightening uses the
+headless OpenCV runtime package (`opencv-python-headless`) for preview geometry.
+On Windows/Linux x86_64, `torch` and `torchvision` resolve from the PyTorch CUDA
+12.8 wheel index, which keeps NVIDIA GPU support intact after `uv sync --extra
+dev`. macOS resolves the matching public PyTorch wheels.
 
 Windows PowerShell:
 
@@ -86,7 +87,10 @@ bash run_saha.sh
 The launcher creates the repo-local runtime folders, installs frontend npm
 dependencies if `saha-app/node_modules/` is missing, then runs the Electron dev
 app. Electron reuses an existing backend on port `8765` or starts
-`scripts/serve.py` itself and shuts it down when the app quits.
+`scripts/serve.py` itself and shuts it down when the app quits. Backend startup
+readiness waits up to 30s by default, which avoids false failures on cold
+Windows/CUDA startup; set `SAHA_BACKEND_STARTUP_TIMEOUT_MS` only if a slower
+machine needs a longer wait.
 
 Prerequisites for both Windows and macOS: `uv` and Node.js LTS must be on
 `PATH`. If either is missing, the launcher prints a setup message instead of
@@ -372,8 +376,14 @@ Run the published Lite profile with the model-processing CLI:
 uv run python scripts\process_shoot_model.py `
   --input-dir D:\Shoots\ClientShoot01 `
   --model-path v1_learning\model-v0.2.0.ckpt `
-  --output-dir D:\Shoots\ClientShoot01\SahaOutput
+  --output-dir D:\Shoots\ClientShoot01\SahaOutput `
+  --auto-straighten
 ```
+
+`--auto-straighten` is optional and matches the Process UI checkbox. It uses
+OpenCV Canny + Hough line detection on the extracted preview, then writes
+Lightroom `CropAngle` metadata only when the geometry is confident; it does not
+retrain or alter the selected profile checkpoint.
 
 ### UI-based Lite profile creation and processing
 

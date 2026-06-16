@@ -5,23 +5,23 @@
 **Platforms:** macOS, Windows, and Linux
 **Reference hardware:** M1 Pro MacBook Pro, 32GB RAM
 **Status:** v1.2.0 production shipped; v2 training prep active on the current Windows CUDA workstation; Phase 8 (team distribution) deferred
-**Last updated:** 2026-06-12
+**Last updated:** 2026-06-15
 
 ---
 
-## Current workspace state (2026-06-12)
+## Current workspace state (2026-06-15)
 
 This checkout is a Windows development/training workspace at `C:\Users\vikas.DESKTOP-61LEE8B\Projects\SonnaEditor`.
 
 - **Environment:** Python 3.11.15 via uv 0.11.17. `pyproject.toml` / `uv.lock` require Python `3.11.*`. PyTorch is installed as `2.11.0+cu128`; `sonna_editor.runtime.preferred_torch_device()` returns `cuda` on the local NVIDIA GeForce RTX 3050. `scripts/verify_environment.py` passes 11/11 checks.
-- **Dependency pins and CUDA packaging:** direct runtime/dev dependencies are exact-pinned in `pyproject.toml` from the current uv environment to reduce Mac resolver drift. `torch==2.11.0` and `torchvision==0.26.0` remain routed to the PyTorch CUDA 12.8 wheel index on Windows/Linux x86_64, while macOS resolves the matching public PyTorch wheels.
+- **Dependency pins and CUDA packaging:** direct runtime/dev dependencies are exact-pinned in `pyproject.toml` from the current uv environment to reduce Mac resolver drift. `opencv-python-headless==4.13.0.92` is now a runtime dependency for auto straightening. `torch==2.11.0` and `torchvision==0.26.0` remain routed to the PyTorch CUDA 12.8 wheel index on Windows/Linux x86_64, while macOS resolves the matching public PyTorch wheels.
 - **Local dataset/checkpoints:** training/profile caches were intentionally cleared for a fresh dataset reset, and previous trained profile/foundation checkpoint files were cleared again before the new FiveK foundation run. The duplicate generated dataset folder `v1_learning\dataset` was removed. `v1_learning\` has no trained profile checkpoint and is reserved for frontend-visible published profile checkpoint/sidecar files only. `SonnaEditorFoundation\checkpoints\` is empty, and `foundation_manifest.json` is reset to an empty schema-v2 manifest. The next successful foundation training run will promote a new checkpoint as the default base for Personal AI / Mode A and Lite / Mode B.
 - **Tracked foundation checkpoint cleanup:** on 2026-06-10 the previously pushed foundation checkpoint artifacts (`foundation-fivek-catalog-expert-c-001.*` and `foundation-sonna-raw-xmp-001.*`) were removed from the parent repo worktree and the foundation manifest was reset. A Mac RAW+XMP foundation run is expected to produce the next checkpoint to add and push through Git LFS.
 - **Runtime layout:** the app now auto-creates repo-local working directories on startup, including `data\training_sources\`, `data\raw\`, `data\raw\sonna_training\`, `v1_learning\`, and `.saha\`. A fresh clone no longer depends on pre-existing gitignored folders or user-home `~\.saha` state.
-- **Client startup:** the preferred local app launch is now one command from the repo root: `.\run_saha.cmd` on Windows or `bash run_saha.sh` on macOS/Linux. These wrappers call `uv run python scripts/run_app.py`, which creates runtime folders, checks for Node/npm, installs frontend npm dependencies only when `saha-app/node_modules` is missing, then starts the existing Electron dev command. Electron starts or reuses the FastAPI backend on port `8765`. `run_saha.ps1` is also available for PowerShell users. `.gitattributes` pins `.sh` to LF and Windows wrappers to CRLF so clones behave correctly on both OS families.
+- **Client startup:** the preferred local app launch is now one command from the repo root: `.\run_saha.cmd` on Windows or `bash run_saha.sh` on macOS/Linux. These wrappers call `uv run python scripts/run_app.py`, which creates runtime folders, checks for Node/npm, installs frontend npm dependencies only when `saha-app/node_modules` is missing, then starts the existing Electron dev command. Electron starts or reuses the FastAPI backend on port `8765`; the startup readiness probe now waits up to 30s with 1s health probes so Windows/CUDA cold starts do not show a false backend-failed dialog while Uvicorn is still coming up. Override with `SAHA_BACKEND_STARTUP_TIMEOUT_MS` only for unusually slow machines. `run_saha.ps1` is also available for PowerShell users. `.gitattributes` pins `.sh` to LF and Windows wrappers to CRLF so clones behave correctly on both OS families.
 - **RAW format scanning:** supported RAW extensions are now centralised in `config.SUPPORTED_RAW_EXTENSIONS` and shared by dataset builds, folder/API scans, preset processing, model inference, and fine-tune capture. The current scanned formats are `.cr2`, `.cr3`, `.nef`, `.arw`, `.raf`, `.orf`, `.rw2`, `.pef`, `.dng`, `.x3f`, `.rwl`, and `.srw`. Actual preview/metadata extraction still depends on `rawpy`/LibRaw support for the specific camera file, and DNG conversion depends on Adobe DNG Converter support.
 - **Dataset timestamp handling:** RAW+XMP dataset shoot bucketing now normalizes timezone-aware capture timestamps to naive UTC before computing 12-hour shoot IDs, preventing Mac builds from failing on offset-aware ISO timestamps with `can't subtract offset-naive and offset-aware datetimes`.
-- **Production profile UX boundary:** the frontend now exposes two profile creation paths: Personal AI from RAW+XMP warm-started from the hidden foundation checkpoint, and Lite from preset plus the six-question survey. Foundation model training is CLI-only with `scripts/train_foundation_model.py`.
+- **Production profile UX boundary:** the frontend currently exposes Lite profile creation from preset plus the six-question survey. Personal AI profile creation from RAW+XMP remains implemented behind the API/wizard code path but the Profile screen tile is disabled and labelled "Coming soon". Foundation model training is CLI-only with `scripts/train_foundation_model.py`.
 - **Foundation/Lite boundary:** Lite profile creation no longer depends on the currently active Personal AI profile. It resolves the active foundation checkpoint from `SONNA_FOUNDATION_CHECKPOINT`, `SONNA_FOUNDATION_REPO/foundation_manifest.json`, or `SONNA_FOUNDATION_REPO/foundation.ckpt`; the default foundation folder is now the repo-local child folder `SonnaEditorFoundation\` unless overridden. The parent repo tracks this folder, with checkpoint binaries routed through Git LFS. The foundation CLI supports real Lightroom-label training from RAW+XMP folders or trusted catalog splits. The promoted foundation checkpoint is cumulative through native `SonnaEditor` slider-regression warm starts.
 - **Foundation versioning:** every foundation run warm-starts from the active foundation checkpoint by default, writes a new versioned checkpoint, and promotes that new checkpoint as active. The manifest is now schema-v2 with `active_version`, `versions[]`, checkpoint SHA256, foundation type, capabilities, and training-source tags. Older foundation checkpoints are never overwritten; use `scripts\rollback_foundation.py` to activate a previous version. If the active checkpoint is removed, foundation resolution still falls back to the newest remaining checkpoint under `SonnaEditorFoundation\checkpoints\`.
 - **Lite low-light exposure:** the preset/Lite exposure adjuster now gives low-light frames a stronger positive exposure lift when mean/median luminance are dark and highlights are not near clipping, matching the desired Imagen-like behavior more closely while keeping WB conservative unless explicitly enabled.
@@ -37,11 +37,46 @@ This checkout is a Windows development/training workspace at `C:\Users\vikas.DES
 - **Dataset audit plotting:** `matplotlib` is now a base dependency so `scripts\audit_catalog.py` generates ISO and slider-distribution plots without optional-import warnings. The audit CLI prints ASCII statuses on Windows to avoid PowerShell emoji encoding errors.
 - **Training runner structure:** the production training callable lives in `src/sonna_editor/training/profile_runner.py`; `scripts/train_profile.py` is a thin CLI wrapper. The API uses the packaged runner for frontend Personal AI training jobs, resolving the hidden foundation checkpoint as the warm start, with epoch progress, cancellation, and no publish on cancel. Personal AI sidecars record foundation provenance (`foundation_version`, checkpoint path, SHA256, type, capabilities, and source tags). Training startup logs and `training_summary.json` now include total/trainable/frozen parameters, trainable percentage, dataset row counts, batches per epoch, estimated optimizer steps, effective learning rates, sampler/cap status, and the backbone freeze/unfreeze summary.
 - **Frontend profile deletion:** deleting a profile from the UI now asks for confirmation before removing local checkpoint/sidecar files. Active profile deletion remains blocked server-side.
+- **Frontend theme/progress polish:** the Saha shell has a working bottom-left
+  dark/light theme toggle with a matte orange accent applied to CTAs, progress,
+  active states, and coming-soon badges. Theme tokens are CSS-variable backed
+  so switching theme applies globally across pages/tabs. Process job websocket
+  streams send an initial `job_snapshot`, early `photo_prepared` progress
+  during preview/metadata extraction, and per-photo total counts so the
+  right-panel processing bar can update from live job state. The Process queue
+  uses explicit row checkboxes: with no checked folder, Process Selected stays
+  disabled and no job is dispatched; with checked rows, only those folders run.
+  Profile rows use three-dot menus; deleting the active/last profile is
+  allowed, with automatic active promotion or pointer clearing.
+- **Frontend login/profile polish:** the login page no longer shows the
+  "What's new" card or the old version/RAW/platform compatibility strip. The
+  AI Profiles list stays newest-first when activating a profile instead of
+  moving the active row to the top, and the left-rail "Profiles directory"
+  button has been removed. Cosmetic logout/login keeps Home and Projects
+  mounted after the first sign-in so loaded folders and the project snapshot do
+  not vanish within the same app session. Queue row removal now asks for
+  confirmation, profile deletion uses the requested "Do you want to delete this
+  profile - <profile name>?" prompt, and orange CTA buttons share the same
+  `SONNA.cta` token as the New Project button.
 - **Lite profile creation and processing:** fixed on 2026-06-02 for Imagen-aligned Lite output from the UI/CLI. `mode_b/checkpoint_builder.py` inherits the base checkpoint's native `slider_set_version` and writes a `mode_b_initial` sidecar. `inference/pipeline.py` now detects that sidecar for initial Lite runs, reloads the copied preset+survey, keeps preset look sliders fixed, applies per-photo Exposure/WB corrections only, and records those adjusted values in `sonna_predictions.json`. This prevents the active v2 base model's own Exposure/colour predictions from stacking on top of the uploaded preset while avoiding a constant bias-only preset clone.
 - **Training script state:** `scripts/train_profile.py` uses the v2 recipe defaults (512px, fresh `arch_version=3`, WB metadata skip enabled, visual-priority weights: Exposure 5.0, Temperature/Tint 4.0, Contrast/Highlights/Shadows 3.0, Whites/Blacks/Saturation/Vibrance 2.0). Fresh models initialise output-head biases from training target medians, WB residual heads start at zero when AsShot WB skip is enabled, and default augmentation is geometry-only to avoid corrupting Exposure/WB labels. Fresh `arch_version=3` models consume six preview-derived luminance scene stats and use staged output-head conditioning; older checkpoints load with their saved architecture version. Default recipe values log as `Training recipe ...`; only explicitly supplied CLI flags log as `Override ...`.
 - **Anti-collapse and retention diagnostics:** `scripts/analyse_prediction_collapse.py` reports per-slider prediction/target spread and collapsed sliders. `scripts/analyse_backbone_drift.py` compares ConvNeXt `backbone_features` tensors between a foundation checkpoint and a trained Personal AI checkpoint so FiveK/RAW+XMP feature retention can be measured instead of guessed. `scripts/audit_dataset_diversity.py` reports scene/edit diversity buckets. On the previous 27-photo validation split, existing `model-v2.0.0` showed 14 collapsed sliders and Exposure2012 std_ratio ~0.115; the rejected scene-stats candidate showed 29 collapsed sliders and near-zero Exposure spread despite lower test MAE. The previous diagnostic dataset was only 189 photos / 35 shoots, with 16 bright scenes and 9 cool-WB scenes. Those local dataset/checkpoint caches were later cleared for a fresh reset.
 - **Dark low-light exposure failure:** Diagnosis on `0H5A4599` showed the expected/training XMP had `Exposure2012=+1.11`, while the then-active `model-v2.0.0` wrote about `+0.105`. Other key tone/WB sliders and curves were close, so the root cause was not XMP writing or tone-curve endpoints; it was Exposure2012 prediction collapse. Across the previous 189-row dataset, target Exposure std was ~0.454 but model output std was ~0.061, and the darkest luminance quartile needed ~`+0.695` while the model predicted ~`+0.090`.
 - **Inference colour-cast fix:** `src/sonna_editor/inference/pipeline.py` now stabilises RGB tone-curve endpoints before writing XMP. Diagnosis from `0H5A3190A-2.xmp`: WB/Tint were close to the expected output, but Green/Blue tone-curve white endpoints below `255/255` made neutral whites render pink/red in Lightroom. The pipeline preserves RGB black endpoints at `0/0` and white endpoints at `255/255` while leaving middle curve points model-driven.
+- **Opt-in auto straightening:** the Process UI now has an `Auto straighten`
+  checkbox, `/api/process` accepts `auto_straighten`, and
+  `scripts\process_shoot_model.py` supports `--auto-straighten`. This is a
+  Lightroom-native inference postprocess, not a trained model output: when
+  enabled, `src\sonna_editor\inference\straighten.py` estimates a small
+  `CropAngle` from the extracted preview and writes crop-angle XMP metadata
+  only when confidence is high enough. `sonna_predictions.json` records
+  per-photo straightening diagnostics. On 2026-06-15 the frontend dispatch was
+  corrected to require explicit checked-folder selection before processing,
+  with `auto_straighten` forwarded through that selected-folder job payload.
+  The estimator now uses CLAHE-normalized OpenCV Canny edges plus probabilistic
+  Hough lines and OpenCV line segments to derive the small Lightroom
+  `CropAngle`, with high-texture frames skipped. No model retraining is
+  required.
 - **Verified this pass:** full local verification on 2026-06-12 passed after the
   Pylance cleanup and foundation CLI repair. `scripts\verify_environment.py`
   passed `11/11`; `uv run ruff check .` passed; `uv run python -m compileall -q

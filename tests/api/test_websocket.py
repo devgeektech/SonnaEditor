@@ -36,7 +36,10 @@ def test_websocket_emits_photo_complete_and_terminal(
                     break
 
     photo_msgs = [m for m in messages if m["type"] == "photo_complete"]
+    snapshot_msgs = [m for m in messages if m["type"] == "job_snapshot"]
     terminal_msgs = [m for m in messages if m["type"] == "job_complete"]
+    assert len(snapshot_msgs) == 1
+    assert snapshot_msgs[0]["photos_total"] == 3
     assert len(photo_msgs) == 3
     assert len(terminal_msgs) == 1
 
@@ -46,6 +49,7 @@ def test_websocket_emits_photo_complete_and_terminal(
     assert "Exp " in first["edit_summary"]
     assert "WB " in first["edit_summary"]
     assert first["status"] == "ok"
+    assert first["photos_total"] == 3
 
 
 def test_websocket_unknown_job_returns_error_message(client: TestClient) -> None:

@@ -4,7 +4,7 @@
 
 Sonna Editor is a local desktop tool for predicting Lightroom slider adjustments from RAW images. It uses a PyTorch regression model trained on Lightroom-edited photos, then writes XMP sidecars alongside RAW files. The UI is Electron + React and the backend is Python. The runtime target is cross-platform: macOS, Windows, and Linux.
 
-Current local workspace state as of 2026-06-12:
+Current local workspace state as of 2026-06-15:
 - Windows path: `C:\Users\vikas.DESKTOP-61LEE8B\Projects\SonnaEditor`
 - Python 3.11.15 via uv 0.11.17. `pyproject.toml` / `uv.lock` require Python `3.11.*`.
 - PyTorch `2.11.0+cu128`, CUDA active on NVIDIA GeForce RTX 3050. `torch==2.11.0` / `torchvision==0.26.0` are exact-pinned in `pyproject.toml`; Windows/Linux x86_64 resolve CUDA 12.8 local wheels through the configured PyTorch index, while macOS resolves public wheels.
@@ -14,7 +14,10 @@ Current local workspace state as of 2026-06-12:
 - Supported RAW extension scanning is centralised in `config.SUPPORTED_RAW_EXTENSIONS` and currently covers `.cr2`, `.cr3`, `.nef`, `.arw`, `.raf`, `.orf`, `.rw2`, `.pef`, `.dng`, `.x3f`, `.rwl`, and `.srw` across dataset building, folder/API scans, preset processing, model inference, and fine-tune capture. Decode/conversion still depends on `rawpy`/LibRaw or Adobe DNG Converter supporting the specific camera file.
 - Preferred app startup is now one command: `.\run_saha.cmd` on Windows and
   `bash run_saha.sh` on macOS/Linux. The legacy two-terminal backend/frontend
-  commands are still documented as a debugging reference.
+  commands are still documented as a debugging reference. Electron's backend
+  readiness guard waits up to 30s with 1s `/api/health` probes, configurable
+  via `SAHA_BACKEND_STARTUP_TIMEOUT_MS`, to avoid false failures during cold
+  Windows/CUDA startup.
 - Latest full local verification on 2026-06-12 passed: environment `11/11`,
   `uv run ruff check .`, `uv run python -m compileall -q src scripts tests`,
   `npm run build:vite`, and `uv run pytest -q` (`753 passed, 45 skipped,
@@ -37,7 +40,8 @@ The core inference flow is:
 - `scripts/run_app.py`: one-command development launcher. It bootstraps runtime
   folders, checks for Node/npm, installs frontend npm dependencies when
   `saha-app/node_modules` is missing, then runs the Electron dev app. Electron
-  starts or reuses the FastAPI backend on port 8765.
+  starts or reuses the FastAPI backend on port 8765; `saha-app/electron/main.js`
+  owns the backend health wait, process reuse, and shutdown behavior.
 - `run_saha.cmd` / `run_saha.ps1` / `run_saha.sh`: root-level client-friendly
   wrappers around `uv run python scripts/run_app.py`; use `bash run_saha.sh`
   on macOS/Linux so the wrapper does not depend on executable file mode.
@@ -101,7 +105,8 @@ This section tracks what each backend source file/folder does. Keep it updated w
 |---|---|
 | `src/sonna_editor/inference/__init__.py` | Package marker for inference code. |
 | `src/sonna_editor/inference/engine.py` | Checkpoint loading and batched prediction engine. Builds tensors from extracted previews/metadata plus scene stats, maps categorical metadata through the checkpoint registry, supports uncertainty sampling, and postprocesses outputs. |
-| `src/sonna_editor/inference/pipeline.py` | End-to-end shoot processing: scan RAW files using the central `config.SUPPORTED_RAW_EXTENSIONS` set, extract features, run inference, apply WB/skip semantics, write XMP sidecars, write `sonna_predictions.json`, and emit progress callbacks. |
+| `src/sonna_editor/inference/pipeline.py` | End-to-end shoot processing: scan RAW files using the central `config.SUPPORTED_RAW_EXTENSIONS` set, extract features, run inference, apply WB/skip semantics, optionally apply preview-based auto straightening, write XMP sidecars, write `sonna_predictions.json`, and emit progress callbacks. |
+| `src/sonna_editor/inference/straighten.py` | Optional auto-straightening postprocess. Uses CLAHE-normalized OpenCV Canny edges plus probabilistic Hough lines and OpenCV line segments to estimate small Lightroom `CropAngle` corrections from preview geometry, with conservative confidence thresholds and CRS crop attributes only when selected per processing job. This is not a trained model output. |
 
 ### Fine-Tune Package
 
@@ -129,7 +134,7 @@ This section tracks what each backend source file/folder does. Keep it updated w
 | Path | Purpose |
 |---|---|
 | `src/sonna_editor/api/__init__.py` | Package marker for backend API code. |
-| `src/sonna_editor/api/callbacks.py` | Bridges inference/training callbacks into job progress records and websocket events for the Electron UI. |
+| `src/sonna_editor/api/callbacks.py` | Bridges inference/training callbacks into job progress records and websocket events for the Electron UI. Live edit-summary formatting tolerates sparse Lite payloads with `None` slider values. |
 | `src/sonna_editor/api/confidence.py` | Reduces uncertainty samples/per-slider standard deviation into frontend confidence summaries. |
 | `src/sonna_editor/api/jobs.py` | In-memory plus persisted job registry for long-running inference/fine-tune jobs, cancellation, recovery, and websocket subscribers. |
 | `src/sonna_editor/api/models.py` | Pydantic request/response models for health, profiles, folders, processing, fine-tuning, Personal AI profile creation, Lite profile creation, and jobs. |
@@ -253,7 +258,11 @@ This section tracks what each backend source file/folder does. Keep it updated w
 
 ### `src/sonna_editor/api/`
 - backend HTTP/WS API bridge for the Electron UI
-- callbacks and job management for long-running inference and finetune jobs
+- callbacks and job management for long-running inference and finetune jobs.
+  Process job websocket streams send an initial `job_snapshot` backfill on
+  connect, early `photo_prepared` messages during preview/metadata extraction,
+  then per-photo `photo_complete` messages carrying both `photos_processed`
+  and `photos_total` for live progress bars.
 - exposes routes for profile management, processing, and health
 - `Profile.profile_type` is surfaced from checkpoint sidecar JSON: `None` for legacy trained profiles, `"mode_b_initial"` for Lite preset-derived profiles
 
@@ -261,7 +270,21 @@ This section tracks what each backend source file/folder does. Keep it updated w
 
 ### `saha-app/`
 - `src/App.jsx`: root React app
-- `src/components/`: UI pages, editor, profiles, wizard, and job views
+- `src/tokens.js`: shared design tokens backed by global CSS variables in
+  `src/index.html`; dark/light theme switches apply across all pages/tabs.
+  Matte orange is the accent used by buttons, progress, active states, and
+  coming-soon badges.
+- `src/components/`: UI pages, editor, profiles, wizard, and job views. The
+  shared shell bottom-left rail control toggles dark/light theme and persists
+  it in local storage. The left rail has Home, AI Profiles, and Projects.
+  Home owns the persistent queue and active-profile selector; because Home stays
+  mounted while other pages are visible, loaded folders survive tab switches.
+  Folder checkboxes are unselected by default: with no boxes checked, processing
+  is disabled; with boxes checked, processing runs those checked folders only.
+  Projects lists loaded/current folders and recent run rows by
+  loaded time. Profile rows use a three-dot actions menu for profile deletion.
+  The Profile screen currently shows Personal AI profile creation as a disabled
+  "Coming soon" tile; Lite profile creation remains the active creation path.
 - `src/hooks/`: React hooks for jobs, profiles, captures, and recent folders
 - `electron/`: Electron main/preload process wiring
 - front-end interacts with Python backend via REST and websocket status updates
@@ -304,11 +327,37 @@ Lite checkpoints are marked with `profile_type: mode_b_initial` in the sidecar J
 
 - CUDA environment fix, 2026-06-01: `torch` and `torchvision` are pinned to the PyTorch CUDA 12.8 wheel index for Windows/Linux x86_64 in `pyproject.toml` and `uv.lock`. This resolved the CPU-only `torch 2.11.0+cpu` install that caused Lightning to report `GPU available: False` despite an RTX 3050 being present.
 - Dependency pinning pass, 2026-06-10: direct runtime/dev dependencies in `pyproject.toml` are exact-pinned from the current uv environment, and the project now requires Python `3.11.*`. `uv.lock` was refreshed with the narrower Python requirement to reduce Mac setup conflicts from Python 3.12+ wheel resolution while preserving CUDA 12.8 wheels for Windows/Linux x86_64.
+- OpenCV straightening dependency, 2026-06-15: `opencv-python-headless==4.13.0.92` is exact-pinned as a runtime dependency. It is used only for preview geometry in `src/sonna_editor/inference/straighten.py`; no GUI OpenCV package is required.
 - Training log clarity fix, 2026-06-01: `scripts/train_profile.py` no longer labels default v2 recipe settings as overrides. It reports defaults as `Training recipe ...` and reserves `Override ...` for explicit CLI flags.
 - Training runner packaging, 2026-06-02: the training callable now lives in `src/sonna_editor/training/profile_runner.py`; `scripts/train_profile.py` is a CLI wrapper. The API imports the packaged runner instead of importing a script module.
 - Warm-start calibration, 2026-06-08: `src/sonna_editor/training/profile_runner.py` now recalibrates warm-started model output-head final biases from the current train split while preserving learned final weights. Fresh models still zero final output-head weights before applying target medians. This keeps foundation features but avoids stale output priors, such as FiveK Saturation/Vibrance baselines, dominating small Sonna continuation runs.
 - Tone/presence focused loss overrides, verified 2026-06-12: `src/sonna_editor/training/profile_runner.py` accepts repeatable `--field-loss-weight FIELD=WEIGHT` overrides for any slider in `config.SLIDER_FIELDS`, records the parsed map in `training_summary.json`, and `scripts/train_foundation_model.py` passes those overrides through. The foundation CLI also exposes and forwards `--tone-presence-retry`, a reviewed shortcut that raises retry weights for Exposure2012, Whites2012, Blacks2012, Highlights2012, Shadows2012, Vibrance, and Saturation while respecting explicit per-field overrides. Use this before collecting more data when a foundation run is close on WB but misses tone/presence gate metrics.
 - Profile runner Pylance cleanup, 2026-06-12: `src/sonna_editor/training/profile_runner.py` now narrows datamodule datasets/registry after `setup()`, types checkpoint path args explicitly, and reads the named `ModelCheckpoint` callback's best path/score through helper functions. This keeps VS Code/Pylance clean without changing training behavior.
+- Profile screen Personal AI affordance, 2026-06-15: `saha-app/src/components/profile-view.jsx` now disables the "Personal AI profile" creation tile and labels it "Coming soon" instead of opening the training wizard. Lite profile creation is unchanged.
+- Frontend theme and live progress polish, 2026-06-15: `saha-app/src/tokens.js`
+  now has dark/light theme sets with a matte orange accent. Theme values are
+  exposed through CSS variables in `index.html`, `App.jsx` persists the
+  selected theme, and the shared shell's bottom-left rail control toggles
+  themes globally across pages. Process websocket streams now send an initial
+  `job_snapshot`, early `photo_prepared` progress, and per-photo total counts
+  so `useJob()` can keep the right-panel processing bar moving with live job
+  state. The left rail now follows Home / AI Profiles / Projects; Home stays
+  mounted across page switches so loaded folders persist. The queue is
+  unselected by default and requires row checkbox selection before processing.
+  Profile rows use three-dot menus; active/last profiles can be deleted, with
+  automatic active-profile promotion or pointer clearing.
+- Frontend login/profile polish, 2026-06-15: `saha-app/src/components/login.jsx`
+  no longer shows the "What's new" card or version/RAW/platform compatibility
+  strip. `saha-app/src/components/profile-view.jsx` keeps the profile list
+  sorted newest-first when activating a profile, so the clicked row does not
+  jump to the top, and the left-rail "Profiles directory" button has been
+  removed. `saha-app/src/App.jsx` keeps Home/Profile/Projects mounted after the
+  first sign-in so a cosmetic logout/login does not clear loaded folders or the
+  Projects snapshot within the same app session. Queue folder removal now asks
+  for confirmation before deleting a row, profile deletion uses the requested
+  "Do you want to delete this profile - <profile name>?" prompt, and CTA
+  buttons use the shared `SONNA.cta` / `SONNA.onCta` aliases so New Project,
+  Process Selected, login, wizard, and fine-tune CTAs share one accent source.
 - Foundation quality-gate diagnostics, 2026-06-10: `scripts/train_foundation_model.py` now writes `quality_gate_passed` and `foundation_quality_failures` back into `training_summary.json` before returning a promotion failure. `src/sonna_editor/training/profile_runner.py` records `hparams.max_epochs` in summaries, and `scripts/quick_diagnostic.py` prints backbone capacity, field-loss overrides, plus a train-median baseline comparison for failed gate fields when train/test Parquet paths are present.
 - Foundation visual checkpoint selection, 2026-06-10: foundation training now passes `checkpoint_monitor="val_visual_score"` into `train_profile()`. `SonnaLightningModule` logs `val_visual_score`, a lower-is-better visual composite over Exposure, WB, tone, presence, HSL average, and key collapse ratios. `train_profile()` still records best true val-loss separately while exporting the checkpoint selected by the configured monitor.
 - Foundation quality-gate tiering, 2026-06-10: foundation promotion now distinguishes hard failures from warnings. Hard failures still block promotion unless explicitly overridden after review; moderate misses are persisted as `foundation_quality_warnings`, printed to stderr, and allowed to promote so useful checkpoints are not blocked by one noisy slider.
@@ -343,6 +392,23 @@ Lite checkpoints are marked with `profile_type: mode_b_initial` in the sidecar J
 - Lite survey contract correction, 2026-06-03: `src/sonna_editor/mode_b/survey.py`, `/api/profiles/lite`, and the Saha Lite wizard now capture all six Lite survey answers again. Initial Lite processing still dynamically adjusts only Exposure2012, Temperature, and Tint so the preset owns the initial look sliders.
 - Staged-head learning improvement, 2026-06-03: fresh `arch_version=3` models condition WB/presence heads on the tone block output and condition later color/detail/curve heads on tone + presence + WB outputs. Existing checkpoints load with their saved architecture version.
 - Earlier UI progress fix: `src/sonna_editor/inference/pipeline.py::process_shoot_with_model()` fires the per-photo `on_photo_complete` callback immediately after predictions are available, before the XMP write.
+- Auto straightening, 2026-06-12: the Process view now has an opt-in
+  `Auto straighten` checkbox, `/api/process` accepts `auto_straighten`, and
+  `scripts/process_shoot_model.py` exposes `--auto-straighten`. When enabled,
+  `inference/straighten.py` estimates a small Lightroom-native `CropAngle`
+  from the extracted preview and writes `HasCrop=True` / `CropAngle=...` only
+  when confidence passes conservative thresholds. The result is recorded under
+  `auto_straighten` and `straightening` in `sonna_predictions.json`. No model
+  retraining is required.
+- Auto straightening repair, 2026-06-15: `saha-app/src/components/editor.jsx`
+  requires explicit queued-row selection before processing. Queued folders
+  remain unselected by default; if no queued rows are checked, Process Selected
+  stays disabled and no job is dispatched. The selected-folder dispatch sends
+  the `auto_straighten` flag to `/api/process`.
+  `src/sonna_editor/inference/straighten.py` now uses CLAHE-normalized OpenCV
+  Canny edges plus probabilistic Hough lines and OpenCV line segments, with
+  coverage for room-like tilt, faint geometry, short segments, random texture
+  skips, and actual XMP crop-angle attributes.
 
 ## Important behavior notes
 
@@ -351,6 +417,16 @@ Lite checkpoints are marked with `profile_type: mode_b_initial` in the sidecar J
 - Legacy v1 checkpoint support is preserved via checkpoint sidecar heuristics and output count gating.
 - Lite profile creation from a v2 base must keep `slider_set_version="v2"`; down-converting via `from_checkpoint(target_slider_set_version="v1")` is intentionally rejected by the model loader.
 - Initial Mode B/Lite checkpoints are intentionally profile carriers with preset/survey metadata and the configured foundation checkpoint's native slider set. Before fine-tuning, the UI/CLI processing path is Imagen-aligned Lite execution: uploaded preset controls the look, with per-photo Exposure/WB corrections only.
+- Auto straightening is an opt-in inference postprocess, shared by Personal AI
+  and Lite processing. It writes Lightroom crop-angle metadata from OpenCV
+  preview-geometry analysis when confident, while high-texture/no-line frames
+  are skipped; it does not use or update model checkpoints and it does not train
+  on crop labels.
+- Process dispatch behavior: with no selected queued folders, the UI does not
+  dispatch a process job. With one or more selected queued folders, it processes
+  only those selected folders. This matters for per-run options like Auto
+  straighten because they are forwarded through the selected `job.start()`
+  payload.
 - Raw metadata extraction uses embedded JPEG EXIF first, then supplements from a `.xmp` sidecar if present.
 - Fresh `arch_version=3` models consume preview-derived scene luminance statistics and use staged output-head conditioning. Existing `arch_version=1`/`2` checkpoints load unchanged and keep their saved head shapes.
 

@@ -19,7 +19,7 @@ export function ErrorBanner({ error, onDismiss }) {
     }}>
       <div style={{
         width: 16, height: 16, borderRadius: '50%',
-        background: SONNA.red, color: '#1A1209',
+        background: SONNA.red, color: SONNA.onDanger,
         display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
         fontSize: 11, fontWeight: 700,
       }}>!</div>

@@ -10,16 +10,20 @@ training, resume, and retrain commands live in `FOUNDATION_TRAINING.md`.
   Python `3.11.*`; use `uv python pin 3.11` on Mac if uv tries a newer Python.
 - PyTorch is `2.11.0+cu128`; CUDA is verified on the local NVIDIA GeForce RTX 3050.
 - Direct runtime/dev dependencies are exact-pinned in `pyproject.toml` to reduce
-  Mac resolver drift. `uv sync --extra dev` preserves CUDA PyTorch on
-  Windows/Linux x86_64 through the pinned PyTorch CUDA 12.8 index, while macOS
-  resolves the public `torch==2.11.0` / `torchvision==0.26.0` wheels.
+  Mac resolver drift. Auto straightening uses the headless OpenCV runtime
+  package (`opencv-python-headless`) for preview geometry. `uv sync --extra dev`
+  preserves CUDA PyTorch on Windows/Linux x86_64 through the pinned PyTorch CUDA
+  12.8 index, while macOS resolves the public `torch==2.11.0` /
+  `torchvision==0.26.0` wheels.
 - Training/profile caches were intentionally cleared so a fresh dataset can be added.
 - `data\training_workspace\sonna_personal_001_dataset\`, `data\models\`, `data\parquet\`, `data\captures\`, `data\thumbnails\`, `data\audits\`, `data\dbg\`, `data\raw\sonna_training\`, `.pytest_cache`, `.ruff_cache`, and `.saha\active_profile.txt` were removed or emptied.
 - There is currently no guaranteed local frontend-visible checkpoint in `v1_learning\`. Add fresh RAW+XMP data and train a Personal AI profile from the UI, or configure the hidden foundation checkpoint using `FOUNDATION_TRAINING.md`.
 - Runtime directories are now created automatically from the project root. A fresh clone will bootstrap repo-local `data\training_sources\`, `data\raw\`, `data\raw\sonna_training\`, `v1_learning\`, and `.saha\` on backend or CLI startup.
 - App startup is now wrapped by a one-command launcher. Use `.\run_saha.cmd`
   on Windows and `bash run_saha.sh` on macOS/Linux. The old two-terminal
-  backend/frontend commands remain below as a debugging reference.
+  backend/frontend commands remain below as a debugging reference. Electron's
+  backend readiness wait is 30s by default and can be overridden with
+  `SAHA_BACKEND_STARTUP_TIMEOUT_MS` for unusually slow cold starts.
 - Latest full local verification on 2026-06-12 passed: environment `11/11`,
   `uv run ruff check .`, `uv run python -m compileall -q src scripts tests`,
   `npm run build:vite`, and full pytest (`753 passed, 45 skipped, 1 warning`).
@@ -167,6 +171,10 @@ Do not reuse a previous --version-stem; old checkpoints are never overwritten.
 5. Process new shoots.
    - Run through the Electron UI or `scripts/process_shoot_model.py`.
    - Output XMP files are written next to RAWs by default, plus `sonna_predictions.json` for later fine-tuning.
+   - Optional auto straightening is controlled per run from the UI checkbox or
+     `--auto-straighten`; it uses OpenCV preview-line geometry and writes
+     Lightroom `CropAngle` metadata when confident. It does not require
+     retraining.
 
 6. Fine-tune later.
    - Capture final Lightroom tweaks.
@@ -301,7 +309,8 @@ Run the Lite checkpoint on a shoot:
 uv run python scripts\process_shoot_model.py `
   --input-dir D:\Shoots\ClientShoot01 `
   --model-path v1_learning\model-v0.2.0.ckpt `
-  --output-dir D:\Shoots\ClientShoot01\SahaOutput
+  --output-dir D:\Shoots\ClientShoot01\SahaOutput `
+  --auto-straighten
 ```
 
 Lite checkpoints are visible in the UI when they are published into
@@ -803,7 +812,9 @@ uv run python scripts\run_app.py
 
 The launcher creates runtime folders, runs `npm install` only when
 `saha-app\node_modules\` is missing, then starts `npm run dev` in `saha-app`.
-The Electron main process starts or reuses the backend on port `8765`.
+The Electron main process starts or reuses the backend on port `8765`. It waits
+up to 30s for `/api/health` before showing a backend startup error, with the
+deadline configurable through `SAHA_BACKEND_STARTUP_TIMEOUT_MS`.
 PowerShell users can also run `.\run_saha.ps1`; `.\run_saha.cmd` is usually
 smoother on client machines because it avoids execution-policy prompts.
 Both machines need `uv` and Node.js LTS on `PATH`; missing tools are reported
@@ -856,7 +867,8 @@ Invoke-RestMethod http://127.0.0.1:8765/api/profiles
 uv run python scripts\process_shoot_model.py `
   --input-dir D:\Shoots\ClientShoot01 `
   --model-path v1_learning\model-v2.0.0.ckpt `
-  --output-dir D:\Shoots\ClientShoot01\SahaOutput
+  --output-dir D:\Shoots\ClientShoot01\SahaOutput `
+  --auto-straighten
 ```
 
 The Electron app uses the same backend inference path.

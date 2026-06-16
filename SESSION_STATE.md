@@ -1,7 +1,7 @@
 # Session State - Sonna Editor
 
-**Saved:** 2026-06-12 local time
-**Current phase/task:** One-command cross-platform app startup and documentation alignment.
+**Saved:** 2026-06-15 local time
+**Current phase/task:** Frontend profile/login polish and fine-tuning analysis.
 
 ## Current Workspace
 
@@ -24,6 +24,7 @@
 - Python: 3.11.15
 - uv: 0.11.17
 - PyTorch: `2.11.0+cu128`
+- OpenCV: `opencv-python-headless==4.13.0.92`
 - Runtime device: `cuda`
 - GPU: NVIDIA GeForce RTX 3050
 - `scripts/verify_environment.py`: 11/11 checks passed
@@ -31,10 +32,12 @@
 
 The project now requires Python `3.11.*` in `pyproject.toml` / `uv.lock`.
 Direct runtime/dev dependencies are exact-pinned from the current uv
-environment to reduce Mac resolver drift. The earlier `GPU available: False`
-training issue was caused by a CPU-only PyTorch install (`torch 2.11.0+cpu`).
-`torch==2.11.0` and `torchvision==0.26.0` still resolve to CUDA 12.8 local
-wheels on Windows/Linux x86_64, while macOS resolves the matching public wheels.
+environment to reduce Mac resolver drift. `opencv-python-headless==4.13.0.92`
+is now a direct runtime dependency for the Lightroom-native auto-straighten
+estimator. The earlier `GPU available: False` training issue was caused by a
+CPU-only PyTorch install (`torch 2.11.0+cpu`). `torch==2.11.0` and
+`torchvision==0.26.0` still resolve to CUDA 12.8 local wheels on Windows/Linux
+x86_64, while macOS resolves the matching public wheels.
 
 ## Data And Models
 
@@ -49,6 +52,184 @@ wheels on Windows/Linux x86_64, while macOS resolves the matching public wheels.
 
 ## What Changed This Session
 
+- Fixed a frequent process-job callback warning during Lite/Mode B processing:
+  - `src\sonna_editor\api\callbacks.py` now formats live edit summaries through
+    a safe finite-float helper, so sparse Lite prediction payloads with
+    `None` values for unset preset sliders do not raise
+    `float() argument must be a string or a real number, not 'NoneType'`.
+  - Added regression coverage in `tests\api\test_callback_bridge.py` for
+    sparse Lite-style predicted values.
+  - Verification passed after rerunning outside the Windows sandbox because
+    the sandbox hit the known `CreateProcessAsUserW failed: 1312` runner issue:
+    `uv run pytest tests\api\test_callback_bridge.py -q` (`15 passed`) and
+    `uv run ruff check src\sonna_editor\api\callbacks.py tests\api\test_callback_bridge.py`.
+
+- Fixed the Auto straighten processing path and corrected Process selection
+  semantics:
+  - The Process view now requires at least one checked queued folder before the
+    Process Selected button is enabled. Newly added folders remain unselected
+    by default, and no folder is processed until the operator explicitly checks
+    it.
+  - `auto_straighten` is still included in the `/api/process` request payload
+    for selected-folder dispatch.
+  - `src\sonna_editor\inference\straighten.py` now uses CLAHE-normalized
+    OpenCV Canny edges plus both probabilistic Hough lines and OpenCV line
+    segments to estimate the Lightroom `CropAngle` from horizontal/vertical
+    preview geometry. This improves recall on fainter or shorter architectural
+    lines while keeping noisy texture frames skipped.
+  - Added `opencv-python-headless==4.13.0.92` to `pyproject.toml` / `uv.lock`.
+  - Added regression coverage for room-like tilted geometry, random texture
+    skip behavior, and direct XMP serialization of `crs:HasCrop` /
+    `crs:CropAngle`.
+  - Verification passed:
+    `uv run pytest tests\test_straighten.py tests\test_xmp.py::TestExtraAttributes tests\api\test_callback_bridge.py::test_pipeline_auto_straighten_writes_crop_angle_and_sidecar tests\api\test_process_route.py::test_process_auto_straighten_forwarded -q`
+    (`12 passed`), `uv run python -c "import cv2; print(cv2.__version__)"`,
+    `uv run ruff check src\sonna_editor\inference\straighten.py tests\test_straighten.py pyproject.toml`,
+    and `npm run build:vite` in `saha-app\`.
+
+- Removed the login page "What's new" card and the compatibility/version strip
+  underneath it.
+- Fixed AI Profiles selection stability: the "Your profiles" list now stays
+  newest-first when a profile is activated instead of moving the active profile
+  to the top after the API refetch.
+- Removed the "Profiles directory" button from the AI Profiles left rail. The
+  backend path lookup remains only for the captures directory used by
+  fine-tuning.
+- Preserved loaded Home/Projects state across cosmetic logout/login within the
+  same app session by keeping the app screens mounted after the first sign-in.
+- Added confirmation before removing a folder from the Home queue, changed the
+  profile deletion confirmation to "Do you want to delete this profile -
+  <profile name>?", and introduced shared `SONNA.cta` / `SONNA.onCta` tokens so
+  orange CTA buttons such as Process Selected and New Project use the same
+  colour source.
+- Reviewed the existing fine-tuning path. Capture, delta preparation, versioned
+  retraining, CLI fine-tune, `/api/finetune`, and the AI Profiles captures panel
+  already exist; the practical next implementation gap is capture population
+  from processed folders plus better promotion/quality UX.
+- Verification:
+  - `npm run build:vite` passed in `saha-app\`.
+  - In-app Browser visual smoke could not run because the `iab` browser target
+    was unavailable in this session.
+
+- Fixed the renderer crash from the new nav tooltips:
+  - `saha-app\src\components\shell.jsx` now destructures `title` in the nav
+    item loop before using it for `title` / `aria-label`, resolving
+    `Uncaught ReferenceError: title is not defined`.
+  - App startup now defaults to light theme regardless of older saved dark
+    preference.
+  - `SahaLogin` receives the global theme controls and shows a compact theme
+    toggle inside the existing sign-in panel.
+  - Verification: `npm run build:vite` passed in `saha-app\`.
+
+- Reworked the Saha navigation toward the Imagen-style Home / AI Profiles /
+  Projects structure:
+  - Left rail now has three primary destinations: Home, AI Profiles, and
+    Projects, each with hover/help text.
+  - Home keeps the queue and selected profile controls mounted, so loaded
+    folders no longer disappear when switching pages.
+  - AI Profiles keeps profile creation and profile management.
+  - Projects shows loaded/current folder projects and run history in a compact
+    table sorted by loaded time.
+  - Removed the left-sidebar `Single` / `Selected` segmented controls. Folders
+    are unselected by default; if no boxes are checked, Process Selected stays
+    disabled. If one or more folder checkboxes are checked, Process runs the
+    checked folders.
+  - Light theme is now the default startup theme at both HTML and React levels.
+
+- Tightened the UI/UX pass after user feedback:
+  - Theme tokens now resolve through global CSS variables in
+    `saha-app\src\index.html`, so dark/light switching applies across all
+    pages/tabs and module-level style constants cannot get stuck on stale
+    colours.
+  - `saha-app\src\App.jsx` applies the saved theme with `useLayoutEffect` so
+    page switches do not flash or render with the previous theme.
+  - Process queue now uses explicit row checkboxes. No checked folder means no
+    processing; checked rows define exactly which queued folders run.
+  - The process button now shows the RAW count that will actually run for the
+    current mode.
+  - Process jobs now publish early `photo_prepared` progress during
+    preview/metadata extraction. The right-panel progress bar uses the max of
+    prepared and fully processed photos, while completion summaries still use
+    actual processed-output counts.
+  - Profile rows now use a three-dot actions menu with `Delete profile` under
+    the menu instead of an inline X button.
+  - The backend now allows deleting the active or last remaining profile. If
+    another profile remains, it becomes active automatically; if none remain,
+    the active-profile pointer is cleared.
+- Verification for the follow-up UI/UX pass:
+  - `npm run build:vite` passed in `saha-app\`.
+  - `uv run pytest tests\api\test_websocket.py tests\api\test_callback_bridge.py tests\api\test_profiles.py -q` passed: `39 passed`.
+  - `uv run ruff check ...` over touched Python source/tests passed.
+
+- Fixed the intermittent Windows startup dialog where Electron reported
+  "backend failed to start" even though Uvicorn came up on
+  `127.0.0.1:8765` shortly after:
+  - `saha-app\electron\main.js` now waits for backend readiness with a 30s
+    deadline instead of a 10s fixed attempt count.
+  - Each `/api/health` probe now gets a 1s response window instead of 200ms,
+    which is less brittle on cold Python/CUDA startup.
+  - The timeout remains configurable through
+    `SAHA_BACKEND_STARTUP_TIMEOUT_MS`, with invalid values falling back to 30s.
+  - Verification passed: `node --check saha-app\electron\main.js`,
+    `uv run pytest tests\api\test_health.py -q` (`1 passed`), and
+    `npm run build:vite` in `saha-app\`.
+
+- Added a proper dark/light theme toggle to the bottom-left rail button:
+  - `saha-app\src\tokens.js` now owns dark and light token sets with a matte
+    elegant orange accent.
+  - `saha-app\src\App.jsx` persists the selected theme in local storage and
+    passes theme controls into the shared shell.
+  - `saha-app\src\components\shell.jsx` now renders the bottom-left icon as a
+    working theme toggle instead of a disabled settings glyph.
+  - Accent button text now uses theme-safe contrast tokens across process,
+    profile, login, Lite, Personal wizard, and error-banner surfaces.
+  - Removed old hardcoded dark accent text colours and negative letter spacing
+    in the touched frontend surfaces so text stays visible in both themes.
+- Updated "Coming soon" badges to use the new matte orange accent treatment.
+- Fixed live process progress stream behavior:
+  - Websocket clients now receive an initial `job_snapshot` backfill on connect.
+  - Per-photo websocket messages include `photos_total` as well as
+    `photos_processed`.
+  - `useJob()` merges `job_snapshot` messages and carries `photos_total` into
+    the processing snapshot used by the right-panel progress bar.
+  - `tests\api\test_websocket.py` pins the snapshot and total-count behavior.
+- Verification:
+  - `npm run build:vite` passed in `saha-app\`.
+  - `uv run pytest tests\api\test_websocket.py tests\api\test_callback_bridge.py -q` passed: `16 passed`.
+  - `uv run ruff check src\sonna_editor\api\callbacks.py src\sonna_editor\api\routes\process.py tests\api\test_websocket.py` passed.
+  - In-app Browser visual smoke could not run because the `iab` browser target
+    was unavailable in this session.
+
+- Made the Profile screen's "Personal AI profile" creation tile a disabled
+  "Coming soon" affordance:
+  - `saha-app\src\components\profile-view.jsx` no longer imports or opens the
+    Personal AI wizard from that tile.
+  - The tile now shows a compact "Coming soon" badge, muted styling, disabled
+    cursor state, and a title tooltip.
+  - Lite profile creation remains available.
+- Verification:
+  - `npm run build:vite` passed in `saha-app\`.
+
+- Added an opt-in Lightroom-native auto straightening feature:
+  - Frontend Process view now shows an `Auto straighten` checkbox.
+  - `/api/process` accepts and forwards `auto_straighten`.
+  - `scripts\process_shoot_model.py` exposes `--auto-straighten`.
+  - `src\sonna_editor\inference\straighten.py` estimates small crop-angle
+    corrections from RAW previews using a deterministic edge/projection
+    estimator, with conservative thresholds for minimum edge count, confidence,
+    and angle size.
+  - `process_shoot_with_model()` writes `crs:HasCrop="True"` and
+    `crs:CropAngle="..."` through `write_xmp(extra_attributes=...)` only when
+    `auto_straighten` is enabled and the estimator result is applied.
+  - `sonna_predictions.json` now records `auto_straighten` plus per-photo
+    `straightening` diagnostics (`angle_degrees`, `confidence`, `applied`,
+    `reason`, and `edge_count`).
+  - No model retraining is required; this is an inference/XMP postprocess for
+    both Personal AI and Lite profiles.
+- Verification for auto straightening:
+  - `uv run ruff check src\sonna_editor\inference\straighten.py src\sonna_editor\inference\pipeline.py src\sonna_editor\api\models.py src\sonna_editor\api\routes\process.py scripts\process_shoot_model.py tests\test_straighten.py tests\api\test_process_route.py tests\api\test_callback_bridge.py` passed.
+  - `uv run python -m py_compile src\sonna_editor\inference\straighten.py src\sonna_editor\inference\pipeline.py src\sonna_editor\api\models.py src\sonna_editor\api\routes\process.py scripts\process_shoot_model.py` passed.
+  - `uv run pytest tests\test_straighten.py tests\api\test_process_route.py::test_process_auto_straighten_forwarded tests\api\test_callback_bridge.py::test_pipeline_auto_straighten_writes_crop_angle_and_sidecar -q` passed: `6 passed`.
 - Ran the full local verification flow after the Pylance cleanup passes:
   - `uv run python scripts\verify_environment.py` passed `11/11` checks on
     Python 3.11.15, uv 0.11.17, PyTorch `2.11.0+cu128`, CUDA on the local RTX
@@ -600,6 +781,16 @@ wheels on Windows/Linux x86_64, while macOS resolves the matching public wheels.
 - Training on tiny splits now logs once that it adjusted `log_every_n_steps` instead of letting Lightning warn. This is expected for the current 132-row train split, which has 9 batches at batch size 16.
 - `Profile.profile_type` is already implemented in backend profile responses and frontend profile classification. `None` means a legacy trained profile; `"mode_b_initial"` means a Lite preset-derived profile.
 - Mode B/Lite checkpoints now inherit the configured foundation checkpoint's native slider set and field count. Before fine-tuning, the UI/CLI processing path treats `mode_b_initial` as an Imagen-aligned Lite profile: preset look fixed, per-photo Exposure/WB corrections only. After fine-tuning, the same profile can move back to normal model inference.
+- Auto straightening is opt-in and runs after preview extraction during
+  processing. It uses CLAHE-normalized OpenCV Canny edges plus Hough/LSD line
+  geometry to estimate small Lightroom `CropAngle` rotations, writes crop
+  metadata only when confidence is high, and records skipped/applied diagnostics
+  in `sonna_predictions.json`. It is independent of training and checkpoint
+  versioning.
+- The Process UI requires explicit row selection. With no checked queued rows,
+  Process Selected is disabled and no job is dispatched; with checked rows, it
+  runs only the selected queued folders. Auto straighten follows the same
+  selected dispatch path.
 
 ## Next Suggested Step
 

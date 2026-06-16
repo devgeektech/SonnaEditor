@@ -61,10 +61,12 @@ async def _run_process_job(
     write_xmp_in_place: bool,
     preserve_wb: bool,
     skip_fields: list[str],
+    auto_straighten: bool,
 ) -> None:
     """Background task: run the inference pipeline and emit terminal message."""
     jobs.transition(record, "running")
     started_at = time.monotonic()
+    prepared_cb = callbacks.make_photo_prepared_callback(record, started_at)
     photo_cb = callbacks.make_photo_callback(record, started_at)
 
     output_dir = None if write_xmp_in_place else folder
@@ -78,6 +80,8 @@ async def _run_process_job(
             uncertainty=flag_low_confidence,
             preserve_wb=preserve_wb,
             extra_skip_fields=skip_fields,
+            auto_straighten=auto_straighten,
+            on_photo_prepared=prepared_cb,
             on_photo_complete=photo_cb,
             cancel_event=record.cancel_event,
         )
@@ -126,6 +130,7 @@ async def start_process(req: ProcessRequest) -> JobAck:
         write_xmp_in_place=req.write_xmp_in_place,
         preserve_wb=req.preserve_wb,
         skip_fields=list(req.skip_fields),
+        auto_straighten=req.auto_straighten,
     ))
 
     return JobAck(job_id=record.job_id, state=record.state)
@@ -159,7 +164,7 @@ def cancel_job(job_id: str) -> JobSnapshot:
 
 @router.websocket("/jobs/{job_id}/stream")
 async def stream_job(ws: WebSocket, job_id: str) -> None:
-    """Live websocket stream. No backfill — connect mid-job, get forward only."""
+    """Live websocket stream with an initial snapshot backfill."""
     await ws.accept()
     record = jobs.get(job_id)
     if record is None:
@@ -171,7 +176,8 @@ async def stream_job(ws: WebSocket, job_id: str) -> None:
     with record.lock:
         record.subscribers.append(queue)
         terminal_now = jobs.is_terminal(record.state)
-        terminal_snap = record.snapshot_dict() if terminal_now else None
+        current_snap = record.snapshot_dict()
+        terminal_snap = current_snap if terminal_now else None
 
     # If the job has already finished, deliver one terminal message and close.
     if terminal_now and terminal_snap is not None:
@@ -187,7 +193,9 @@ async def stream_job(ws: WebSocket, job_id: str) -> None:
                 if queue in record.subscribers:
                     record.subscribers.remove(queue)
             await ws.close()
-        return
+            return
+
+    await ws.send_json({"type": "job_snapshot", **current_snap})
 
     try:
         while True:

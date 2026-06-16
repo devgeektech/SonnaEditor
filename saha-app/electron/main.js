@@ -10,6 +10,13 @@ const http = require('node:http');
 const isDev = !app.isPackaged;
 const PORT = 8765;
 const HEALTH_URL = `http://127.0.0.1:${PORT}/api/health`;
+const HEALTH_PROBE_TIMEOUT_MS = 1000;
+const HEALTH_RETRY_INTERVAL_MS = 250;
+
+function backendStartupTimeoutMs() {
+  const value = Number(process.env.SAHA_BACKEND_STARTUP_TIMEOUT_MS || 30000);
+  return Number.isFinite(value) && value > 0 ? value : 30000;
+}
 
 // Repo-root resolution:
 //   dev:      electron/main.js sits at saha-app/electron/, repo root is two up.
@@ -23,7 +30,7 @@ const REPO_ROOT = isDev
 let backend = null;
 let externalBackend = false;
 
-function probeHealth(timeoutMs = 500) {
+function probeHealth(timeoutMs = HEALTH_PROBE_TIMEOUT_MS) {
   return new Promise((resolve) => {
     const req = http.get(HEALTH_URL, { timeout: timeoutMs }, (res) => {
       res.resume();
@@ -34,10 +41,11 @@ function probeHealth(timeoutMs = 500) {
   });
 }
 
-async function waitForHealth(maxAttempts = 50, intervalMs = 200) {
-  for (let i = 0; i < maxAttempts; i++) {
-    if (await probeHealth(intervalMs)) return true;
-    await new Promise((r) => setTimeout(r, intervalMs));
+async function waitForHealth(timeoutMs = backendStartupTimeoutMs()) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (await probeHealth()) return true;
+    await new Promise((r) => setTimeout(r, HEALTH_RETRY_INTERVAL_MS));
   }
   return false;
 }
@@ -171,7 +179,7 @@ async function bootstrap() {
         : '';
       dialog.showErrorBox(
         'Saha — backend failed to start',
-        `The Python API server at ${HEALTH_URL} did not respond within 10s.\n\n` +
+        `The Python API server at ${HEALTH_URL} did not respond within ${Math.round(backendStartupTimeoutMs() / 1000)}s.\n\n` +
         `Check that the repo virtual environment exists at ${path.join(REPO_ROOT, '.venv')} ` +
         `or that 'uv' is on your PATH.${spawnHint}`,
       );

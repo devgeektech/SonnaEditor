@@ -70,6 +70,7 @@ class JobRecord:
     folder_path: Optional[str] = None
     profile_id: Optional[str] = None
     photos_total: Optional[int] = None
+    photos_prepared: int = 0
     photos_processed: int = 0
     photos_flagged: int = 0
     photos_failed: int = 0
@@ -121,6 +122,7 @@ class JobRecord:
                 "folder_path": self.folder_path,
                 "profile_id": self.profile_id,
                 "photos_total": self.photos_total,
+                "photos_prepared": self.photos_prepared,
                 "photos_processed": self.photos_processed,
                 "photos_flagged": self.photos_flagged,
                 "photos_failed": self.photos_failed,
