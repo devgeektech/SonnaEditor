@@ -105,8 +105,8 @@ This section tracks what each backend source file/folder does. Keep it updated w
 |---|---|
 | `src/sonna_editor/inference/__init__.py` | Package marker for inference code. |
 | `src/sonna_editor/inference/engine.py` | Checkpoint loading and batched prediction engine. Builds tensors from extracted previews/metadata plus scene stats, maps categorical metadata through the checkpoint registry, supports uncertainty sampling, and postprocesses outputs. |
-| `src/sonna_editor/inference/pipeline.py` | End-to-end shoot processing: scan RAW files using the central `config.SUPPORTED_RAW_EXTENSIONS` set, extract features, run inference, apply WB/skip semantics, optionally apply preview-based auto straightening, write XMP sidecars, write `sonna_predictions.json`, and emit progress callbacks. |
-| `src/sonna_editor/inference/straighten.py` | Optional auto-straightening postprocess. Uses CLAHE-normalized OpenCV Canny edges plus probabilistic Hough lines and OpenCV line segments to estimate small Lightroom `CropAngle` corrections from preview geometry, with conservative confidence thresholds and CRS crop attributes only when selected per processing job. This is not a trained model output. |
+| `src/sonna_editor/inference/pipeline.py` | End-to-end shoot processing: scan RAW files using the central `config.SUPPORTED_RAW_EXTENSIONS` set, extract features, run inference, apply WB/skip semantics, optionally apply preview-based auto straightening, write XMP sidecars, write `sonna_predictions.json` including straightening engine/line diagnostics, and emit progress callbacks. |
+| `src/sonna_editor/inference/straighten.py` | Optional auto-straightening postprocess. Uses CLAHE-normalized OpenCV Canny edges plus probabilistic Hough lines, OpenCV line segments, and a broad Hough fallback for fragmented line evidence to estimate small Lightroom `CropAngle` corrections from preview geometry, with conservative confidence thresholds and full-frame CRS crop attributes only when selected per processing job. This is not a trained model output. |
 
 ### Fine-Tune Package
 
@@ -405,19 +405,42 @@ Lite checkpoints are marked with `profile_type: mode_b_initial` in the sidecar J
   `Auto straighten` checkbox, `/api/process` accepts `auto_straighten`, and
   `scripts/process_shoot_model.py` exposes `--auto-straighten`. When enabled,
   `inference/straighten.py` estimates a small Lightroom-native `CropAngle`
-  from the extracted preview and writes `HasCrop=True` / `CropAngle=...` only
-  when confidence passes conservative thresholds. The result is recorded under
-  `auto_straighten` and `straightening` in `sonna_predictions.json`. No model
-  retraining is required.
+  from the extracted preview and writes Lightroom crop metadata only when
+  confidence passes conservative thresholds. Applied results include
+  `HasCrop=True`, full-frame `CropTop/CropLeft/CropBottom/CropRight` bounds,
+  and `CropAngle=...`. The result is recorded under `auto_straighten` and
+  `straightening` in `sonna_predictions.json`. No model retraining is required.
 - Auto straightening repair, 2026-06-15: `saha-app/src/components/editor.jsx`
   requires explicit queued-row selection before processing. Queued folders
   remain unselected by default; if no queued rows are checked, Process Selected
   stays disabled and no job is dispatched. The selected-folder dispatch sends
   the `auto_straighten` flag to `/api/process`.
   `src/sonna_editor/inference/straighten.py` now uses CLAHE-normalized OpenCV
-  Canny edges plus probabilistic Hough lines and OpenCV line segments, with
-  coverage for room-like tilt, faint geometry, short segments, random texture
-  skips, and actual XMP crop-angle attributes.
+  Canny edges plus probabilistic Hough lines, OpenCV line segments, and a
+  broad Hough fallback for fragmented line evidence, with coverage for
+  room-like tilt, faint geometry, short segments, random texture skips, and
+  actual XMP crop-angle attributes.
+- Auto straightening validation, 2026-06-16: the current estimator was run
+  read-only against 500 real CR3 previews in
+  `OneDrive\Pictures\Testing_Sonna`; it applied to 310 files, skipped 190 as
+  `angle_too_small`, and had no extraction errors. The old
+  `sonna_predictions.json` in that folder had no `auto_straighten` /
+  `straightening` keys and the generated XMP files had no `CropAngle`, which
+  points to that batch being produced by an older/stale app or backend process.
+  New sidecars record `straightening_engine:
+  opencv-clahe-canny-lines-v2`, `line_count`, and `line_length_px` so future
+  batches can be audited per photo.
+- Auto straightening crop metadata fix, 2026-06-16: user-supplied
+  `0H5A6295_.xmp` proved the Mac run wrote `crs:HasCrop="True"` and
+  `crs:CropAngle="+5"`, but Lightroom Classic still showed Angle `0.00`.
+  The missing piece was full-frame crop bounds. Applied straightening now also
+  writes `CropTop=0`, `CropLeft=0`, `CropBottom=1`, and `CropRight=1` with
+  every `CropAngle`.
+- Auto straightening sign fix, 2026-06-17: screenshot validation on
+  `0H5A6236.CR3` showed Lightroom was applying the crop metadata but in the
+  opposite direction (`-1.96` from Saha vs `+5.94` manual correction). The
+  OpenCV axis residual now maps directly to Lightroom `CropAngle`; the old
+  negation was removed.
 
 ## Important behavior notes
 
@@ -429,8 +452,11 @@ Lite checkpoints are marked with `profile_type: mode_b_initial` in the sidecar J
 - Auto straightening is an opt-in inference postprocess, shared by Personal AI
   and Lite processing. It writes Lightroom crop-angle metadata from OpenCV
   preview-geometry analysis when confident, while high-texture/no-line frames
-  are skipped; it does not use or update model checkpoints and it does not train
-  on crop labels.
+  are skipped. Applied results include full-frame crop bounds plus
+  `CropAngle`, because Lightroom Classic may ignore angle-only crop metadata.
+  `sonna_predictions.json` records the straightening engine and per-photo line
+  support for diagnostics. It does not use or update model checkpoints and it
+  does not train on crop labels.
 - Process dispatch behavior: with no selected queued folders, the UI does not
   dispatch a process job. With one or more selected queued folders, it processes
   only those selected folders. This matters for per-run options like Auto
