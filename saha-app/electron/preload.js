@@ -6,6 +6,8 @@ const { contextBridge, ipcRenderer } = require('electron');
 const API_BASE_URL = 'http://127.0.0.1:8765';
 
 contextBridge.exposeInMainWorld('saha', {
+  platform: process.platform,
+
   // Open the host OS folder picker. Returns absolute path or null.
   pickFolder: () => ipcRenderer.invoke('saha:pick-folder'),
 

@@ -1,7 +1,7 @@
 # Session State - Sonna Editor
 
-**Saved:** 2026-06-15 local time
-**Current phase/task:** Frontend profile/login polish and fine-tuning analysis.
+**Saved:** 2026-06-16 local time
+**Current phase/task:** Frontend macOS titlebar polish.
 
 ## Current Workspace
 
@@ -51,6 +51,15 @@ x86_64, while macOS resolves the matching public wheels.
 - A fresh scene-stats candidate was trained at `data/models/sonna-v2-scene-stats-run01/`, but it was rejected for frontend use. It briefly published as `v1_learning/model-v2.0.1.*`, then those frontend-visible copies were removed after collapse analysis showed worse prediction spread than v2.0.0.
 
 ## What Changed This Session
+
+- Fixed the macOS titlebar overlap where the Saha mark could sit behind the
+  native traffic-light window controls:
+  - `saha-app\electron\preload.js` now exposes `window.saha.platform`.
+  - `saha-app\src\components\shell.jsx` uses that platform value to reserve
+    a wider left titlebar inset only on macOS, moving the Saha mark out from
+    under Electron's `hiddenInset` controls while leaving Windows/Linux spacing
+    unchanged.
+  - Verification: `npm run build:vite` passed in `saha-app\`.
 
 - Fixed a frequent process-job callback warning during Lite/Mode B processing:
   - `src\sonna_editor\api\callbacks.py` now formats live edit summaries through

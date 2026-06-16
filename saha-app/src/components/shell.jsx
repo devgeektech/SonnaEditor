@@ -191,6 +191,10 @@ function HeaderProfileButton({ onLogout }) {
 }
 
 export function TitleBar({ folder = '', onLogout }) {
+  const isMac = typeof window !== 'undefined' && window.saha?.platform === 'darwin';
+  const logoLeft = isMac ? 78 : 14;
+  const contentLeftPadding = isMac ? 122 : 86;
+
   return (
     <div style={{
       // Keep enough drag area for native window controls across platforms.
@@ -199,13 +203,13 @@ export function TitleBar({ folder = '', onLogout }) {
       background: SONNA.bgDeep,
       borderBottom: `1px solid ${SONNA.line}`,
       display: 'flex', alignItems: 'center',
-      padding: '0 14px 0 86px',
+      padding: `0 14px 0 ${contentLeftPadding}px`,
       position: 'relative',
       WebkitAppRegion: 'drag',
     }}>
       <div style={{
         position: 'absolute',
-        left: 14,
+        left: logoLeft,
         top: 7,
         WebkitAppRegion: 'no-drag',
       }}>

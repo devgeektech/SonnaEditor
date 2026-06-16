@@ -286,7 +286,10 @@ This section tracks what each backend source file/folder does. Keep it updated w
   The Profile screen currently shows Personal AI profile creation as a disabled
   "Coming soon" tile; Lite profile creation remains the active creation path.
 - `src/hooks/`: React hooks for jobs, profiles, captures, and recent folders
-- `electron/`: Electron main/preload process wiring
+- `electron/`: Electron main/preload process wiring. The preload bridge exposes
+  `window.saha.platform`; the shared titlebar uses it to add a macOS-only left
+  inset so the Saha mark clears the native traffic-light controls when
+  `titleBarStyle: hiddenInset` is active.
 - front-end interacts with Python backend via REST and websocket status updates
 
 ## Scripts
@@ -358,6 +361,12 @@ Lite checkpoints are marked with `profile_type: mode_b_initial` in the sidecar J
   "Do you want to delete this profile - <profile name>?" prompt, and CTA
   buttons use the shared `SONNA.cta` / `SONNA.onCta` aliases so New Project,
   Process Selected, login, wizard, and fine-tune CTAs share one accent source.
+- Frontend macOS titlebar polish, 2026-06-16:
+  `saha-app/electron/preload.js` exposes the host platform to the renderer, and
+  `saha-app/src/components/shell.jsx` uses a macOS-only left inset for the Saha
+  mark/titlebar padding. This prevents the logo from being hidden behind the
+  native macOS traffic-light controls while keeping the existing Windows/Linux
+  titlebar spacing.
 - Foundation quality-gate diagnostics, 2026-06-10: `scripts/train_foundation_model.py` now writes `quality_gate_passed` and `foundation_quality_failures` back into `training_summary.json` before returning a promotion failure. `src/sonna_editor/training/profile_runner.py` records `hparams.max_epochs` in summaries, and `scripts/quick_diagnostic.py` prints backbone capacity, field-loss overrides, plus a train-median baseline comparison for failed gate fields when train/test Parquet paths are present.
 - Foundation visual checkpoint selection, 2026-06-10: foundation training now passes `checkpoint_monitor="val_visual_score"` into `train_profile()`. `SonnaLightningModule` logs `val_visual_score`, a lower-is-better visual composite over Exposure, WB, tone, presence, HSL average, and key collapse ratios. `train_profile()` still records best true val-loss separately while exporting the checkpoint selected by the configured monitor.
 - Foundation quality-gate tiering, 2026-06-10: foundation promotion now distinguishes hard failures from warnings. Hard failures still block promotion unless explicitly overridden after review; moderate misses are persisted as `foundation_quality_warnings`, printed to stderr, and allowed to promote so useful checkpoints are not blocked by one noisy slider.
