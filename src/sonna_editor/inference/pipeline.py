@@ -17,7 +17,11 @@ from sonna_editor import config
 from sonna_editor.data.extract import extract_metadata, extract_preview
 from sonna_editor.data.xmp import LR_DEFAULTS, write_xmp
 from sonna_editor.inference.engine import InferenceEngine
-from sonna_editor.inference.straighten import crop_angle_attributes, estimate_straighten_angle
+from sonna_editor.inference.straighten import (
+    STRAIGHTEN_ENGINE_VERSION,
+    crop_angle_attributes,
+    estimate_straighten_angle,
+)
 from sonna_editor.model.postprocess import predictions_to_dict
 from sonna_editor.mode_b.survey import load_survey
 from sonna_editor.preset.adjuster import apply_adjustment, compute_adjustment
@@ -546,6 +550,8 @@ def process_shoot_with_model(
                 "applied": straightening_result.applied,
                 "reason": straightening_result.reason,
                 "edge_count": straightening_result.edge_count,
+                "line_count": straightening_result.line_count,
+                "line_length_px": straightening_result.total_line_length,
             }
 
         if std_preds is not None:
@@ -616,6 +622,7 @@ def process_shoot_with_model(
             "static_skip_fields": sorted(_V1_SKIP_FIELDS),
             "user_skip_fields": sorted(user_skip),
             "auto_straighten": bool(auto_straighten),
+            "straightening_engine": STRAIGHTEN_ENGINE_VERSION,
             "straightening": straightening_by_file,
             "slider_fields": list(config.SLIDER_FIELDS),
             "photos": full_predictions_by_file,
