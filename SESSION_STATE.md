@@ -24,6 +24,7 @@
 - Python: 3.11.15
 - uv: 0.11.17
 - PyTorch: `2.11.0+cu128`
+- OpenCV: `opencv-python-headless==4.13.0.92`
 - Runtime device: `cuda`
 - GPU: NVIDIA GeForce RTX 3050
 - `scripts/verify_environment.py`: 11/11 checks passed
@@ -31,10 +32,12 @@
 
 The project now requires Python `3.11.*` in `pyproject.toml` / `uv.lock`.
 Direct runtime/dev dependencies are exact-pinned from the current uv
-environment to reduce Mac resolver drift. The earlier `GPU available: False`
-training issue was caused by a CPU-only PyTorch install (`torch 2.11.0+cpu`).
-`torch==2.11.0` and `torchvision==0.26.0` still resolve to CUDA 12.8 local
-wheels on Windows/Linux x86_64, while macOS resolves the matching public wheels.
+environment to reduce Mac resolver drift. `opencv-python-headless==4.13.0.92`
+is now a direct runtime dependency for the Lightroom-native auto-straighten
+estimator. The earlier `GPU available: False` training issue was caused by a
+CPU-only PyTorch install (`torch 2.11.0+cpu`). `torch==2.11.0` and
+`torchvision==0.26.0` still resolve to CUDA 12.8 local wheels on Windows/Linux
+x86_64, while macOS resolves the matching public wheels.
 
 ## Data And Models
 
@@ -49,24 +52,25 @@ wheels on Windows/Linux x86_64, while macOS resolves the matching public wheels.
 
 ## What Changed This Session
 
-- Fixed the Auto straighten processing path:
-  - The Process view now correctly supports the intended single-folder fallback
-    again. Newly added folders are still unselected by default, but clicking
-    Process with no checked rows now processes the next queued folder instead
-    of leaving the Process button disabled. If one or more rows are checked,
-    the selected-folder flow is unchanged.
+- Fixed the Auto straighten processing path and corrected Process selection
+  semantics:
+  - The Process view now requires at least one checked queued folder before the
+    Process Selected button is enabled. Newly added folders remain unselected
+    by default, and no folder is processed until the operator explicitly checks
+    it.
   - `auto_straighten` is still included in the `/api/process` request payload
-    for both single-folder and selected-folder dispatch.
-  - `src\sonna_editor\inference\straighten.py` now uses a smaller capped set
-    of strongest edge points and an axis-support guard for the median fallback,
-    while preserving the high-confidence projection path that detects clear
-    tilted horizons/room geometry.
+    for selected-folder dispatch.
+  - `src\sonna_editor\inference\straighten.py` now uses OpenCV Canny edge
+    detection plus probabilistic Hough lines to estimate the Lightroom
+    `CropAngle` from horizontal/vertical preview geometry.
+  - Added `opencv-python-headless==4.13.0.92` to `pyproject.toml` / `uv.lock`.
   - Added regression coverage for room-like tilted geometry, random texture
     skip behavior, and direct XMP serialization of `crs:HasCrop` /
     `crs:CropAngle`.
   - Verification passed:
     `uv run pytest tests\test_straighten.py tests\test_xmp.py::TestExtraAttributes tests\api\test_callback_bridge.py::test_pipeline_auto_straighten_writes_crop_angle_and_sidecar tests\api\test_process_route.py::test_process_auto_straighten_forwarded -q`
-    (`12 passed`), `uv run ruff check src\sonna_editor\inference\straighten.py tests\test_straighten.py tests\test_xmp.py`,
+    (`12 passed`), `uv run python -c "import cv2; print(cv2.__version__)"`,
+    `uv run ruff check src\sonna_editor\inference\straighten.py tests\test_straighten.py pyproject.toml`,
     and `npm run build:vite` in `saha-app\`.
 
 - Removed the login page "What's new" card and the compatibility/version strip
@@ -113,9 +117,9 @@ wheels on Windows/Linux x86_64, while macOS resolves the matching public wheels.
   - Projects shows loaded/current folder projects and run history in a compact
     table sorted by loaded time.
   - Removed the left-sidebar `Single` / `Selected` segmented controls. Folders
-    are unselected by default; if no boxes are checked, Process runs the next
-    queued folder only. If one or more folder checkboxes are checked, Process
-    runs the checked folders.
+    are unselected by default; if no boxes are checked, Process Selected stays
+    disabled. If one or more folder checkboxes are checked, Process runs the
+    checked folders.
   - Light theme is now the default startup theme at both HTML and React levels.
 
 - Tightened the UI/UX pass after user feedback:
@@ -125,9 +129,8 @@ wheels on Windows/Linux x86_64, while macOS resolves the matching public wheels.
     colours.
   - `saha-app\src\App.jsx` applies the saved theme with `useLayoutEffect` so
     page switches do not flash or render with the previous theme.
-  - Process queue now has explicit `Single` and `Selected` modes. Single mode
-    processes only the next queued folder; Selected mode shows row checkboxes
-    and processes only checked queued folders.
+  - Process queue now uses explicit row checkboxes. No checked folder means no
+    processing; checked rows define exactly which queued folders run.
   - The process button now shows the RAW count that will actually run for the
     current mode.
   - Process jobs now publish early `photo_prepared` progress during
@@ -765,13 +768,15 @@ wheels on Windows/Linux x86_64, while macOS resolves the matching public wheels.
 - `Profile.profile_type` is already implemented in backend profile responses and frontend profile classification. `None` means a legacy trained profile; `"mode_b_initial"` means a Lite preset-derived profile.
 - Mode B/Lite checkpoints now inherit the configured foundation checkpoint's native slider set and field count. Before fine-tuning, the UI/CLI processing path treats `mode_b_initial` as an Imagen-aligned Lite profile: preset look fixed, per-photo Exposure/WB corrections only. After fine-tuning, the same profile can move back to normal model inference.
 - Auto straightening is opt-in and runs after preview extraction during
-  processing. It writes Lightroom `CropAngle` metadata only for confident small
-  rotations and records skipped/applied diagnostics in `sonna_predictions.json`.
-  It is independent of training and checkpoint versioning.
-- The Process UI supports both single-folder and selected-folder dispatch. With
-  no checked queued rows, Process runs the next queued folder; with checked rows,
-  it runs only the selected queued folders. Auto straighten follows the same
-  dispatch path and is forwarded to the backend in either mode.
+  processing. It uses OpenCV Canny + probabilistic Hough line detection to
+  estimate small Lightroom `CropAngle` rotations, writes crop metadata only
+  when confidence is high, and records skipped/applied diagnostics in
+  `sonna_predictions.json`. It is independent of training and checkpoint
+  versioning.
+- The Process UI requires explicit row selection. With no checked queued rows,
+  Process Selected is disabled and no job is dispatched; with checked rows, it
+  runs only the selected queued folders. Auto straighten follows the same
+  selected dispatch path.
 
 ## Next Suggested Step
 

@@ -6,10 +6,11 @@ This is the cross-platform local runbook for macOS, Windows, and Linux.
 
 The repo is uv-managed and pinned to Python `3.11.*` through `.python-version`,
 `pyproject.toml`, and `uv.lock`. Direct runtime/dev dependencies are exact-pinned
-in `pyproject.toml` to reduce Mac resolver drift. On Windows/Linux x86_64,
-`torch` and `torchvision` resolve from the PyTorch CUDA 12.8 wheel index, which
-keeps NVIDIA GPU support intact after `uv sync --extra dev`. macOS resolves the
-matching public PyTorch wheels.
+in `pyproject.toml` to reduce Mac resolver drift. Auto straightening uses the
+headless OpenCV runtime package (`opencv-python-headless`) for preview geometry.
+On Windows/Linux x86_64, `torch` and `torchvision` resolve from the PyTorch CUDA
+12.8 wheel index, which keeps NVIDIA GPU support intact after `uv sync --extra
+dev`. macOS resolves the matching public PyTorch wheels.
 
 Windows PowerShell:
 
@@ -379,9 +380,10 @@ uv run python scripts\process_shoot_model.py `
   --auto-straighten
 ```
 
-`--auto-straighten` is optional and matches the Process UI checkbox. It writes
-Lightroom `CropAngle` metadata only when the preview-based estimator is
-confident; it does not retrain or alter the selected profile checkpoint.
+`--auto-straighten` is optional and matches the Process UI checkbox. It uses
+OpenCV Canny + Hough line detection on the extracted preview, then writes
+Lightroom `CropAngle` metadata only when the geometry is confident; it does not
+retrain or alter the selected profile checkpoint.
 
 ### UI-based Lite profile creation and processing
 

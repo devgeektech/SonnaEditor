@@ -3,12 +3,12 @@
 // Four-state UI keyed on (isQueueRunning, runResults, queue):
 //   processing: isQueueRunning — queue dispatcher is active
 //   complete:   !isQueueRunning && runResults.length > 0 — RightComplete
-//               summary is shown. Process Folders button may still be
+//               summary is shown. Process Selected button may still be
 //               enabled (resume after cancel) iff queue.some(queued).
 //   ready:      !isQueueRunning && runResults.length === 0 && queue.length > 0
 //   empty:      no queue, no results
 //
-// canProcess decouples from visualState so the Process Folders button can be
+// canProcess decouples from visualState so the Process Selected button can be
 // active both in 'ready' (fresh queue) and in 'complete-with-queued' (resume
 // from cancel). See the dispatcher useEffect for the state-machine details.
 
@@ -514,7 +514,7 @@ function CentreAction({
               display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 14,
               cursor: canProcess ? 'pointer' : 'not-allowed',
             }}>
-            <span>{selectedQueuedCount > 0 ? 'Process Selected' : 'Process Folder'}</span>
+            <span>Process Selected</span>
             <span style={{ ...Tnum, fontSize: 11, opacity: 0.7 }}>
               {processRaws > 0 ? `${processRaws.toLocaleString()} RAWs · ⌘R` : '⌘R'}
             </span>
@@ -893,7 +893,7 @@ function RightComplete({ runResults, onProcessAnother }) {
 }
 
 
-// Pre-process confirmation dialog. Fires when Process Folders is clicked
+// Pre-process confirmation dialog. Fires when Process Selected is clicked
 // against a queue where one or more 'queued' folders contain XMP sidecars
 // that would be overwritten by the inference pipeline. Cancel is the
 // keyboard-default action (Enter or Escape closes without proceeding) so
@@ -1014,7 +1014,7 @@ export function Editor({
   const [expandedSet, setExpandedSet] = useState(() => new Set());
   // Per-folder run results, appended once per job termination. Persists
   // across resume — a cancelled run's complete/cancelled entries stay in
-  // place when the user clicks Process Folders again to dispatch the
+  // place when the user clicks Process Selected again to dispatch the
   // remaining 'queued' folders.
   const [runResults, setRunResults] = useState([]);
   // Queue-level flags that drive the dispatcher state machine.
@@ -1026,9 +1026,9 @@ export function Editor({
   // Guards Case C against re-dispatching during the gap between setQueue
   // marking a folder as 'processing' and useJob.start setting job.current.
   const dispatchInFlightRef = useRef(false);
-  const dispatchScopeRef = useRef('single');
+  const dispatchScopeRef = useRef('selected');
   // null when no dialog; { conflicts: [{folderName, count}], totalCount,
-  // totalFolders } when Process Folders has found existing XMPs that would
+  // totalFolders } when Process Selected has found existing XMPs that would
   // be overwritten and is waiting on the user.
   const [overwriteConfirm, setOverwriteConfirm] = useState(null);
   // Slider fields skipped from XMP write. Sourced entirely from the active
@@ -1057,23 +1057,17 @@ export function Editor({
     () => queue.filter((f) => f.status === 'queued' && f.selected).length,
     [queue],
   );
-  const nextQueuedIndex = useMemo(
-    () => queue.findIndex((f) => f.status === 'queued'),
-    [queue],
-  );
   const processRaws = useMemo(() => (
-    selectedQueuedCount > 0
-      ? queue.reduce((sum, f) => {
-        if (f.status !== 'queued' || !f.selected) return sum;
-        return sum + (f.fileCount || 0);
-      }, 0)
-      : (nextQueuedIndex >= 0 ? queue[nextQueuedIndex].fileCount || 0 : 0)
-  ), [queue, selectedQueuedCount, nextQueuedIndex]);
+    queue.reduce((sum, f) => {
+      if (f.status !== 'queued' || !f.selected) return sum;
+      return sum + (f.fileCount || 0);
+    }, 0)
+  ), [queue]);
   const hasQueuedFolders = useMemo(
     () => queue.some((f) => f.status === 'queued'),
     [queue],
   );
-  const hasProcessableFolders = hasQueuedFolders;
+  const hasProcessableFolders = selectedQueuedCount > 0;
 
   const visualState = useMemo(() => {
     if (isQueueRunning) return 'processing';
@@ -1082,7 +1076,7 @@ export function Editor({
     return 'empty';
   }, [isQueueRunning, runResults.length, queue.length]);
 
-  // Decoupled from visualState — Process Folders is reachable both fresh
+  // Decoupled from visualState — Process Selected is reachable both fresh
   // (ready) and as a resume affordance after cancel (complete-with-queued).
   // The disable check is the boundary between "nothing to do" and "resume".
   const canProcess = !isQueueRunning
@@ -1106,7 +1100,7 @@ export function Editor({
     setCancelRequested(false);
     lastTerminalIdRef.current = null;
     dispatchInFlightRef.current = false;
-    dispatchScopeRef.current = 'single';
+    dispatchScopeRef.current = 'selected';
     recentQ.refetch();
   }, [job, recentQ]);
 
@@ -1204,9 +1198,9 @@ export function Editor({
   const beginDispatch = useCallback(() => {
     setError(null);
     setCancelRequested(false);
-    dispatchScopeRef.current = selectedQueuedCount > 0 ? 'selected' : 'single';
+    dispatchScopeRef.current = 'selected';
     setIsQueueRunning(true);
-  }, [selectedQueuedCount]);
+  }, []);
 
   // Two-step gate: if any 'queued' folder has cached XMP conflicts, raise
   // the overwrite dialog and wait. Re-evaluated fresh on every click —
@@ -1214,13 +1208,9 @@ export function Editor({
   // mis-remembering intent is expensive.
   const handleProcess = useCallback(() => {
     if (!canProcess) return;
-    const singleIndex = queue.findIndex((f) => f.status === 'queued');
-    const shouldProcess = (f, index) => (
-      f.status === 'queued'
-      && (selectedQueuedCount > 0 ? f.selected : index === singleIndex)
-    );
+    const shouldProcess = (f) => f.status === 'queued' && f.selected;
     const conflicts = queue
-      .filter((f, index) => shouldProcess(f, index) && (f.xmpConflictCount || 0) > 0)
+      .filter((f) => shouldProcess(f) && (f.xmpConflictCount || 0) > 0)
       .map((f) => ({
         folderName: folderBasename(f.folderPath),
         count: f.xmpConflictCount,
@@ -1234,7 +1224,7 @@ export function Editor({
       return;
     }
     beginDispatch();
-  }, [canProcess, queue, selectedQueuedCount, beginDispatch]);
+  }, [canProcess, queue, beginDispatch]);
 
   const handleConfirmOverwrite = useCallback(() => {
     setOverwriteConfirm(null);
@@ -1248,7 +1238,7 @@ export function Editor({
   // Unified queue cancel: aborts the in-flight folder via job.cancel() and
   // raises the queue-level flag so the dispatcher stops advancing to the
   // next folder. Remaining 'queued' folders stay 'queued' so the user can
-  // resume by clicking Process Folders again (accidental-cancel recovery).
+  // resume by clicking Process Selected again (accidental-cancel recovery).
   const handleCancel = useCallback(() => {
     if (!isQueueRunning) return;
     const snap = job.current?.snapshot;
@@ -1337,7 +1327,7 @@ export function Editor({
       }]);
 
       if (cancelRequested) {
-        // Finalise. Remaining 'queued' rows stay queued — Process Folders
+        // Finalise. Remaining 'queued' rows stay queued — Process Selected
         // becomes the resume affordance once visualState transitions to
         // 'complete' (because runResults is non-empty).
         setIsQueueRunning(false);
@@ -1364,7 +1354,7 @@ export function Editor({
 
     const nextIndex = queue.findIndex((f) => (
       f.status === 'queued'
-      && (dispatchScopeRef.current === 'single' || f.selected)
+      && f.selected
     ));
     if (nextIndex < 0) {
       // Selected batch complete, or no queued work remains.

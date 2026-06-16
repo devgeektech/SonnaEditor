@@ -10,9 +10,11 @@ training, resume, and retrain commands live in `FOUNDATION_TRAINING.md`.
   Python `3.11.*`; use `uv python pin 3.11` on Mac if uv tries a newer Python.
 - PyTorch is `2.11.0+cu128`; CUDA is verified on the local NVIDIA GeForce RTX 3050.
 - Direct runtime/dev dependencies are exact-pinned in `pyproject.toml` to reduce
-  Mac resolver drift. `uv sync --extra dev` preserves CUDA PyTorch on
-  Windows/Linux x86_64 through the pinned PyTorch CUDA 12.8 index, while macOS
-  resolves the public `torch==2.11.0` / `torchvision==0.26.0` wheels.
+  Mac resolver drift. Auto straightening uses the headless OpenCV runtime
+  package (`opencv-python-headless`) for preview geometry. `uv sync --extra dev`
+  preserves CUDA PyTorch on Windows/Linux x86_64 through the pinned PyTorch CUDA
+  12.8 index, while macOS resolves the public `torch==2.11.0` /
+  `torchvision==0.26.0` wheels.
 - Training/profile caches were intentionally cleared so a fresh dataset can be added.
 - `data\training_workspace\sonna_personal_001_dataset\`, `data\models\`, `data\parquet\`, `data\captures\`, `data\thumbnails\`, `data\audits\`, `data\dbg\`, `data\raw\sonna_training\`, `.pytest_cache`, `.ruff_cache`, and `.saha\active_profile.txt` were removed or emptied.
 - There is currently no guaranteed local frontend-visible checkpoint in `v1_learning\`. Add fresh RAW+XMP data and train a Personal AI profile from the UI, or configure the hidden foundation checkpoint using `FOUNDATION_TRAINING.md`.
@@ -170,8 +172,9 @@ Do not reuse a previous --version-stem; old checkpoints are never overwritten.
    - Run through the Electron UI or `scripts/process_shoot_model.py`.
    - Output XMP files are written next to RAWs by default, plus `sonna_predictions.json` for later fine-tuning.
    - Optional auto straightening is controlled per run from the UI checkbox or
-     `--auto-straighten`; it writes Lightroom `CropAngle` metadata when the
-     preview-based estimator is confident and does not require retraining.
+     `--auto-straighten`; it uses OpenCV preview-line geometry and writes
+     Lightroom `CropAngle` metadata when confident. It does not require
+     retraining.
 
 6. Fine-tune later.
    - Capture final Lightroom tweaks.

@@ -106,7 +106,7 @@ This section tracks what each backend source file/folder does. Keep it updated w
 | `src/sonna_editor/inference/__init__.py` | Package marker for inference code. |
 | `src/sonna_editor/inference/engine.py` | Checkpoint loading and batched prediction engine. Builds tensors from extracted previews/metadata plus scene stats, maps categorical metadata through the checkpoint registry, supports uncertainty sampling, and postprocesses outputs. |
 | `src/sonna_editor/inference/pipeline.py` | End-to-end shoot processing: scan RAW files using the central `config.SUPPORTED_RAW_EXTENSIONS` set, extract features, run inference, apply WB/skip semantics, optionally apply preview-based auto straightening, write XMP sidecars, write `sonna_predictions.json`, and emit progress callbacks. |
-| `src/sonna_editor/inference/straighten.py` | Optional auto-straightening postprocess. Estimates small Lightroom `CropAngle` corrections from preview edges with conservative confidence thresholds and returns CRS crop attributes only when selected per processing job. This is not a trained model output. |
+| `src/sonna_editor/inference/straighten.py` | Optional auto-straightening postprocess. Uses OpenCV Canny edges plus probabilistic Hough lines to estimate small Lightroom `CropAngle` corrections from preview geometry, with conservative confidence thresholds and CRS crop attributes only when selected per processing job. This is not a trained model output. |
 
 ### Fine-Tune Package
 
@@ -280,8 +280,8 @@ This section tracks what each backend source file/folder does. Keep it updated w
   Home owns the persistent queue and active-profile selector; because Home stays
   mounted while other pages are visible, loaded folders survive tab switches.
   Folder checkboxes are unselected by default: with no boxes checked, processing
-  runs the next queued folder only; with boxes checked, processing runs those
-  checked folders. Projects lists loaded/current folders and recent run rows by
+  is disabled; with boxes checked, processing runs those checked folders only.
+  Projects lists loaded/current folders and recent run rows by
   loaded time. Profile rows use a three-dot actions menu for profile deletion.
   The Profile screen currently shows Personal AI profile creation as a disabled
   "Coming soon" tile; Lite profile creation remains the active creation path.
@@ -327,6 +327,7 @@ Lite checkpoints are marked with `profile_type: mode_b_initial` in the sidecar J
 
 - CUDA environment fix, 2026-06-01: `torch` and `torchvision` are pinned to the PyTorch CUDA 12.8 wheel index for Windows/Linux x86_64 in `pyproject.toml` and `uv.lock`. This resolved the CPU-only `torch 2.11.0+cpu` install that caused Lightning to report `GPU available: False` despite an RTX 3050 being present.
 - Dependency pinning pass, 2026-06-10: direct runtime/dev dependencies in `pyproject.toml` are exact-pinned from the current uv environment, and the project now requires Python `3.11.*`. `uv.lock` was refreshed with the narrower Python requirement to reduce Mac setup conflicts from Python 3.12+ wheel resolution while preserving CUDA 12.8 wheels for Windows/Linux x86_64.
+- OpenCV straightening dependency, 2026-06-15: `opencv-python-headless==4.13.0.92` is exact-pinned as a runtime dependency. It is used only for preview geometry in `src/sonna_editor/inference/straighten.py`; no GUI OpenCV package is required.
 - Training log clarity fix, 2026-06-01: `scripts/train_profile.py` no longer labels default v2 recipe settings as overrides. It reports defaults as `Training recipe ...` and reserves `Override ...` for explicit CLI flags.
 - Training runner packaging, 2026-06-02: the training callable now lives in `src/sonna_editor/training/profile_runner.py`; `scripts/train_profile.py` is a CLI wrapper. The API imports the packaged runner instead of importing a script module.
 - Warm-start calibration, 2026-06-08: `src/sonna_editor/training/profile_runner.py` now recalibrates warm-started model output-head final biases from the current train split while preserving learned final weights. Fresh models still zero final output-head weights before applying target medians. This keeps foundation features but avoids stale output priors, such as FiveK Saturation/Vibrance baselines, dominating small Sonna continuation runs.
@@ -342,7 +343,7 @@ Lite checkpoints are marked with `profile_type: mode_b_initial` in the sidecar J
   so `useJob()` can keep the right-panel processing bar moving with live job
   state. The left rail now follows Home / AI Profiles / Projects; Home stays
   mounted across page switches so loaded folders persist. The queue is
-  unselected by default and runs one folder unless row checkboxes are selected.
+  unselected by default and requires row checkbox selection before processing.
   Profile rows use three-dot menus; active/last profiles can be deleted, with
   automatic active-profile promotion or pointer clearing.
 - Frontend login/profile polish, 2026-06-15: `saha-app/src/components/login.jsx`
@@ -400,14 +401,13 @@ Lite checkpoints are marked with `profile_type: mode_b_initial` in the sidecar J
   `auto_straighten` and `straightening` in `sonna_predictions.json`. No model
   retraining is required.
 - Auto straightening repair, 2026-06-15: `saha-app/src/components/editor.jsx`
-  again supports the intended single-folder processing fallback. Queued folders
-  remain unselected by default, but if no queued rows are checked, Process runs
-  the next queued folder; if any rows are checked, only selected folders run.
-  The same dispatch sends the `auto_straighten` flag to `/api/process`.
-  `src/sonna_editor/inference/straighten.py` now caps projection scoring to the
-  4,000 strongest edge points and adds axis-support gating for the median-angle
-  fallback, with coverage for room-like tilt, random texture skips, and actual
-  XMP crop-angle attributes.
+  requires explicit queued-row selection before processing. Queued folders
+  remain unselected by default; if no queued rows are checked, Process Selected
+  stays disabled and no job is dispatched. The selected-folder dispatch sends
+  the `auto_straighten` flag to `/api/process`.
+  `src/sonna_editor/inference/straighten.py` now uses OpenCV Canny edge
+  detection plus probabilistic Hough lines, with coverage for room-like tilt,
+  random texture skips, and actual XMP crop-angle attributes.
 
 ## Important behavior notes
 
@@ -417,14 +417,14 @@ Lite checkpoints are marked with `profile_type: mode_b_initial` in the sidecar J
 - Lite profile creation from a v2 base must keep `slider_set_version="v2"`; down-converting via `from_checkpoint(target_slider_set_version="v1")` is intentionally rejected by the model loader.
 - Initial Mode B/Lite checkpoints are intentionally profile carriers with preset/survey metadata and the configured foundation checkpoint's native slider set. Before fine-tuning, the UI/CLI processing path is Imagen-aligned Lite execution: uploaded preset controls the look, with per-photo Exposure/WB corrections only.
 - Auto straightening is an opt-in inference postprocess, shared by Personal AI
-  and Lite processing. It writes Lightroom crop-angle metadata from preview
-  geometry when confident; it does not use or update model checkpoints and it
-  does not train on crop labels.
-- Process dispatch behavior: with no selected queued folders, the UI processes
-  the next queued folder as a single-folder run; with one or more selected
-  queued folders, it processes only those selected folders. This matters for
-  per-run options like Auto straighten because they are forwarded through the
-  same `job.start()` payload in both modes.
+  and Lite processing. It writes Lightroom crop-angle metadata from OpenCV
+  preview-geometry analysis when confident; it does not use or update model
+  checkpoints and it does not train on crop labels.
+- Process dispatch behavior: with no selected queued folders, the UI does not
+  dispatch a process job. With one or more selected queued folders, it processes
+  only those selected folders. This matters for per-run options like Auto
+  straighten because they are forwarded through the selected `job.start()`
+  payload.
 - Raw metadata extraction uses embedded JPEG EXIF first, then supplements from a `.xmp` sidecar if present.
 - Fresh `arch_version=3` models consume preview-derived scene luminance statistics and use staged output-head conditioning. Existing `arch_version=1`/`2` checkpoints load unchanged and keep their saved head shapes.
 

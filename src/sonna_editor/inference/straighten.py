@@ -8,8 +8,9 @@ preview, then write Lightroom crop metadata only when confidence is reasonable.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from math import cos, hypot, radians, sin
+from math import atan2, cos, degrees, hypot, radians, sin
 
+import cv2
 import numpy as np
 from PIL import Image
 
@@ -28,11 +29,12 @@ class StraightenResult:
 _MAX_WORKING_EDGE = 640
 _MIN_APPLY_ANGLE = 0.08
 _MAX_APPLY_ANGLE = 5.0
-_MIN_CONFIDENCE = 0.18
-_MIN_EDGE_COUNT = 500
-_MIN_AXIS_SUPPORT = 0.18
-_PROJECTION_STEP_DEGREES = 0.1
-_MAX_EDGE_POINTS = 4000
+_MIN_CONFIDENCE = 0.35
+_MIN_EDGE_COUNT = 120
+_MIN_LINE_COUNT = 2
+_MIN_LINE_LENGTH_PX = 45.0
+_HOUGH_THRESHOLD = 28
+_MAX_LINE_GAP = 12
 
 
 def _resize_for_analysis(image: Image.Image) -> Image.Image:
@@ -87,112 +89,83 @@ def _axis_support(
     return float(weights[near_axis].sum()) / total
 
 
-def _projection_search_angle(mask: np.ndarray, weights_image: np.ndarray) -> tuple[float, float]:
-    """Find the small rotation that makes strong edges most axis-aligned."""
-    ys, xs = np.nonzero(mask)
-    if xs.size == 0:
-        return 0.0, 0.0
+def _opencv_edges(gray: np.ndarray) -> np.ndarray:
+    image_u8 = np.clip(gray * 255.0, 0, 255).astype(np.uint8)
+    blurred = cv2.GaussianBlur(image_u8, (5, 5), 0)
+    median = float(np.median(blurred))
+    lower = int(max(20, 0.66 * median))
+    upper = int(min(220, max(lower + 30, 1.33 * median)))
+    return cv2.Canny(blurred, lower, upper, apertureSize=3, L2gradient=True)
 
-    weights = weights_image[ys, xs].astype(np.float64)
-    if xs.size > _MAX_EDGE_POINTS:
-        order = np.argsort(weights)[-_MAX_EDGE_POINTS:]
-        xs = xs[order]
-        ys = ys[order]
-        weights = weights[order]
 
-    x = xs.astype(np.float64) - (mask.shape[1] - 1) / 2.0
-    y = ys.astype(np.float64) - (mask.shape[0] - 1) / 2.0
-
-    candidates = np.arange(
-        -_MAX_APPLY_ANGLE,
-        _MAX_APPLY_ANGLE + _PROJECTION_STEP_DEGREES / 2.0,
-        _PROJECTION_STEP_DEGREES,
+def _hough_line_residuals(edges: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    min_line_length = max(_MIN_LINE_LENGTH_PX, min(edges.shape) * 0.18)
+    lines = cv2.HoughLinesP(
+        edges,
+        rho=1,
+        theta=np.pi / 180.0,
+        threshold=_HOUGH_THRESHOLD,
+        minLineLength=float(min_line_length),
+        maxLineGap=_MAX_LINE_GAP,
     )
-    scores: list[float] = []
-    for angle in candidates:
-        theta = radians(float(angle))
-        c = cos(theta)
-        s = sin(theta)
-        xr = x * c - y * s
-        yr = x * s + y * c
-        xbins = np.rint(xr - xr.min()).astype(np.int32)
-        ybins = np.rint(yr - yr.min()).astype(np.int32)
-        xhist = np.bincount(xbins, weights=weights)
-        yhist = np.bincount(ybins, weights=weights)
-        scores.append(float(np.sum(xhist * xhist) + np.sum(yhist * yhist)))
+    if lines is None:
+        return np.empty(0, dtype=np.float64), np.empty(0, dtype=np.float64)
 
-    score_arr = np.asarray(scores, dtype=np.float64)
-    best_index = int(np.argmax(score_arr))
-    best_score = float(score_arr[best_index])
-    if best_score <= 0:
-        return 0.0, 0.0
+    residuals: list[float] = []
+    weights: list[float] = []
+    for line in lines[:, 0, :]:
+        x1, y1, x2, y2 = (float(v) for v in line)
+        dx = x2 - x1
+        dy = y2 - y1
+        length = hypot(dx, dy)
+        if length < min_line_length:
+            continue
+        angle = degrees(atan2(dy, dx))
+        residual = float(_axis_residual_degrees(np.asarray([angle], dtype=np.float64))[0])
+        residuals.append(residual)
+        weights.append(length)
 
-    baseline = float(np.median(score_arr))
-    confidence = max(0.0, min(1.0, (best_score - baseline) / best_score * 2.0))
-    return float(candidates[best_index]), confidence
+    return np.asarray(residuals, dtype=np.float64), np.asarray(weights, dtype=np.float64)
 
 
 def estimate_straighten_angle(image: Image.Image) -> StraightenResult:
     """Estimate a Lightroom CropAngle from a preview image.
 
-    The estimator uses image gradients rather than a learned model. It finds
-    strong edges, converts edge normals into line/tangent angles, reduces those
-    angles to residual tilt from horizontal/vertical axes, then uses a weighted
-    median for robustness. The returned angle is the correction to apply.
+    The estimator uses OpenCV, not a learned model. It detects strong preview
+    edges with Canny, extracts straight horizontal/vertical candidates through
+    a probabilistic Hough transform, reduces line angles to residual tilt from
+    Lightroom's nearest 0/90-degree axes, then writes the correction angle.
     """
     gray = np.asarray(_resize_for_analysis(image), dtype=np.float32) / 255.0
     if gray.ndim != 2 or min(gray.shape) < 32:
         return StraightenResult(0.0, 0.0, False, "image_too_small", 0)
 
-    gy, gx = np.gradient(gray)
-    mag = np.hypot(gx, gy)
-    if not np.isfinite(mag).all():
-        return StraightenResult(0.0, 0.0, False, "invalid_gradient", 0)
+    if not np.isfinite(gray).all():
+        return StraightenResult(0.0, 0.0, False, "invalid_image", 0)
 
-    nonzero = mag[mag > 0]
-    if nonzero.size == 0:
+    edges = _opencv_edges(gray)
+    edge_count = int(np.count_nonzero(edges))
+    if edge_count == 0:
         return StraightenResult(0.0, 0.0, False, "no_edges", 0)
-    threshold = float(np.percentile(nonzero, 75.0))
-    if threshold <= 0:
-        return StraightenResult(0.0, 0.0, False, "no_edges", 0)
-
-    mask = mag >= threshold
-    edge_count = int(mask.sum())
     if edge_count < _MIN_EDGE_COUNT:
         return StraightenResult(0.0, 0.0, False, "too_few_edges", edge_count)
 
-    tangent = np.degrees(np.arctan2(gy[mask], gx[mask])) + 90.0
-    residual = _axis_residual_degrees(tangent)
-    weights = mag[mask].astype(np.float64)
-    residual = residual.astype(np.float64)
+    residual, weights = _hough_line_residuals(edges)
+    if residual.size < _MIN_LINE_COUNT or weights.size < _MIN_LINE_COUNT:
+        return StraightenResult(0.0, 0.0, False, "too_few_lines", edge_count)
 
     median_residual = _weighted_median(residual, weights)
-    centred = residual - median_residual
-    inlier = np.abs(centred) <= 3.0
-    if int(inlier.sum()) >= max(50, edge_count // 20):
-        median_residual = _weighted_median(residual[inlier], weights[inlier])
-
-    projection_angle, projection_confidence = _projection_search_angle(mask, mag)
-    median_angle = -float(median_residual)
-    median_support = _axis_support(residual, weights, median_residual)
-
-    if (
-        abs(projection_angle) >= _MIN_APPLY_ANGLE
-        and projection_confidence >= _MIN_CONFIDENCE
-    ):
-        angle = projection_angle
-        support = 1.0
-    else:
-        angle = median_angle
-        support = median_support
-    angle = max(-_MAX_APPLY_ANGLE, min(_MAX_APPLY_ANGLE, angle))
+    support = _axis_support(residual, weights, median_residual, tolerance_degrees=2.5)
     concentration = _axis_concentration(residual, weights)
-    confidence = max(concentration, projection_confidence) * min(1.0, support / _MIN_AXIS_SUPPORT)
+    line_count_score = min(1.0, residual.size / 8.0)
+    confidence = concentration * max(support, 0.0) * line_count_score
+    angle = -float(median_residual)
+    angle = max(-_MAX_APPLY_ANGLE, min(_MAX_APPLY_ANGLE, angle))
 
     abs_angle = abs(angle)
     if abs_angle < _MIN_APPLY_ANGLE:
         return StraightenResult(0.0, confidence, False, "angle_too_small", edge_count)
-    if support < _MIN_AXIS_SUPPORT:
+    if support < 0.25:
         return StraightenResult(angle, confidence, False, "weak_axis_support", edge_count)
     if confidence < _MIN_CONFIDENCE:
         return StraightenResult(angle, confidence, False, "low_confidence", edge_count)

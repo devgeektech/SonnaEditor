@@ -14,7 +14,7 @@
 This checkout is a Windows development/training workspace at `C:\Users\vikas.DESKTOP-61LEE8B\Projects\SonnaEditor`.
 
 - **Environment:** Python 3.11.15 via uv 0.11.17. `pyproject.toml` / `uv.lock` require Python `3.11.*`. PyTorch is installed as `2.11.0+cu128`; `sonna_editor.runtime.preferred_torch_device()` returns `cuda` on the local NVIDIA GeForce RTX 3050. `scripts/verify_environment.py` passes 11/11 checks.
-- **Dependency pins and CUDA packaging:** direct runtime/dev dependencies are exact-pinned in `pyproject.toml` from the current uv environment to reduce Mac resolver drift. `torch==2.11.0` and `torchvision==0.26.0` remain routed to the PyTorch CUDA 12.8 wheel index on Windows/Linux x86_64, while macOS resolves the matching public PyTorch wheels.
+- **Dependency pins and CUDA packaging:** direct runtime/dev dependencies are exact-pinned in `pyproject.toml` from the current uv environment to reduce Mac resolver drift. `opencv-python-headless==4.13.0.92` is now a runtime dependency for auto straightening. `torch==2.11.0` and `torchvision==0.26.0` remain routed to the PyTorch CUDA 12.8 wheel index on Windows/Linux x86_64, while macOS resolves the matching public PyTorch wheels.
 - **Local dataset/checkpoints:** training/profile caches were intentionally cleared for a fresh dataset reset, and previous trained profile/foundation checkpoint files were cleared again before the new FiveK foundation run. The duplicate generated dataset folder `v1_learning\dataset` was removed. `v1_learning\` has no trained profile checkpoint and is reserved for frontend-visible published profile checkpoint/sidecar files only. `SonnaEditorFoundation\checkpoints\` is empty, and `foundation_manifest.json` is reset to an empty schema-v2 manifest. The next successful foundation training run will promote a new checkpoint as the default base for Personal AI / Mode A and Lite / Mode B.
 - **Tracked foundation checkpoint cleanup:** on 2026-06-10 the previously pushed foundation checkpoint artifacts (`foundation-fivek-catalog-expert-c-001.*` and `foundation-sonna-raw-xmp-001.*`) were removed from the parent repo worktree and the foundation manifest was reset. A Mac RAW+XMP foundation run is expected to produce the next checkpoint to add and push through Git LFS.
 - **Runtime layout:** the app now auto-creates repo-local working directories on startup, including `data\training_sources\`, `data\raw\`, `data\raw\sonna_training\`, `v1_learning\`, and `.saha\`. A fresh clone no longer depends on pre-existing gitignored folders or user-home `~\.saha` state.
@@ -44,10 +44,10 @@ This checkout is a Windows development/training workspace at `C:\Users\vikas.DES
   streams send an initial `job_snapshot`, early `photo_prepared` progress
   during preview/metadata extraction, and per-photo total counts so the
   right-panel processing bar can update from live job state. The Process queue
-  now has `Single` mode for the next queued folder and `Selected` mode with row
-  checkboxes for explicit multi-folder processing. Profile rows use three-dot
-  menus; deleting the active/last profile is allowed, with automatic active
-  promotion or pointer clearing.
+  uses explicit row checkboxes: with no checked folder, Process Selected stays
+  disabled and no job is dispatched; with checked rows, only those folders run.
+  Profile rows use three-dot menus; deleting the active/last profile is
+  allowed, with automatic active promotion or pointer clearing.
 - **Frontend login/profile polish:** the login page no longer shows the
   "What's new" card or the old version/RAW/platform compatibility strip. The
   AI Profiles list stays newest-first when activating a profile instead of
@@ -71,10 +71,11 @@ This checkout is a Windows development/training workspace at `C:\Users\vikas.DES
   `CropAngle` from the extracted preview and writes crop-angle XMP metadata
   only when confidence is high enough. `sonna_predictions.json` records
   per-photo straightening diagnostics. On 2026-06-15 the frontend dispatch was
-  repaired so a newly added unselected folder can still run as the next
-  single-folder job, with `auto_straighten` forwarded normally. The estimator
-  was also tightened with capped projection scoring and median-fallback
-  support gating. No model retraining is required.
+  corrected to require explicit checked-folder selection before processing,
+  with `auto_straighten` forwarded through that selected-folder job payload.
+  The estimator now uses OpenCV Canny edge detection plus probabilistic Hough
+  lines to derive the small Lightroom `CropAngle`. No model retraining is
+  required.
 - **Verified this pass:** full local verification on 2026-06-12 passed after the
   Pylance cleanup and foundation CLI repair. `scripts\verify_environment.py`
   passed `11/11`; `uv run ruff check .` passed; `uv run python -m compileall -q
