@@ -881,9 +881,20 @@ class TestExtraAttributes:
         write_xmp(
             out,
             {"Exposure2012": 0.5},
-            extra_attributes={"HasCrop": "True", "CropAngle": "-2.25"},
+            extra_attributes={
+                "HasCrop": "True",
+                "CropTop": "0",
+                "CropLeft": "0",
+                "CropBottom": "1",
+                "CropRight": "1",
+                "CropAngle": "-2.25",
+            },
         )
 
         text = out.read_text()
         assert 'crs:HasCrop="True"' in text
+        assert 'crs:CropTop="0"' in text
+        assert 'crs:CropLeft="0"' in text
+        assert 'crs:CropBottom="1"' in text
+        assert 'crs:CropRight="1"' in text
         assert 'crs:CropAngle="-2.25"' in text
