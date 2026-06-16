@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import math
 import time
 from typing import Any, Callable, Optional
 
@@ -83,17 +84,26 @@ _TONE_CANDIDATES: list[tuple[str, str]] = [
 ]
 
 
-def _format_edit_summary(predicted: dict[str, float]) -> str:
+def _slider_float(value: Any, default: float) -> float:
+    """Return a finite slider value, falling back for sparse Lite payloads."""
+    try:
+        result = float(value)
+    except (TypeError, ValueError):
+        return default
+    return result if math.isfinite(result) else default
+
+
+def _format_edit_summary(predicted: dict[str, float | None]) -> str:
     """Build the Live-log line: 'Exp +0.42 · WB 5,180K · Shad +38'."""
-    exp = float(predicted.get("Exposure2012", 0.0))
-    temp = float(predicted.get("Temperature", 5500.0))
+    exp = _slider_float(predicted.get("Exposure2012"), 0.0)
+    temp = _slider_float(predicted.get("Temperature"), 5500.0)
 
     # Pick the largest-abs-value tone slider for the third slot
     third_field, third_abbr = max(
         _TONE_CANDIDATES,
-        key=lambda fa: abs(float(predicted.get(fa[0], 0.0))),
+        key=lambda fa: abs(_slider_float(predicted.get(fa[0]), 0.0)),
     )
-    third_val = int(round(float(predicted.get(third_field, 0.0))))
+    third_val = int(round(_slider_float(predicted.get(third_field), 0.0)))
 
     return (
         f"Exp {exp:+.2f} · "

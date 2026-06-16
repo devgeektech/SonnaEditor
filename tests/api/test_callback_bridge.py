@@ -46,6 +46,23 @@ def test_format_edit_summary_picks_largest_third_slot() -> None:
     assert "High -28" in out
 
 
+def test_format_edit_summary_handles_sparse_lite_values() -> None:
+    pred = {
+        "Exposure2012": 0.31,
+        "Temperature": 5050.0,
+        "Tint": None,
+        "Shadows2012": None,
+        "Highlights2012": -20.0,
+        "Contrast2012": None,
+        "Vibrance": None,
+        "Saturation": None,
+    }
+
+    out = callbacks._format_edit_summary(pred)
+
+    assert out == "Exp +0.31 · WB 5,050K · High -20"
+
+
 def test_photo_callback_updates_record_and_persists(
     isolated_paths: dict[str, Path],
 ) -> None:

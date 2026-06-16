@@ -52,6 +52,18 @@ x86_64, while macOS resolves the matching public wheels.
 
 ## What Changed This Session
 
+- Fixed a frequent process-job callback warning during Lite/Mode B processing:
+  - `src\sonna_editor\api\callbacks.py` now formats live edit summaries through
+    a safe finite-float helper, so sparse Lite prediction payloads with
+    `None` values for unset preset sliders do not raise
+    `float() argument must be a string or a real number, not 'NoneType'`.
+  - Added regression coverage in `tests\api\test_callback_bridge.py` for
+    sparse Lite-style predicted values.
+  - Verification passed after rerunning outside the Windows sandbox because
+    the sandbox hit the known `CreateProcessAsUserW failed: 1312` runner issue:
+    `uv run pytest tests\api\test_callback_bridge.py -q` (`15 passed`) and
+    `uv run ruff check src\sonna_editor\api\callbacks.py tests\api\test_callback_bridge.py`.
+
 - Fixed the Auto straighten processing path and corrected Process selection
   semantics:
   - The Process view now requires at least one checked queued folder before the
@@ -60,9 +72,11 @@ x86_64, while macOS resolves the matching public wheels.
     it.
   - `auto_straighten` is still included in the `/api/process` request payload
     for selected-folder dispatch.
-  - `src\sonna_editor\inference\straighten.py` now uses OpenCV Canny edge
-    detection plus probabilistic Hough lines to estimate the Lightroom
-    `CropAngle` from horizontal/vertical preview geometry.
+  - `src\sonna_editor\inference\straighten.py` now uses CLAHE-normalized
+    OpenCV Canny edges plus both probabilistic Hough lines and OpenCV line
+    segments to estimate the Lightroom `CropAngle` from horizontal/vertical
+    preview geometry. This improves recall on fainter or shorter architectural
+    lines while keeping noisy texture frames skipped.
   - Added `opencv-python-headless==4.13.0.92` to `pyproject.toml` / `uv.lock`.
   - Added regression coverage for room-like tilted geometry, random texture
     skip behavior, and direct XMP serialization of `crs:HasCrop` /
@@ -768,10 +782,10 @@ x86_64, while macOS resolves the matching public wheels.
 - `Profile.profile_type` is already implemented in backend profile responses and frontend profile classification. `None` means a legacy trained profile; `"mode_b_initial"` means a Lite preset-derived profile.
 - Mode B/Lite checkpoints now inherit the configured foundation checkpoint's native slider set and field count. Before fine-tuning, the UI/CLI processing path treats `mode_b_initial` as an Imagen-aligned Lite profile: preset look fixed, per-photo Exposure/WB corrections only. After fine-tuning, the same profile can move back to normal model inference.
 - Auto straightening is opt-in and runs after preview extraction during
-  processing. It uses OpenCV Canny + probabilistic Hough line detection to
-  estimate small Lightroom `CropAngle` rotations, writes crop metadata only
-  when confidence is high, and records skipped/applied diagnostics in
-  `sonna_predictions.json`. It is independent of training and checkpoint
+  processing. It uses CLAHE-normalized OpenCV Canny edges plus Hough/LSD line
+  geometry to estimate small Lightroom `CropAngle` rotations, writes crop
+  metadata only when confidence is high, and records skipped/applied diagnostics
+  in `sonna_predictions.json`. It is independent of training and checkpoint
   versioning.
 - The Process UI requires explicit row selection. With no checked queued rows,
   Process Selected is disabled and no job is dispatched; with checked rows, it

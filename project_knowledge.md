@@ -106,7 +106,7 @@ This section tracks what each backend source file/folder does. Keep it updated w
 | `src/sonna_editor/inference/__init__.py` | Package marker for inference code. |
 | `src/sonna_editor/inference/engine.py` | Checkpoint loading and batched prediction engine. Builds tensors from extracted previews/metadata plus scene stats, maps categorical metadata through the checkpoint registry, supports uncertainty sampling, and postprocesses outputs. |
 | `src/sonna_editor/inference/pipeline.py` | End-to-end shoot processing: scan RAW files using the central `config.SUPPORTED_RAW_EXTENSIONS` set, extract features, run inference, apply WB/skip semantics, optionally apply preview-based auto straightening, write XMP sidecars, write `sonna_predictions.json`, and emit progress callbacks. |
-| `src/sonna_editor/inference/straighten.py` | Optional auto-straightening postprocess. Uses OpenCV Canny edges plus probabilistic Hough lines to estimate small Lightroom `CropAngle` corrections from preview geometry, with conservative confidence thresholds and CRS crop attributes only when selected per processing job. This is not a trained model output. |
+| `src/sonna_editor/inference/straighten.py` | Optional auto-straightening postprocess. Uses CLAHE-normalized OpenCV Canny edges plus probabilistic Hough lines and OpenCV line segments to estimate small Lightroom `CropAngle` corrections from preview geometry, with conservative confidence thresholds and CRS crop attributes only when selected per processing job. This is not a trained model output. |
 
 ### Fine-Tune Package
 
@@ -134,7 +134,7 @@ This section tracks what each backend source file/folder does. Keep it updated w
 | Path | Purpose |
 |---|---|
 | `src/sonna_editor/api/__init__.py` | Package marker for backend API code. |
-| `src/sonna_editor/api/callbacks.py` | Bridges inference/training callbacks into job progress records and websocket events for the Electron UI. |
+| `src/sonna_editor/api/callbacks.py` | Bridges inference/training callbacks into job progress records and websocket events for the Electron UI. Live edit-summary formatting tolerates sparse Lite payloads with `None` slider values. |
 | `src/sonna_editor/api/confidence.py` | Reduces uncertainty samples/per-slider standard deviation into frontend confidence summaries. |
 | `src/sonna_editor/api/jobs.py` | In-memory plus persisted job registry for long-running inference/fine-tune jobs, cancellation, recovery, and websocket subscribers. |
 | `src/sonna_editor/api/models.py` | Pydantic request/response models for health, profiles, folders, processing, fine-tuning, Personal AI profile creation, Lite profile creation, and jobs. |
@@ -405,9 +405,10 @@ Lite checkpoints are marked with `profile_type: mode_b_initial` in the sidecar J
   remain unselected by default; if no queued rows are checked, Process Selected
   stays disabled and no job is dispatched. The selected-folder dispatch sends
   the `auto_straighten` flag to `/api/process`.
-  `src/sonna_editor/inference/straighten.py` now uses OpenCV Canny edge
-  detection plus probabilistic Hough lines, with coverage for room-like tilt,
-  random texture skips, and actual XMP crop-angle attributes.
+  `src/sonna_editor/inference/straighten.py` now uses CLAHE-normalized OpenCV
+  Canny edges plus probabilistic Hough lines and OpenCV line segments, with
+  coverage for room-like tilt, faint geometry, short segments, random texture
+  skips, and actual XMP crop-angle attributes.
 
 ## Important behavior notes
 
@@ -418,8 +419,9 @@ Lite checkpoints are marked with `profile_type: mode_b_initial` in the sidecar J
 - Initial Mode B/Lite checkpoints are intentionally profile carriers with preset/survey metadata and the configured foundation checkpoint's native slider set. Before fine-tuning, the UI/CLI processing path is Imagen-aligned Lite execution: uploaded preset controls the look, with per-photo Exposure/WB corrections only.
 - Auto straightening is an opt-in inference postprocess, shared by Personal AI
   and Lite processing. It writes Lightroom crop-angle metadata from OpenCV
-  preview-geometry analysis when confident; it does not use or update model
-  checkpoints and it does not train on crop labels.
+  preview-geometry analysis when confident, while high-texture/no-line frames
+  are skipped; it does not use or update model checkpoints and it does not train
+  on crop labels.
 - Process dispatch behavior: with no selected queued folders, the UI does not
   dispatch a process job. With one or more selected queued folders, it processes
   only those selected folders. This matters for per-run options like Auto

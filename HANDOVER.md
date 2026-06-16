@@ -73,8 +73,9 @@ This checkout is a Windows development/training workspace at `C:\Users\vikas.DES
   per-photo straightening diagnostics. On 2026-06-15 the frontend dispatch was
   corrected to require explicit checked-folder selection before processing,
   with `auto_straighten` forwarded through that selected-folder job payload.
-  The estimator now uses OpenCV Canny edge detection plus probabilistic Hough
-  lines to derive the small Lightroom `CropAngle`. No model retraining is
+  The estimator now uses CLAHE-normalized OpenCV Canny edges plus probabilistic
+  Hough lines and OpenCV line segments to derive the small Lightroom
+  `CropAngle`, with high-texture frames skipped. No model retraining is
   required.
 - **Verified this pass:** full local verification on 2026-06-12 passed after the
   Pylance cleanup and foundation CLI repair. `scripts\verify_environment.py`

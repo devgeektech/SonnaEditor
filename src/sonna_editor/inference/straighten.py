@@ -29,12 +29,15 @@ class StraightenResult:
 _MAX_WORKING_EDGE = 640
 _MIN_APPLY_ANGLE = 0.08
 _MAX_APPLY_ANGLE = 5.0
-_MIN_CONFIDENCE = 0.35
+_MIN_CONFIDENCE = 0.28
 _MIN_EDGE_COUNT = 120
-_MIN_LINE_COUNT = 2
-_MIN_LINE_LENGTH_PX = 45.0
-_HOUGH_THRESHOLD = 28
-_MAX_LINE_GAP = 12
+_MAX_EDGE_DENSITY = 0.32
+_MIN_LINE_COUNT = 1
+_MIN_LINE_LENGTH_PX = 24.0
+_HOUGH_THRESHOLD = 18
+_MAX_LINE_GAP = 16
+_AXIS_CANDIDATE_TOLERANCE_DEGREES = 7.0
+_AXIS_SUPPORT_TOLERANCE_DEGREES = 2.8
 
 
 def _resize_for_analysis(image: Image.Image) -> Image.Image:
@@ -89,17 +92,45 @@ def _axis_support(
     return float(weights[near_axis].sum()) / total
 
 
-def _opencv_edges(gray: np.ndarray) -> np.ndarray:
+def _analysis_image(gray: np.ndarray) -> np.ndarray:
     image_u8 = np.clip(gray * 255.0, 0, 255).astype(np.uint8)
-    blurred = cv2.GaussianBlur(image_u8, (5, 5), 0)
-    median = float(np.median(blurred))
-    lower = int(max(20, 0.66 * median))
-    upper = int(min(220, max(lower + 30, 1.33 * median)))
-    return cv2.Canny(blurred, lower, upper, apertureSize=3, L2gradient=True)
+    equalised = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8)).apply(image_u8)
+    return cv2.GaussianBlur(equalised, (3, 3), 0)
 
 
-def _hough_line_residuals(edges: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
-    min_line_length = max(_MIN_LINE_LENGTH_PX, min(edges.shape) * 0.18)
+def _opencv_edges(image_u8: np.ndarray) -> np.ndarray:
+    edges = cv2.Canny(image_u8, 40, 120, apertureSize=3, L2gradient=True)
+    if int(np.count_nonzero(edges)) >= _MIN_EDGE_COUNT:
+        return edges
+    return cv2.Canny(image_u8, 16, 64, apertureSize=3, L2gradient=True)
+
+
+def _segment_residuals(
+    segments: np.ndarray,
+    min_line_length: float,
+    *,
+    weight_scale: float = 1.0,
+) -> tuple[list[float], list[float]]:
+    residuals: list[float] = []
+    weights: list[float] = []
+    for segment in segments.reshape(-1, 4):
+        x1, y1, x2, y2 = (float(v) for v in segment)
+        dx = x2 - x1
+        dy = y2 - y1
+        length = hypot(dx, dy)
+        if length < min_line_length:
+            continue
+        angle = degrees(atan2(dy, dx))
+        residual = float(_axis_residual_degrees(np.asarray([angle], dtype=np.float64))[0])
+        if abs(residual) > _AXIS_CANDIDATE_TOLERANCE_DEGREES:
+            continue
+        residuals.append(residual)
+        weights.append(length * weight_scale)
+    return residuals, weights
+
+
+def _hough_line_residuals(edges: np.ndarray) -> tuple[list[float], list[float]]:
+    min_line_length = max(_MIN_LINE_LENGTH_PX, min(edges.shape) * 0.10)
     lines = cv2.HoughLinesP(
         edges,
         rho=1,
@@ -109,22 +140,24 @@ def _hough_line_residuals(edges: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
         maxLineGap=_MAX_LINE_GAP,
     )
     if lines is None:
-        return np.empty(0, dtype=np.float64), np.empty(0, dtype=np.float64)
+        return [], []
+    return _segment_residuals(lines[:, 0, :], min_line_length, weight_scale=1.15)
 
-    residuals: list[float] = []
-    weights: list[float] = []
-    for line in lines[:, 0, :]:
-        x1, y1, x2, y2 = (float(v) for v in line)
-        dx = x2 - x1
-        dy = y2 - y1
-        length = hypot(dx, dy)
-        if length < min_line_length:
-            continue
-        angle = degrees(atan2(dy, dx))
-        residual = float(_axis_residual_degrees(np.asarray([angle], dtype=np.float64))[0])
-        residuals.append(residual)
-        weights.append(length)
 
+def _lsd_line_residuals(image_u8: np.ndarray) -> tuple[list[float], list[float]]:
+    detector = cv2.createLineSegmentDetector(cv2.LSD_REFINE_STD)
+    lines = detector.detect(image_u8)[0]
+    if lines is None:
+        return [], []
+    min_line_length = max(_MIN_LINE_LENGTH_PX, min(image_u8.shape) * 0.06)
+    return _segment_residuals(lines[:, 0, :], min_line_length, weight_scale=1.0)
+
+
+def _opencv_line_residuals(image_u8: np.ndarray, edges: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    hough_residuals, hough_weights = _hough_line_residuals(edges)
+    lsd_residuals, lsd_weights = _lsd_line_residuals(image_u8)
+    residuals = hough_residuals + lsd_residuals
+    weights = hough_weights + lsd_weights
     return np.asarray(residuals, dtype=np.float64), np.asarray(weights, dtype=np.float64)
 
 
@@ -143,22 +176,31 @@ def estimate_straighten_angle(image: Image.Image) -> StraightenResult:
     if not np.isfinite(gray).all():
         return StraightenResult(0.0, 0.0, False, "invalid_image", 0)
 
-    edges = _opencv_edges(gray)
+    image_u8 = _analysis_image(gray)
+    edges = _opencv_edges(image_u8)
     edge_count = int(np.count_nonzero(edges))
     if edge_count == 0:
         return StraightenResult(0.0, 0.0, False, "no_edges", 0)
     if edge_count < _MIN_EDGE_COUNT:
         return StraightenResult(0.0, 0.0, False, "too_few_edges", edge_count)
+    if edge_count / float(edges.size) > _MAX_EDGE_DENSITY:
+        return StraightenResult(0.0, 0.0, False, "edge_texture", edge_count)
 
-    residual, weights = _hough_line_residuals(edges)
+    residual, weights = _opencv_line_residuals(image_u8, edges)
     if residual.size < _MIN_LINE_COUNT or weights.size < _MIN_LINE_COUNT:
         return StraightenResult(0.0, 0.0, False, "too_few_lines", edge_count)
 
     median_residual = _weighted_median(residual, weights)
-    support = _axis_support(residual, weights, median_residual, tolerance_degrees=2.5)
+    support = _axis_support(
+        residual,
+        weights,
+        median_residual,
+        tolerance_degrees=_AXIS_SUPPORT_TOLERANCE_DEGREES,
+    )
     concentration = _axis_concentration(residual, weights)
-    line_count_score = min(1.0, residual.size / 8.0)
-    confidence = concentration * max(support, 0.0) * line_count_score
+    line_count_score = min(1.0, residual.size / 4.0)
+    line_length_score = min(1.0, float(weights.sum()) / (min(gray.shape) * 1.2))
+    confidence = concentration * max(support, 0.0) * max(line_count_score, line_length_score)
     angle = -float(median_residual)
     angle = max(-_MAX_APPLY_ANGLE, min(_MAX_APPLY_ANGLE, angle))
 

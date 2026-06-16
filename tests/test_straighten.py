@@ -52,6 +52,35 @@ def _tilted_room_image(angle_degrees: float) -> Image.Image:
     return image
 
 
+def _faint_tilted_room_image(angle_degrees: float) -> Image.Image:
+    image = Image.new("RGB", (800, 533), (218, 218, 214))
+    draw = ImageDraw.Draw(image)
+    centre = (400.0, 266.0)
+    lines = [[(90.0, y), (710.0, y)] for y in (115.0, 250.0, 420.0)]
+    lines.extend([[(x, 95.0), (x, 455.0)] for x in (180.0, 620.0)])
+    for line in lines:
+        draw.line(_rotate_points(line, angle_degrees, centre), fill=(184, 184, 180), width=2)
+    return image
+
+
+def _short_segment_image(angle_degrees: float) -> Image.Image:
+    image = Image.new("RGB", (640, 420), (232, 230, 224))
+    draw = ImageDraw.Draw(image)
+    centre = (320.0, 210.0)
+    segments = [
+        [(80.0, 105.0), (190.0, 105.0)],
+        [(240.0, 108.0), (350.0, 108.0)],
+        [(420.0, 112.0), (535.0, 112.0)],
+        [(120.0, 285.0), (250.0, 285.0)],
+        [(330.0, 292.0), (470.0, 292.0)],
+        [(105.0, 110.0), (105.0, 230.0)],
+        [(522.0, 120.0), (522.0, 265.0)],
+    ]
+    for segment in segments:
+        draw.line(_rotate_points(segment, angle_degrees, centre), fill=(92, 92, 88), width=2)
+    return image
+
+
 def test_estimate_straighten_angle_detects_small_tilt() -> None:
     result = estimate_straighten_angle(_tilted_line_image(3.0))
 
@@ -74,6 +103,20 @@ def test_estimate_straighten_angle_detects_room_geometry() -> None:
 
     assert result.applied is True
     assert result.angle_degrees == pytest.approx(2.0, abs=0.5)
+
+
+def test_estimate_straighten_angle_detects_faint_geometry() -> None:
+    result = estimate_straighten_angle(_faint_tilted_room_image(2.5))
+
+    assert result.applied is True
+    assert result.angle_degrees == pytest.approx(-2.5, abs=0.7)
+
+
+def test_estimate_straighten_angle_detects_short_segments() -> None:
+    result = estimate_straighten_angle(_short_segment_image(-2.0))
+
+    assert result.applied is True
+    assert result.angle_degrees == pytest.approx(2.0, abs=0.7)
 
 
 def test_estimate_straighten_angle_skips_random_texture() -> None:
