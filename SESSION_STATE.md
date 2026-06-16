@@ -110,16 +110,17 @@ x86_64, while macOS resolves the matching public wheels.
     Lightroom `CropAngle` instead of negating it.
   - Added `opencv-python-headless==4.13.0.92` to `pyproject.toml` / `uv.lock`.
   - Added regression coverage for room-like tilted geometry, random texture
-    skip behavior, and direct XMP serialization of `crs:HasCrop` /
-    `crs:CropAngle`.
+    skip behavior, full-frame crop bounds, and direct XMP serialization of
+    `crs:HasCrop` / `crs:CropAngle`.
   - Verification passed:
-    `uv run pytest tests\test_straighten.py tests\api\test_process_route.py::test_process_auto_straighten_forwarded tests\api\test_callback_bridge.py::test_pipeline_auto_straighten_writes_crop_angle_and_sidecar -q`
-    (`12 passed`),
-    `uv run ruff check src\sonna_editor\inference\straighten.py src\sonna_editor\inference\pipeline.py tests\test_straighten.py tests\api\test_callback_bridge.py`,
+    `uv run pytest tests\test_straighten.py tests\test_xmp.py::TestExtraAttributes::test_write_xmp_with_crop_angle_attributes tests\api\test_callback_bridge.py::test_pipeline_auto_straighten_writes_crop_angle_and_sidecar tests\api\test_process_route.py::test_process_auto_straighten_forwarded -q`
+    (`13 passed`),
+    `uv run ruff check src\sonna_editor\inference\straighten.py tests\test_straighten.py tests\test_xmp.py tests\api\test_callback_bridge.py`,
     `npm run build:vite` in `saha-app\`, and an isolated one-CR3 smoke run in
     `C:\tmp\sonna_straighten_smoke_20260616164350` that wrote
-    `crs:HasCrop="True"`, full-frame crop bounds, `crs:CropAngle="-1.1573"`,
-    and the new diagnostics.
+    `crs:HasCrop="True"`, full-frame crop bounds, `crs:CropAngle`, and the
+    new diagnostics. A synthetic +3 degree tilt smoke check now writes
+    `CropAngle="+2.9508"`, confirming the corrected Lightroom sign direction.
 
 - Removed the login page "What's new" card and the compatibility/version strip
   underneath it.
@@ -249,15 +250,17 @@ x86_64, while macOS resolves the matching public wheels.
   - `/api/process` accepts and forwards `auto_straighten`.
   - `scripts\process_shoot_model.py` exposes `--auto-straighten`.
   - `src\sonna_editor\inference\straighten.py` estimates small crop-angle
-    corrections from RAW previews using a deterministic edge/projection
-    estimator, with conservative thresholds for minimum edge count, confidence,
-    and angle size.
-  - `process_shoot_with_model()` writes `crs:HasCrop="True"` and
-    `crs:CropAngle="..."` through `write_xmp(extra_attributes=...)` only when
-    `auto_straighten` is enabled and the estimator result is applied.
-  - `sonna_predictions.json` now records `auto_straighten` plus per-photo
-    `straightening` diagnostics (`angle_degrees`, `confidence`, `applied`,
-    `reason`, and `edge_count`).
+    corrections from RAW previews using OpenCV Canny/Hough/LSD line geometry,
+    with conservative thresholds for minimum edge count, confidence, and angle
+    size.
+  - `process_shoot_with_model()` writes `crs:HasCrop="True"`, full-frame crop
+    bounds, and `crs:CropAngle="..."` through
+    `write_xmp(extra_attributes=...)` only when `auto_straighten` is enabled
+    and the estimator result is applied.
+  - `sonna_predictions.json` records `auto_straighten`,
+    `straightening_engine`, and per-photo `straightening` diagnostics
+    (`angle_degrees`, `confidence`, `applied`, `reason`, `edge_count`,
+    `line_count`, and `line_length_px`).
   - No model retraining is required; this is an inference/XMP postprocess for
     both Personal AI and Lite profiles.
 - Verification for auto straightening:

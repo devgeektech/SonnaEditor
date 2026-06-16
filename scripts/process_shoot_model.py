@@ -55,7 +55,7 @@ def main() -> None:
                         action="store_false", default=True,
                         help="Skip writing sonna_predictions.json (disables continuous learning capture).")
     parser.add_argument("--auto-straighten", action="store_true",
-                        help="Estimate and write Lightroom CropAngle straightening when confident.")
+                        help="Estimate and write Lightroom crop-angle metadata when confident.")
     args = parser.parse_args()
     if args.model_path is None:
         args.model_path = _latest_published_model()

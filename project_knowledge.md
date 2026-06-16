@@ -405,10 +405,11 @@ Lite checkpoints are marked with `profile_type: mode_b_initial` in the sidecar J
   `Auto straighten` checkbox, `/api/process` accepts `auto_straighten`, and
   `scripts/process_shoot_model.py` exposes `--auto-straighten`. When enabled,
   `inference/straighten.py` estimates a small Lightroom-native `CropAngle`
-  from the extracted preview and writes `HasCrop=True` / `CropAngle=...` only
-  when confidence passes conservative thresholds. The result is recorded under
-  `auto_straighten` and `straightening` in `sonna_predictions.json`. No model
-  retraining is required.
+  from the extracted preview and writes Lightroom crop metadata only when
+  confidence passes conservative thresholds. Applied results include
+  `HasCrop=True`, full-frame `CropTop/CropLeft/CropBottom/CropRight` bounds,
+  and `CropAngle=...`. The result is recorded under `auto_straighten` and
+  `straightening` in `sonna_predictions.json`. No model retraining is required.
 - Auto straightening repair, 2026-06-15: `saha-app/src/components/editor.jsx`
   requires explicit queued-row selection before processing. Queued folders
   remain unselected by default; if no queued rows are checked, Process Selected
