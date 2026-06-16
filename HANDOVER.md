@@ -80,8 +80,11 @@ This checkout is a Windows development/training workspace at `C:\Users\vikas.DES
   on 500 real CR3 previews in `OneDrive\Pictures\Testing_Sonna`: 310 applied,
   190 skipped as `angle_too_small`, 0 extraction errors. New sidecars record
   `straightening_engine`, `line_count`, and `line_length_px` so stale runs or
-  low-recall batches can be audited immediately. No model retraining is
-  required.
+  low-recall batches can be audited immediately. A later Lightroom Classic
+  check with user-supplied `0H5A6295_.xmp` showed angle-only crop metadata
+  (`HasCrop` + `CropAngle`) can still display as Angle `0.00`; applied
+  straightening now writes full-frame `CropTop/CropLeft/CropBottom/CropRight`
+  bounds with every `CropAngle`. No model retraining is required.
 - **Verified this pass:** full local verification on 2026-06-12 passed after the
   Pylance cleanup and foundation CLI repair. `scripts\verify_environment.py`
   passed `11/11`; `uv run ruff check .` passed; `uv run python -m compileall -q

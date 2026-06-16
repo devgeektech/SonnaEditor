@@ -160,6 +160,10 @@ def test_crop_angle_attributes_only_for_applied_result() -> None:
     skipped = estimate_straighten_angle(Image.new("RGB", (400, 300), "white"))
 
     assert crop_angle_attributes(applied)["HasCrop"] == "True"
+    assert crop_angle_attributes(applied)["CropTop"] == "0"
+    assert crop_angle_attributes(applied)["CropLeft"] == "0"
+    assert crop_angle_attributes(applied)["CropBottom"] == "1"
+    assert crop_angle_attributes(applied)["CropRight"] == "1"
     assert crop_angle_attributes(applied)["CropAngle"].startswith("-")
     assert crop_angle_attributes(skipped) == {}
 

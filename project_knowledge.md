@@ -106,7 +106,7 @@ This section tracks what each backend source file/folder does. Keep it updated w
 | `src/sonna_editor/inference/__init__.py` | Package marker for inference code. |
 | `src/sonna_editor/inference/engine.py` | Checkpoint loading and batched prediction engine. Builds tensors from extracted previews/metadata plus scene stats, maps categorical metadata through the checkpoint registry, supports uncertainty sampling, and postprocesses outputs. |
 | `src/sonna_editor/inference/pipeline.py` | End-to-end shoot processing: scan RAW files using the central `config.SUPPORTED_RAW_EXTENSIONS` set, extract features, run inference, apply WB/skip semantics, optionally apply preview-based auto straightening, write XMP sidecars, write `sonna_predictions.json` including straightening engine/line diagnostics, and emit progress callbacks. |
-| `src/sonna_editor/inference/straighten.py` | Optional auto-straightening postprocess. Uses CLAHE-normalized OpenCV Canny edges plus probabilistic Hough lines, OpenCV line segments, and a broad Hough fallback for fragmented line evidence to estimate small Lightroom `CropAngle` corrections from preview geometry, with conservative confidence thresholds and CRS crop attributes only when selected per processing job. This is not a trained model output. |
+| `src/sonna_editor/inference/straighten.py` | Optional auto-straightening postprocess. Uses CLAHE-normalized OpenCV Canny edges plus probabilistic Hough lines, OpenCV line segments, and a broad Hough fallback for fragmented line evidence to estimate small Lightroom `CropAngle` corrections from preview geometry, with conservative confidence thresholds and full-frame CRS crop attributes only when selected per processing job. This is not a trained model output. |
 
 ### Fine-Tune Package
 
@@ -429,6 +429,12 @@ Lite checkpoints are marked with `profile_type: mode_b_initial` in the sidecar J
   New sidecars record `straightening_engine:
   opencv-clahe-canny-lines-v2`, `line_count`, and `line_length_px` so future
   batches can be audited per photo.
+- Auto straightening crop metadata fix, 2026-06-16: user-supplied
+  `0H5A6295_.xmp` proved the Mac run wrote `crs:HasCrop="True"` and
+  `crs:CropAngle="+5"`, but Lightroom Classic still showed Angle `0.00`.
+  The missing piece was full-frame crop bounds. Applied straightening now also
+  writes `CropTop=0`, `CropLeft=0`, `CropBottom=1`, and `CropRight=1` with
+  every `CropAngle`.
 
 ## Important behavior notes
 
@@ -440,9 +446,11 @@ Lite checkpoints are marked with `profile_type: mode_b_initial` in the sidecar J
 - Auto straightening is an opt-in inference postprocess, shared by Personal AI
   and Lite processing. It writes Lightroom crop-angle metadata from OpenCV
   preview-geometry analysis when confident, while high-texture/no-line frames
-  are skipped. `sonna_predictions.json` records the straightening engine and
-  per-photo line support for diagnostics. It does not use or update model
-  checkpoints and it does not train on crop labels.
+  are skipped. Applied results include full-frame crop bounds plus
+  `CropAngle`, because Lightroom Classic may ignore angle-only crop metadata.
+  `sonna_predictions.json` records the straightening engine and per-photo line
+  support for diagnostics. It does not use or update model checkpoints and it
+  does not train on crop labels.
 - Process dispatch behavior: with no selected queued folders, the UI does not
   dispatch a process job. With one or more selected queued folders, it processes
   only those selected folders. This matters for per-run options like Auto

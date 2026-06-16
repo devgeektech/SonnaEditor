@@ -298,6 +298,10 @@ def crop_angle_attributes(result: StraightenResult) -> dict[str, str]:
         return {}
     return {
         "HasCrop": "True",
+        "CropTop": "0",
+        "CropLeft": "0",
+        "CropBottom": "1",
+        "CropRight": "1",
         "CropAngle": _format_lightroom_angle(result.angle_degrees),
     }
 

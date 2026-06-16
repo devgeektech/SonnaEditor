@@ -98,6 +98,11 @@ x86_64, while macOS resolves the matching public wheels.
     opencv-clahe-canny-lines-v2` plus per-photo `line_count` and
     `line_length_px`, so future 300+ image runs can be audited immediately if
     Lightroom appears not to show crop-angle changes.
+  - Follow-up validation against user-supplied `0H5A6295_.xmp` showed the Mac
+    run did write `crs:HasCrop="True"` / `crs:CropAngle="+5"`, while Lightroom
+    Classic still displayed Angle `0.00`. The XMP lacked full-frame crop bounds,
+    so `crop_angle_attributes()` now writes `CropTop=0`, `CropLeft=0`,
+    `CropBottom=1`, and `CropRight=1` with every applied `CropAngle`.
   - Added `opencv-python-headless==4.13.0.92` to `pyproject.toml` / `uv.lock`.
   - Added regression coverage for room-like tilted geometry, random texture
     skip behavior, and direct XMP serialization of `crs:HasCrop` /
@@ -108,7 +113,8 @@ x86_64, while macOS resolves the matching public wheels.
     `uv run ruff check src\sonna_editor\inference\straighten.py src\sonna_editor\inference\pipeline.py tests\test_straighten.py tests\api\test_callback_bridge.py`,
     `npm run build:vite` in `saha-app\`, and an isolated one-CR3 smoke run in
     `C:\tmp\sonna_straighten_smoke_20260616164350` that wrote
-    `crs:HasCrop="True"` / `crs:CropAngle="-1.1573"` plus the new diagnostics.
+    `crs:HasCrop="True"`, full-frame crop bounds, `crs:CropAngle="-1.1573"`,
+    and the new diagnostics.
 
 - Removed the login page "What's new" card and the compatibility/version strip
   underneath it.

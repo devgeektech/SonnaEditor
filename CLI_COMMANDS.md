@@ -173,9 +173,9 @@ Do not reuse a previous --version-stem; old checkpoints are never overwritten.
    - Output XMP files are written next to RAWs by default, plus `sonna_predictions.json` for later fine-tuning.
    - Optional auto straightening is controlled per run from the UI checkbox or
      `--auto-straighten`; it uses OpenCV preview-line geometry and writes
-     Lightroom `CropAngle` metadata when confident. The predictions sidecar
-     records straightening engine and line-support diagnostics. It does not
-     require retraining.
+     Lightroom `CropAngle` metadata with full-frame crop bounds when
+     confident. The predictions sidecar records straightening engine and
+     line-support diagnostics. It does not require retraining.
 
 6. Fine-tune later.
    - Capture final Lightroom tweaks.
