@@ -83,18 +83,32 @@ x86_64, while macOS resolves the matching public wheels.
     for selected-folder dispatch.
   - `src\sonna_editor\inference\straighten.py` now uses CLAHE-normalized
     OpenCV Canny edges plus both probabilistic Hough lines and OpenCV line
-    segments to estimate the Lightroom `CropAngle` from horizontal/vertical
-    preview geometry. This improves recall on fainter or shorter architectural
-    lines while keeping noisy texture frames skipped.
+    segments, with a broad Hough fallback for fragmented line evidence, to
+    estimate the Lightroom `CropAngle` from horizontal/vertical preview
+    geometry. This improves recall on fainter, shorter, or broken
+    architectural lines while keeping noisy texture frames skipped.
+  - Current-code validation against the real local folder
+    `OneDrive\Pictures\Testing_Sonna` found the old `sonna_predictions.json`
+    had no `auto_straighten` / `straightening` keys and no generated XMP had
+    `CropAngle`, indicating that batch was produced by an older/stale process
+    path. Running the current estimator read-only across 500 CR3 previews in
+    that folder applied straightening to 310 files and skipped 190 as
+    `angle_too_small`; there were no preview extraction errors.
+  - `sonna_predictions.json` now records `straightening_engine:
+    opencv-clahe-canny-lines-v2` plus per-photo `line_count` and
+    `line_length_px`, so future 300+ image runs can be audited immediately if
+    Lightroom appears not to show crop-angle changes.
   - Added `opencv-python-headless==4.13.0.92` to `pyproject.toml` / `uv.lock`.
   - Added regression coverage for room-like tilted geometry, random texture
     skip behavior, and direct XMP serialization of `crs:HasCrop` /
     `crs:CropAngle`.
   - Verification passed:
-    `uv run pytest tests\test_straighten.py tests\test_xmp.py::TestExtraAttributes tests\api\test_callback_bridge.py::test_pipeline_auto_straighten_writes_crop_angle_and_sidecar tests\api\test_process_route.py::test_process_auto_straighten_forwarded -q`
-    (`12 passed`), `uv run python -c "import cv2; print(cv2.__version__)"`,
-    `uv run ruff check src\sonna_editor\inference\straighten.py tests\test_straighten.py pyproject.toml`,
-    and `npm run build:vite` in `saha-app\`.
+    `uv run pytest tests\test_straighten.py tests\api\test_process_route.py::test_process_auto_straighten_forwarded tests\api\test_callback_bridge.py::test_pipeline_auto_straighten_writes_crop_angle_and_sidecar -q`
+    (`12 passed`),
+    `uv run ruff check src\sonna_editor\inference\straighten.py src\sonna_editor\inference\pipeline.py tests\test_straighten.py tests\api\test_callback_bridge.py`,
+    `npm run build:vite` in `saha-app\`, and an isolated one-CR3 smoke run in
+    `C:\tmp\sonna_straighten_smoke_20260616164350` that wrote
+    `crs:HasCrop="True"` / `crs:CropAngle="-1.1573"` plus the new diagnostics.
 
 - Removed the login page "What's new" card and the compatibility/version strip
   underneath it.

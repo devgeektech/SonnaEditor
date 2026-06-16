@@ -549,4 +549,7 @@ def test_pipeline_auto_straighten_writes_crop_angle_and_sidecar(
 
     sidecar = _json.loads((folder / "sonna_predictions.json").read_text())
     assert sidecar["auto_straighten"] is True
+    assert sidecar["straightening_engine"].startswith("opencv-")
     assert sidecar["straightening"]["tilted.cr3"]["applied"] is True
+    assert sidecar["straightening"]["tilted.cr3"]["line_count"] > 0
+    assert sidecar["straightening"]["tilted.cr3"]["line_length_px"] > 0

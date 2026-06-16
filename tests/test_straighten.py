@@ -6,6 +6,7 @@ import pytest
 from PIL import Image, ImageDraw
 
 from sonna_editor.inference.straighten import (
+    STRAIGHTEN_ENGINE_VERSION,
     crop_angle_attributes,
     estimate_straighten_angle,
     rotated_content_scale,
@@ -81,6 +82,24 @@ def _short_segment_image(angle_degrees: float) -> Image.Image:
     return image
 
 
+def _fragmented_horizon_image(angle_degrees: float) -> Image.Image:
+    image = Image.new("RGB", (640, 420), (228, 228, 224))
+    draw = ImageDraw.Draw(image)
+    centre = (320.0, 210.0)
+    theta = math.radians(angle_degrees)
+    for x in range(80, 560, 44):
+        p1 = (float(x), 205.0)
+        p2 = (float(x + 22), 205.0)
+        draw.line(_rotate_points([p1, p2], angle_degrees, centre), fill=(70, 70, 68), width=2)
+    for y in (125.0, 285.0):
+        x1 = 320.0 - math.cos(theta) * 220.0
+        y1 = y - math.sin(theta) * 220.0
+        x2 = 320.0 + math.cos(theta) * 220.0
+        y2 = y + math.sin(theta) * 220.0
+        draw.line((x1, y1, x2, y2), fill=(150, 150, 146), width=1)
+    return image
+
+
 def test_estimate_straighten_angle_detects_small_tilt() -> None:
     result = estimate_straighten_angle(_tilted_line_image(3.0))
 
@@ -88,6 +107,8 @@ def test_estimate_straighten_angle_detects_small_tilt() -> None:
     assert result.reason == "applied"
     assert result.confidence >= 0.18
     assert result.angle_degrees == pytest.approx(-3.0, abs=0.5)
+    assert result.line_count > 0
+    assert result.total_line_length > 0
 
 
 def test_estimate_straighten_angle_leaves_blank_image_untouched() -> None:
@@ -119,6 +140,13 @@ def test_estimate_straighten_angle_detects_short_segments() -> None:
     assert result.angle_degrees == pytest.approx(2.0, abs=0.7)
 
 
+def test_estimate_straighten_angle_detects_fragmented_horizon() -> None:
+    result = estimate_straighten_angle(_fragmented_horizon_image(2.0))
+
+    assert result.applied is True
+    assert result.angle_degrees == pytest.approx(-2.0, abs=0.8)
+
+
 def test_estimate_straighten_angle_skips_random_texture() -> None:
     noise = Image.effect_noise((640, 420), 60).convert("RGB")
 
@@ -134,6 +162,10 @@ def test_crop_angle_attributes_only_for_applied_result() -> None:
     assert crop_angle_attributes(applied)["HasCrop"] == "True"
     assert crop_angle_attributes(applied)["CropAngle"].startswith("-")
     assert crop_angle_attributes(skipped) == {}
+
+
+def test_straighten_engine_version_is_recorded_for_diagnostics() -> None:
+    assert STRAIGHTEN_ENGINE_VERSION.startswith("opencv-")
 
 
 def test_rotated_content_scale_is_minimal_above_one() -> None:

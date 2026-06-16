@@ -15,6 +15,9 @@ import numpy as np
 from PIL import Image
 
 
+STRAIGHTEN_ENGINE_VERSION = "opencv-clahe-canny-lines-v2"
+
+
 @dataclass(frozen=True)
 class StraightenResult:
     """Detected straighten angle and confidence for one image preview."""
@@ -24,6 +27,8 @@ class StraightenResult:
     applied: bool
     reason: str
     edge_count: int
+    line_count: int = 0
+    total_line_length: float = 0.0
 
 
 _MAX_WORKING_EDGE = 640
@@ -153,11 +158,41 @@ def _lsd_line_residuals(image_u8: np.ndarray) -> tuple[list[float], list[float]]
     return _segment_residuals(lines[:, 0, :], min_line_length, weight_scale=1.0)
 
 
+def _standard_hough_line_residuals(edges: np.ndarray) -> tuple[list[float], list[float]]:
+    """Detect broad axis-aligned line evidence when segments are fragmented."""
+    min_edge = min(edges.shape)
+    threshold = max(36, min(120, int(min_edge * 0.14)))
+    lines = cv2.HoughLines(edges, rho=1, theta=np.pi / 180.0, threshold=threshold)
+    if lines is None:
+        return [], []
+
+    residuals: list[float] = []
+    weights: list[float] = []
+    base_weight = max(_MIN_LINE_LENGTH_PX, min_edge * 0.22)
+    for rho_theta in lines[:80, 0, :]:
+        _rho, theta = (float(v) for v in rho_theta)
+        tangent_angle = degrees(theta) - 90.0
+        residual = float(
+            _axis_residual_degrees(np.asarray([tangent_angle], dtype=np.float64))[0]
+        )
+        if abs(residual) > _AXIS_CANDIDATE_TOLERANCE_DEGREES:
+            continue
+        residuals.append(residual)
+        # HoughLines does not expose vote counts in this binding, so keep the
+        # fallback lighter than explicit segment detections.
+        weights.append(base_weight * 0.55)
+    return residuals, weights
+
+
 def _opencv_line_residuals(image_u8: np.ndarray, edges: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     hough_residuals, hough_weights = _hough_line_residuals(edges)
     lsd_residuals, lsd_weights = _lsd_line_residuals(image_u8)
     residuals = hough_residuals + lsd_residuals
     weights = hough_weights + lsd_weights
+    if len(residuals) < 2:
+        broad_residuals, broad_weights = _standard_hough_line_residuals(edges)
+        residuals.extend(broad_residuals)
+        weights.extend(broad_weights)
     return np.asarray(residuals, dtype=np.float64), np.asarray(weights, dtype=np.float64)
 
 
@@ -187,8 +222,18 @@ def estimate_straighten_angle(image: Image.Image) -> StraightenResult:
         return StraightenResult(0.0, 0.0, False, "edge_texture", edge_count)
 
     residual, weights = _opencv_line_residuals(image_u8, edges)
+    line_count = int(residual.size)
+    total_line_length = round(float(weights.sum()), 2)
     if residual.size < _MIN_LINE_COUNT or weights.size < _MIN_LINE_COUNT:
-        return StraightenResult(0.0, 0.0, False, "too_few_lines", edge_count)
+        return StraightenResult(
+            0.0,
+            0.0,
+            False,
+            "too_few_lines",
+            edge_count,
+            line_count,
+            total_line_length,
+        )
 
     median_residual = _weighted_median(residual, weights)
     support = _axis_support(
@@ -206,13 +251,45 @@ def estimate_straighten_angle(image: Image.Image) -> StraightenResult:
 
     abs_angle = abs(angle)
     if abs_angle < _MIN_APPLY_ANGLE:
-        return StraightenResult(0.0, confidence, False, "angle_too_small", edge_count)
+        return StraightenResult(
+            0.0,
+            confidence,
+            False,
+            "angle_too_small",
+            edge_count,
+            line_count,
+            total_line_length,
+        )
     if support < 0.25:
-        return StraightenResult(angle, confidence, False, "weak_axis_support", edge_count)
+        return StraightenResult(
+            angle,
+            confidence,
+            False,
+            "weak_axis_support",
+            edge_count,
+            line_count,
+            total_line_length,
+        )
     if confidence < _MIN_CONFIDENCE:
-        return StraightenResult(angle, confidence, False, "low_confidence", edge_count)
+        return StraightenResult(
+            angle,
+            confidence,
+            False,
+            "low_confidence",
+            edge_count,
+            line_count,
+            total_line_length,
+        )
 
-    return StraightenResult(round(angle, 4), confidence, True, "applied", edge_count)
+    return StraightenResult(
+        round(angle, 4),
+        confidence,
+        True,
+        "applied",
+        edge_count,
+        line_count,
+        total_line_length,
+    )
 
 
 def crop_angle_attributes(result: StraightenResult) -> dict[str, str]:

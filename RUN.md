@@ -381,9 +381,12 @@ uv run python scripts\process_shoot_model.py `
 ```
 
 `--auto-straighten` is optional and matches the Process UI checkbox. It uses
-OpenCV Canny + Hough line detection on the extracted preview, then writes
+OpenCV Canny + Hough/LSD line detection on the extracted preview, then writes
 Lightroom `CropAngle` metadata only when the geometry is confident; it does not
-retrain or alter the selected profile checkpoint.
+retrain or alter the selected profile checkpoint. `sonna_predictions.json`
+records `straightening_engine`, `line_count`, and `line_length_px` for each
+photo so a batch can be audited if Lightroom does not appear to show
+straightening.
 
 ### UI-based Lite profile creation and processing
 

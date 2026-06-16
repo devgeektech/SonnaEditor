@@ -74,8 +74,13 @@ This checkout is a Windows development/training workspace at `C:\Users\vikas.DES
   corrected to require explicit checked-folder selection before processing,
   with `auto_straighten` forwarded through that selected-folder job payload.
   The estimator now uses CLAHE-normalized OpenCV Canny edges plus probabilistic
-  Hough lines and OpenCV line segments to derive the small Lightroom
-  `CropAngle`, with high-texture frames skipped. No model retraining is
+  Hough lines, OpenCV line segments, and a broad Hough fallback for fragmented
+  line evidence to derive the small Lightroom `CropAngle`, with high-texture
+  frames skipped. On 2026-06-16 the current estimator was validated read-only
+  on 500 real CR3 previews in `OneDrive\Pictures\Testing_Sonna`: 310 applied,
+  190 skipped as `angle_too_small`, 0 extraction errors. New sidecars record
+  `straightening_engine`, `line_count`, and `line_length_px` so stale runs or
+  low-recall batches can be audited immediately. No model retraining is
   required.
 - **Verified this pass:** full local verification on 2026-06-12 passed after the
   Pylance cleanup and foundation CLI repair. `scripts\verify_environment.py`
