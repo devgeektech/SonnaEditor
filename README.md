@@ -30,6 +30,11 @@ sidecars for new shoots.
 - Inference stabilises RGB tone-curve endpoints before XMP write so
   neutral white highlights do not shift pink/red from channel-curve endpoint
   drift.
+- Processing can run from either a RAW folder or a Lightroom Classic `.lrcat`
+  catalog source in the Electron UI. Catalog processing opens the catalog
+  read-only, processes the referenced accessible RAW files through the same
+  Mode A/Mode B pipeline, writes XMPs next to RAWs, and emits a Lightroom bridge
+  package for `lightroom/SahaBridge.lrplugin`.
 - Foundation model training is CLI-only. `scripts/train_foundation_model.py`
   trains native `SonnaEditor` slider-regression checkpoints from real Lightroom
   labels: RAW+XMP sidecars or catalog-derived splits such as FiveK Expert C.

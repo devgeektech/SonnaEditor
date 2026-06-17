@@ -149,6 +149,7 @@ function FolderRow({
   onRemove,
 }) {
   const folderName = folderBasename(folder.folderPath);
+  const sourceLabel = folder.sourceType === 'catalog' ? 'catalog' : 'folder';
 
   return (
     <div style={{ padding: '4px 12px' }}>
@@ -195,7 +196,7 @@ function FolderRow({
             whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
           }}>{folderName}</div>
           <div style={{ ...Tnum, fontSize: 10.5, color: SONNA.fgFaint, marginTop: 2 }}>
-            {folder.fileCount} RAW
+            {folder.fileCount} RAW · {sourceLabel}
           </div>
         </div>
         <button
@@ -248,11 +249,13 @@ function LeftFolderQueue({
   expandedSet,
   locked,
   onAddFolder,
+  onAddCatalog,
   onRemove,
   onSelect,
   onToggleExpand,
 }) {
   const totalRaws = queue.reduce((sum, f) => sum + (f.fileCount || 0), 0);
+  const catalogCount = queue.filter((f) => f.sourceType === 'catalog').length;
 
   return (
     <div style={{
@@ -272,30 +275,52 @@ function LeftFolderQueue({
             </span>
           )}
         </div>
-        <button
-          onClick={onAddFolder}
-          disabled={locked}
-          style={{
-            marginTop: 12,
-            width: '100%', height: 36,
-            background: SONNA.bgLifted,
-            border: `1px solid ${SONNA.line}`,
-            borderRadius: 3,
-            color: locked ? SONNA.fgFaint : SONNA.fg,
-            fontFamily: F, fontSize: 12, fontWeight: 500,
-            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10,
-            cursor: locked ? 'not-allowed' : 'pointer',
-            opacity: locked ? 0.5 : 1,
-          }}
-        >
-          <svg width="11" height="11" viewBox="0 0 11 11" fill="none">
-            <path d="M5.5 1.5v8M1.5 5.5h8"
-              stroke={locked ? SONNA.fgFaint : SONNA.fgMute}
-              strokeWidth="1.3" strokeLinecap="round" />
-          </svg>
-          <span>Add folder</span>
-          <span style={{ ...Tnum, fontSize: 10, color: SONNA.fgFaint, marginLeft: 4 }}>⌘O</span>
-        </button>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginTop: 12 }}>
+          <button
+            onClick={onAddFolder}
+            disabled={locked}
+            style={{
+              height: 36,
+              background: SONNA.bgLifted,
+              border: `1px solid ${SONNA.line}`,
+              borderRadius: 3,
+              color: locked ? SONNA.fgFaint : SONNA.fg,
+              fontFamily: F, fontSize: 12, fontWeight: 500,
+              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+              cursor: locked ? 'not-allowed' : 'pointer',
+              opacity: locked ? 0.5 : 1,
+            }}
+          >
+            <svg width="11" height="11" viewBox="0 0 11 11" fill="none">
+              <path d="M5.5 1.5v8M1.5 5.5h8"
+                stroke={locked ? SONNA.fgFaint : SONNA.fgMute}
+                strokeWidth="1.3" strokeLinecap="round" />
+            </svg>
+            <span>Add folder</span>
+          </button>
+          <button
+            onClick={onAddCatalog}
+            disabled={locked}
+            style={{
+              height: 36,
+              background: SONNA.bgLifted,
+              border: `1px solid ${SONNA.line}`,
+              borderRadius: 3,
+              color: locked ? SONNA.fgFaint : SONNA.fg,
+              fontFamily: F, fontSize: 12, fontWeight: 500,
+              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+              cursor: locked ? 'not-allowed' : 'pointer',
+              opacity: locked ? 0.5 : 1,
+            }}
+          >
+            <svg width="11" height="11" viewBox="0 0 11 11" fill="none">
+              <path d="M2 2.2h7v6.6H2zM3.4 4h4.2M3.4 5.5h4.2"
+                stroke={locked ? SONNA.fgFaint : SONNA.fgMute}
+                strokeWidth="1.1" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+            <span>Add catalog</span>
+          </button>
+        </div>
       </div>
 
       <div style={{ flex: 1, minHeight: 0, overflow: 'auto', padding: '8px 0' }}>
@@ -304,7 +329,7 @@ function LeftFolderQueue({
             padding: '40px 24px', textAlign: 'center',
             fontSize: 12, color: SONNA.fgFaint, lineHeight: 1.5,
           }}>
-            No folders queued.<br />Press Add folder to start.
+            No sources queued.<br />Add a folder or catalog to start.
           </div>
         ) : (
           queue.map((folder, i) => (
@@ -332,7 +357,8 @@ function LeftFolderQueue({
           <span style={{ ...Tnum, fontSize: 12, color: SONNA.fg }}>
             {totalRaws}
             <span style={{ color: SONNA.fgDim, fontSize: 11, marginLeft: 6 }}>
-              RAW · {queue.length} {queue.length === 1 ? 'folder' : 'folders'}
+              RAW · {queue.length} {queue.length === 1 ? 'source' : 'sources'}
+              {catalogCount > 0 ? ` · ${catalogCount} catalog` : ''}
             </span>
           </span>
         </div>
@@ -1005,8 +1031,8 @@ export function Editor({
   onLogout,
   onProjectsChange,
 }) {
-  // Multi-folder queue. Items shape:
-  //   { folderPath, fileCount, fileList, status }
+  // Multi-source queue. Items shape:
+  //   { folderPath, sourceType, fileCount, fileList, status }
   // status ∈ "queued" | "processing" | "complete" | "failed" | "cancelled".
   // The dispatcher useEffect below drives sequential per-folder processing
   // through a backend that still serves one folder at a time.
@@ -1120,13 +1146,14 @@ export function Editor({
       clearRunState();
     }
     try {
-      const result = await scanFolder(path);
+      const result = await scanFolder(path, 'folder');
       if (!result.is_valid) {
         setError({ source: 'scan', message: result.error || 'Could not scan folder' });
         return;
       }
       setQueue((q) => [...q, {
         folderPath: result.folder_path,
+        sourceType: result.source_type || 'folder',
         fileCount: result.raw_count,
         fileList: result.files || [],
         // Count of existing .xmp sidecars that match RAW basenames in this
@@ -1145,11 +1172,47 @@ export function Editor({
     }
   }, [runResults.length, hasQueuedFolders, clearRunState, queue.length]);
 
+  const handleAddCatalog = useCallback(async () => {
+    if (!window.saha?.pickFile) {
+      setError({ source: 'pick', message: 'Catalog picker unavailable (run via Electron)' });
+      return;
+    }
+    const path = await window.saha.pickFile({
+      title: 'Choose a Lightroom catalog',
+      filters: [{ name: 'Lightroom catalog', extensions: ['lrcat'] }],
+    });
+    if (!path) return;
+    setError(null);
+    if (runResults.length > 0 && !hasQueuedFolders) {
+      clearRunState();
+    }
+    try {
+      const result = await scanFolder(path, 'catalog');
+      if (!result.is_valid) {
+        setError({ source: 'scan', message: result.error || 'Could not scan catalog' });
+        return;
+      }
+      setQueue((q) => [...q, {
+        folderPath: result.folder_path,
+        sourceType: result.source_type || 'catalog',
+        fileCount: result.raw_count,
+        fileList: result.files || [],
+        xmpConflictCount: result.xmp_conflict_count || 0,
+        status: 'queued',
+        selected: false,
+        loadedAt: Date.now(),
+      }]);
+    } catch (e) {
+      setError({ source: 'scan', message: e.message });
+    }
+  }, [runResults.length, hasQueuedFolders, clearRunState]);
+
   useEffect(() => {
     if (typeof onProjectsChange !== 'function') return;
     onProjectsChange({
       queue: queue.map((f) => ({
         folderPath: f.folderPath,
+        sourceType: f.sourceType || 'folder',
         fileCount: f.fileCount,
         status: f.status,
         selected: !!f.selected,
@@ -1379,6 +1442,7 @@ export function Editor({
     // removed in P0 so there's no surface to react to flagged photos.
     job.start({
       folder_path: targetFolder.folderPath,
+      source_type: targetFolder.sourceType || 'folder',
       profile_id: activeProfile.id,
       flag_low_confidence: false,
       skip_fields: Array.from(skipFields),
@@ -1488,6 +1552,7 @@ export function Editor({
           expandedSet={expandedSet}
           locked={isQueueRunning}
           onAddFolder={handleAddFolder}
+          onAddCatalog={handleAddCatalog}
           onRemove={handleRemove}
           onSelect={handleSelectFolder}
           onToggleExpand={handleToggleExpand}

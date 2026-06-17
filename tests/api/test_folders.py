@@ -33,6 +33,35 @@ def test_scan_happy_path(client: TestClient, tmp_path: Path) -> None:
     assert all("size_bytes" in f for f in data["files"])
 
 
+def test_scan_catalog_happy_path(client: TestClient, synthetic_catalog: Path) -> None:
+    resp = client.post("/api/folders/scan", json={
+        "folder_path": str(synthetic_catalog),
+        "source_type": "catalog",
+    })
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["is_valid"] is True
+    assert data["source_type"] == "catalog"
+    assert data["raw_count"] == 8
+    assert data["truncated"] is False
+    assert data["error"] is None
+    assert all("size_bytes" in f for f in data["files"])
+
+
+def test_scan_catalog_missing_returns_invalid(
+    client: TestClient, tmp_path: Path
+) -> None:
+    resp = client.post("/api/folders/scan", json={
+        "folder_path": str(tmp_path / "missing.lrcat"),
+        "source_type": "catalog",
+    })
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["is_valid"] is False
+    assert data["source_type"] == "catalog"
+    assert data["error"] == "Catalog does not exist"
+
+
 def test_scan_rejects_relative_path(client: TestClient) -> None:
     resp = client.post("/api/folders/scan", json={"folder_path": "relative/path"})
     assert resp.status_code == 400

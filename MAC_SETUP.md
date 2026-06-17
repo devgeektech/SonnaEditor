@@ -544,9 +544,16 @@ Without `--output`, the Lite checkpoint is published to the next available
 
 ## 11. Process A Shoot
 
-This can be done from the frontend: choose Process Shoot, pick the input folder,
-choose a profile, and start processing. XMP sidecars are written next to RAWs or
-into the selected output folder, depending on the UI options.
+This can be done from the frontend: choose Process Shoot, add either a RAW
+folder or a Lightroom `.lrcat` catalog, choose a profile, select the queued
+source, and start processing. Folder processing keeps the existing RAW-folder
+flow. Catalog processing opens the `.lrcat` read-only to discover accessible RAW
+paths, runs the same Mode A/Mode B inference path, writes XMP sidecars next to
+RAWs, and writes `sonna_lightroom_edits.lua` beside `sonna_predictions.json`.
+
+To refresh an already-open Lightroom catalog, add
+`lightroom/SahaBridge.lrplugin` in Lightroom Classic's Plug-in Manager, then
+use its Import Saha Edits command to select `sonna_lightroom_edits.lua`.
 
 CLI equivalent:
 

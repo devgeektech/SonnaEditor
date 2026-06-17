@@ -170,7 +170,13 @@ Do not reuse a previous --version-stem; old checkpoints are never overwritten.
 
 5. Process new shoots.
    - Run through the Electron UI or `scripts/process_shoot_model.py`.
-   - Output XMP files are written next to RAWs by default, plus `sonna_predictions.json` for later fine-tuning.
+   - The Electron UI supports adding either RAW folders or Lightroom `.lrcat`
+     catalogs to the same processing queue. Catalog processing opens the
+     `.lrcat` read-only to discover accessible RAW paths, then runs the same
+     Mode A/Mode B inference path as folder processing.
+   - Output XMP files are written next to RAWs by default, plus
+     `sonna_predictions.json` for later fine-tuning and
+     `sonna_lightroom_edits.lua` for the Lightroom bridge plugin.
    - Optional auto straightening is controlled per run from the UI checkbox or
      `--auto-straighten`; it uses OpenCV preview-line geometry and writes
      Lightroom `CropAngle` metadata with full-frame crop bounds when
@@ -209,6 +215,7 @@ Do not reuse a previous --version-stem; old checkpoints are never overwritten.
 | Generated data/artifacts | `data/` | Created by dataset/train/audit scripts, gitignored |
 | Inference output XMP path | Next to RAWs when `write_xmp_in_place=True` | Or in the chosen output folder |
 | Prediction capture sidecar | `<output_dir>/sonna_predictions.json` or shoot folder output | Needed for later fine-tuning |
+| Lightroom bridge package | `<output_dir>/sonna_lightroom_edits.lua` or catalog parent output | Import with `lightroom/SahaBridge.lrplugin` to update an open Lightroom catalog through the plugin API |
 | Fine-tune captures | `data/captures/` or frontend-selected captures folder | User correction data |
 
 ## What Can Train The Model

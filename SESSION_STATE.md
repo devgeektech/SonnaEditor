@@ -1,7 +1,7 @@
 # Session State - Sonna Editor
 
-**Saved:** 2026-06-16 local time
-**Current phase/task:** Frontend macOS titlebar polish.
+**Saved:** 2026-06-17 local time
+**Current phase/task:** Catalog processing source for Mode A and Mode B.
 
 ## Current Workspace
 
@@ -51,6 +51,30 @@ x86_64, while macOS resolves the matching public wheels.
 - A fresh scene-stats candidate was trained at `data/models/sonna-v2-scene-stats-run01/`, but it was rejected for frontend use. It briefly published as `v1_learning/model-v2.0.1.*`, then those frontend-visible copies were removed after collapse analysis showed worse prediction spread than v2.0.0.
 
 ## What Changed This Session
+
+- Added catalog processing as a separate source path beside the existing RAW
+  folder processing flow:
+  - `/api/folders/scan` now accepts `source_type="catalog"` and can scan a
+    Lightroom `.lrcat` read-only to discover accessible RAW files referenced by
+    the catalog. Folder scans remain the default and unchanged for old callers.
+  - `/api/process` now accepts `source_type="catalog"` and forwards the catalog
+    RAW path list into the same inference pipeline used by Mode A and Mode B.
+    Catalog jobs write XMPs next to the referenced RAW files and do not write to
+    the `.lrcat` SQLite database.
+  - `process_shoot_with_model()` accepts optional explicit `raw_paths`, still
+    scans `input_dir` when omitted, and writes `sonna_lightroom_edits.lua`
+    beside `sonna_predictions.json` as the Lightroom bridge package.
+  - The Electron Process view now has separate Add folder and Add catalog
+    buttons, stores each queue row's `sourceType`, and sends that source type
+    when dispatching jobs.
+  - Added `lightroom\SahaBridge.lrplugin`, a minimal Lightroom Classic plugin
+    scaffold that imports the generated bridge package and applies develop
+    settings through Lightroom's plugin API. This is the intended route for an
+    already-open catalog to update without unsafe direct catalog writes.
+  - Verification passed: `uv run pytest tests\api\test_folders.py
+    tests\api\test_process_route.py tests\api\test_callback_bridge.py -q`
+    (`42 passed`), ruff on touched Python files/tests, and
+    `npm run build:vite` in `saha-app\`.
 
 - Fixed the macOS titlebar overlap where the Saha mark could sit behind the
   native traffic-light window controls:

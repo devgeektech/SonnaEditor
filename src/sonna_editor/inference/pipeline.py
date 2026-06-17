@@ -181,6 +181,7 @@ def _apply_temperature_clamp(slider_dict: dict[str, float | None]) -> None:
 
 
 _PREDICTIONS_FILENAME = "sonna_predictions.json"
+_LIGHTROOM_BRIDGE_FILENAME = "sonna_lightroom_edits.lua"
 
 _MODE_B_INITIAL_PROFILE_TYPE = "mode_b_initial"
 _MODE_B_SURVEY_FIELDS = {"Exposure2012", "Temperature", "Tint"}
@@ -196,6 +197,54 @@ def _extract_one(raw_path: Path, target_size: int) -> tuple[Image.Image, dict]:
     preview = extract_preview(raw_path, target_size=target_size)
     meta = extract_metadata(raw_path)
     return preview, meta
+
+
+def _lua_literal(value: object) -> str:
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, int | float):
+        return repr(float(value))
+    if value is None:
+        return "nil"
+    return json.dumps(str(value))
+
+
+def _write_lightroom_bridge_package(
+    path: Path,
+    *,
+    run_timestamp: str,
+    model_path: Path,
+    photos: list[dict[str, object]],
+) -> None:
+    """Write a Lua table that a Lightroom Classic plugin can import."""
+    lines = [
+        "return {",
+        f"  generated_at = {_lua_literal(run_timestamp)},",
+        f"  model_path = {_lua_literal(str(model_path.resolve()))},",
+        "  photos = {",
+    ]
+    for photo in photos:
+        settings = photo.get("settings")
+        if not isinstance(settings, dict):
+            settings = {}
+        lines.extend([
+            "    {",
+            f"      raw_path = {_lua_literal(photo.get('raw_path'))},",
+            f"      xmp_path = {_lua_literal(photo.get('xmp_path'))},",
+            "      settings = {",
+        ])
+        for key in sorted(settings):
+            lines.append(f"        [{_lua_literal(key)}] = {_lua_literal(settings[key])},")
+        lines.extend([
+            "      },",
+            "    },",
+        ])
+    lines.extend([
+        "  },",
+        "}",
+        "",
+    ])
+    path.write_text("\n".join(lines), encoding="utf-8")
 
 
 def _read_checkpoint_sidecar(model_path: Path) -> dict:
@@ -283,6 +332,7 @@ def process_shoot_with_model(
     input_dir: Path,
     model_path: Path,
     output_dir: Optional[Path] = None,
+    raw_paths: Optional[Iterable[Path]] = None,
     batch_size: int = 32,
     max_workers: int = 4,
     uncertainty: bool = False,
@@ -301,9 +351,13 @@ def process_shoot_with_model(
     Run model inference on all RAW files in input_dir and write XMP sidecars.
 
     Args:
-        input_dir:             Folder to scan for RAW files.
+        input_dir:             Folder to scan for RAW files, or the catalog's
+                               parent folder when raw_paths is supplied.
         model_path:            Path to trained checkpoint (.ckpt).
         output_dir:            Override: write XMPs here instead of next to RAWs.
+        raw_paths:             Optional explicit RAW list. Used by catalog
+                               processing so the existing folder scan path
+                               remains unchanged.
         batch_size:            Images per inference batch.
         max_workers:           Threads for parallel preview extraction.
         uncertainty:           If True, run MC dropout and flag low-confidence shots.
@@ -359,10 +413,27 @@ def process_shoot_with_model(
         dict with keys: processed, failed, failures, output_paths, low_confidence,
                         predictions_path, cancelled.
     """
-    raws = sorted(
-        p for p in input_dir.iterdir()
-        if p.is_file() and p.suffix.lower() in RAW_EXTENSIONS
-    )
+    if raw_paths is None:
+        raws = sorted(
+            p for p in input_dir.iterdir()
+            if p.is_file() and p.suffix.lower() in RAW_EXTENSIONS
+        )
+    else:
+        seen_raws: set[Path] = set()
+        raws = []
+        for candidate in raw_paths:
+            raw = Path(candidate)
+            if raw.suffix.lower() not in RAW_EXTENSIONS:
+                continue
+            try:
+                resolved = raw.resolve()
+            except OSError:
+                resolved = raw
+            if resolved in seen_raws or not raw.is_file():
+                continue
+            seen_raws.add(resolved)
+            raws.append(raw)
+        raws.sort(key=lambda p: (str(p.parent).lower(), p.name.lower()))
     if not raws:
         return {
             "processed": 0, "failed": 0,
@@ -490,6 +561,7 @@ def process_shoot_with_model(
     straightening_by_file: dict[str, dict[str, float | int | str | bool]] = {}
 
     xmp_dir = output_dir if output_dir is not None else input_dir
+    lightroom_bridge_photos: list[dict[str, object]] = []
 
     # Combine the static v1 skip set with the user-toggled extras (and the
     # legacy preserve_wb shim). Single frozenset, applied identically per photo.
@@ -594,13 +666,33 @@ def process_shoot_with_model(
             )
             output_paths.append(str(xmp_path))
 
+        bridge_settings: dict[str, object] = {
+            k: v for k, v in filtered_slider_dict.items()
+            if v is not None
+        }
+        bridge_settings.update(extra_attributes)
+        lightroom_bridge_photos.append({
+            "raw_path": str(raw_path),
+            "xmp_path": str(xmp_path) if not dry_run else None,
+            "settings": bridge_settings,
+        })
+
         if cancel_event is not None and cancel_event.is_set():
             cancelled = True
             break
 
     # --- Save prediction sidecar ---
     predictions_path: Optional[str] = None
+    lightroom_bridge_path: Optional[str] = None
     if save_predictions:
+        bridge_path = xmp_dir / _LIGHTROOM_BRIDGE_FILENAME
+        _write_lightroom_bridge_package(
+            bridge_path,
+            run_timestamp=run_timestamp,
+            model_path=model_path,
+            photos=lightroom_bridge_photos,
+        )
+        lightroom_bridge_path = str(bridge_path)
         sidecar = {
             "model_path": str(model_path.resolve()),
             "model_version": model_path.stem,  # e.g. "model-v1.0.1" → stem
@@ -624,6 +716,7 @@ def process_shoot_with_model(
             "auto_straighten": bool(auto_straighten),
             "straightening_engine": STRAIGHTEN_ENGINE_VERSION,
             "straightening": straightening_by_file,
+            "lightroom_bridge_path": lightroom_bridge_path,
             "slider_fields": list(config.SLIDER_FIELDS),
             "photos": full_predictions_by_file,
         }
@@ -638,5 +731,6 @@ def process_shoot_with_model(
         "output_paths": output_paths,
         "low_confidence": low_confidence,
         "predictions_path": predictions_path,
+        "lightroom_bridge_path": lightroom_bridge_path,
         "cancelled": cancelled,
     }

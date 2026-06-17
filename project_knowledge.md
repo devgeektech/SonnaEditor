@@ -48,6 +48,10 @@ The core inference flow is:
 - `data/`: gitignored local learning area. `data/training_sources/` stores source RAW/XMP inputs in separate child folders per dataset or run; `data/training_workspace/` stores generated datasets and training runs, including catalog-derived FiveK splits. Fresh clones auto-create this tree at runtime.
 - `v1_learning/`: frontend-visible published profile checkpoints plus sidecar/preset/survey files only. Generated datasets do not belong here.
 - `.saha/`: repo-local runtime state for active-profile selection, recent folders, job snapshots, Personal AI training scratch runs, and fine-tune scratch runs. Auto-created at runtime and gitignored.
+- `lightroom/SahaBridge.lrplugin/`: Lightroom Classic bridge plugin scaffold.
+  It imports the generated `sonna_lightroom_edits.lua` package and applies
+  Saha settings through Lightroom's plugin API so catalog runs can refresh an
+  open Lightroom catalog without direct `.lrcat` SQLite writes.
 - `MAC_SETUP.md`: Mac-specific setup and run guide covering clean install, backend/frontend startup, frontend-capable workflows, and CLI equivalents.
 - `SonnaEditorFoundation/`: repo-local hidden foundation-model folder by default, or `SONNA_FOUNDATION_REPO` if overridden. It contains schema-v2 `foundation_manifest.json` with `active_version` / `versions[]` lineage metadata and versioned `checkpoints/foundation-vN.ckpt` files. The active checkpoint is cumulative across real Lightroom-parameter sources: catalog and RAW+XMP runs update the same native `SonnaEditor` slider-regression checkpoint. Keep this out of gitignored `data/` but inside the SonnaEditor project root so the workspace stays self-contained. Checkpoint binaries are Git LFS-managed through `.gitattributes`; normal `git push` uploads them after `git lfs install`.
 
@@ -60,7 +64,7 @@ This section tracks what each backend source file/folder does. Keep it updated w
 | Path | Purpose |
 |---|---|
 | `src/sonna_editor/__init__.py` | Package marker for the backend Python package. |
-| `src/sonna_editor/config.py` | Central constants: repo-root/runtime paths, auto-created working-directory helpers, supported RAW extensions, model resolution, six scene-stat metadata field names, 147-slider field order, slider ranges, defaults, loss weights, confidence settings, and frontend-visible checkpoint directory `v1_learning/`. `SUPPORTED_RAW_EXTENSIONS` is the single scanned-format source of truth for training, inference, preset processing, folder APIs, and capture. |
+| `src/sonna_editor/config.py` | Central constants: repo-root/runtime paths, auto-created working-directory helpers, supported RAW extensions, model resolution, six scene-stat metadata field names, 147-slider field order, slider ranges, defaults, loss weights, confidence settings, Lightroom bridge runtime directory, and frontend-visible checkpoint directory `v1_learning/`. `SUPPORTED_RAW_EXTENSIONS` is the single scanned-format source of truth for training, inference, preset processing, folder/catalog APIs, and capture. |
 | `src/sonna_editor/foundation.py` | Foundation checkpoint discovery, foundation folder layout creation, schema-v2 manifest writing, version listing, rollback helpers, provenance metadata, and promotion of trained checkpoints into the repo-local hidden foundation folder. |
 | `src/sonna_editor/runtime.py` | Runtime helpers for selecting CUDA, Apple MPS, or CPU and configuring data-loader pinned memory safely across platforms. |
 | `src/sonna_editor/slider_set.py` | Slider-set version helpers for `v1`/`v2`, preventing checkpoint and tensor shape mismatches. |
@@ -105,7 +109,7 @@ This section tracks what each backend source file/folder does. Keep it updated w
 |---|---|
 | `src/sonna_editor/inference/__init__.py` | Package marker for inference code. |
 | `src/sonna_editor/inference/engine.py` | Checkpoint loading and batched prediction engine. Builds tensors from extracted previews/metadata plus scene stats, maps categorical metadata through the checkpoint registry, supports uncertainty sampling, and postprocesses outputs. |
-| `src/sonna_editor/inference/pipeline.py` | End-to-end shoot processing: scan RAW files using the central `config.SUPPORTED_RAW_EXTENSIONS` set, extract features, run inference, apply WB/skip semantics, optionally apply preview-based auto straightening, write XMP sidecars, write `sonna_predictions.json` including straightening engine/line diagnostics, and emit progress callbacks. |
+| `src/sonna_editor/inference/pipeline.py` | End-to-end shoot processing: scan RAW files using the central `config.SUPPORTED_RAW_EXTENSIONS` set or process an explicit RAW path list from a catalog source, extract features, run Mode A inference or Mode B Lite preset adjustment, apply WB/skip semantics, optionally apply preview-based auto straightening, write XMP sidecars, write `sonna_predictions.json` including straightening engine/line diagnostics and `lightroom_bridge_path`, emit `sonna_lightroom_edits.lua` for the Lightroom bridge plugin, and emit progress callbacks. |
 | `src/sonna_editor/inference/straighten.py` | Optional auto-straightening postprocess. Uses CLAHE-normalized OpenCV Canny edges plus probabilistic Hough lines, OpenCV line segments, and a broad Hough fallback for fragmented line evidence to estimate small Lightroom `CropAngle` corrections from preview geometry, with conservative confidence thresholds and full-frame CRS crop attributes only when selected per processing job. This is not a trained model output. |
 
 ### Fine-Tune Package
@@ -265,6 +269,10 @@ This section tracks what each backend source file/folder does. Keep it updated w
   and `photos_total` for live progress bars.
 - exposes routes for profile management, processing, and health
 - `Profile.profile_type` is surfaced from checkpoint sidecar JSON: `None` for legacy trained profiles, `"mode_b_initial"` for Lite preset-derived profiles
+- `/api/folders/scan` and `/api/process` accept `source_type` with a default
+  of `"folder"` and a catalog option of `"catalog"`. Catalog scans open
+  `.lrcat` files read-only, discover accessible non-rejected RAWs, and leave
+  the current folder path flow backward-compatible.
 
 ## UI and frontend
 
@@ -278,10 +286,11 @@ This section tracks what each backend source file/folder does. Keep it updated w
   shared shell bottom-left rail control toggles dark/light theme and persists
   it in local storage. The left rail has Home, AI Profiles, and Projects.
   Home owns the persistent queue and active-profile selector; because Home stays
-  mounted while other pages are visible, loaded folders survive tab switches.
-  Folder checkboxes are unselected by default: with no boxes checked, processing
-  is disabled; with boxes checked, processing runs those checked folders only.
-  Projects lists loaded/current folders and recent run rows by
+  mounted while other pages are visible, loaded sources survive tab switches.
+  The queue can add RAW folders or Lightroom `.lrcat` catalogs. Folder/catalog
+  checkboxes are unselected by default: with no boxes checked, processing is
+  disabled; with boxes checked, processing runs those checked sources only.
+  Projects lists loaded/current sources and recent run rows by
   loaded time. Profile rows use a three-dot actions menu for profile deletion.
   The Profile screen currently shows Personal AI profile creation as a disabled
   "Coming soon" tile; Lite profile creation remains the active creation path.

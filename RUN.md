@@ -130,7 +130,26 @@ npm run dev
 Electron starts the React UI and connects it to the backend. In development it
 can also spawn the backend itself when `uv` is on `PATH`.
 
-## 6. Optional DNG Converter
+## 6. Process Photos
+
+In the Process view, choose an active Personal AI or Lite profile, then add
+either:
+
+- A RAW folder with supported image files.
+- A Lightroom Classic `.lrcat` catalog whose referenced RAW files are mounted
+  and accessible.
+
+Catalog processing is a separate source path from RAW-folder processing. The
+backend opens the `.lrcat` read-only to discover RAW paths, then runs the same
+Mode A/Mode B inference pipeline. It writes XMP sidecars next to the RAW files
+and writes `sonna_lightroom_edits.lua` beside `sonna_predictions.json`.
+
+To update an already-open Lightroom catalog without direct SQLite writes, add
+`lightroom/SahaBridge.lrplugin` in Lightroom Classic's Plug-in Manager. After a
+run, choose the plugin's Import Saha Edits command and select the generated
+`sonna_lightroom_edits.lua` package.
+
+## 7. Optional DNG Converter
 
 For DNG conversion workflows, install Adobe DNG Converter and either use the
 default installer path or set:
@@ -145,7 +164,7 @@ PowerShell equivalent:
 $env:SONNA_DNG_CONVERTER = "C:\Path\To\Adobe DNG Converter.exe"
 ```
 
-## 7. Train A Profile
+## 8. Train A Profile
 
 Training needs target Lightroom slider values. RAW files alone are not enough
 for supervised training. Use one of these dataset sources:

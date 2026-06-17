@@ -5,11 +5,11 @@
 **Platforms:** macOS, Windows, and Linux
 **Reference hardware:** M1 Pro MacBook Pro, 32GB RAM
 **Status:** v1.2.0 production shipped; v2 training prep active on the current Windows CUDA workstation; Phase 8 (team distribution) deferred
-**Last updated:** 2026-06-15
+**Last updated:** 2026-06-17
 
 ---
 
-## Current workspace state (2026-06-15)
+## Current workspace state (2026-06-17)
 
 This checkout is a Windows development/training workspace at `C:\Users\vikas.DESKTOP-61LEE8B\Projects\SonnaEditor`.
 
@@ -22,6 +22,13 @@ This checkout is a Windows development/training workspace at `C:\Users\vikas.DES
 - **RAW format scanning:** supported RAW extensions are now centralised in `config.SUPPORTED_RAW_EXTENSIONS` and shared by dataset builds, folder/API scans, preset processing, model inference, and fine-tune capture. The current scanned formats are `.cr2`, `.cr3`, `.nef`, `.arw`, `.raf`, `.orf`, `.rw2`, `.pef`, `.dng`, `.x3f`, `.rwl`, and `.srw`. Actual preview/metadata extraction still depends on `rawpy`/LibRaw support for the specific camera file, and DNG conversion depends on Adobe DNG Converter support.
 - **Dataset timestamp handling:** RAW+XMP dataset shoot bucketing now normalizes timezone-aware capture timestamps to naive UTC before computing 12-hour shoot IDs, preventing Mac builds from failing on offset-aware ISO timestamps with `can't subtract offset-naive and offset-aware datetimes`.
 - **Production profile UX boundary:** the frontend currently exposes Lite profile creation from preset plus the six-question survey. Personal AI profile creation from RAW+XMP remains implemented behind the API/wizard code path but the Profile screen tile is disabled and labelled "Coming soon". Foundation model training is CLI-only with `scripts/train_foundation_model.py`.
+- **Catalog processing source:** the Process UI can now add a Lightroom
+  `.lrcat` catalog as a separate source type beside RAW folders. Catalog
+  processing opens the `.lrcat` read-only to discover accessible RAW paths,
+  then routes those files through the same Mode A/Mode B inference pipeline.
+  The app writes XMP sidecars next to RAWs and emits
+  `sonna_lightroom_edits.lua` for `lightroom\SahaBridge.lrplugin`; it does not
+  direct-write the catalog SQLite database.
 - **Foundation/Lite boundary:** Lite profile creation no longer depends on the currently active Personal AI profile. It resolves the active foundation checkpoint from `SONNA_FOUNDATION_CHECKPOINT`, `SONNA_FOUNDATION_REPO/foundation_manifest.json`, or `SONNA_FOUNDATION_REPO/foundation.ckpt`; the default foundation folder is now the repo-local child folder `SonnaEditorFoundation\` unless overridden. The parent repo tracks this folder, with checkpoint binaries routed through Git LFS. The foundation CLI supports real Lightroom-label training from RAW+XMP folders or trusted catalog splits. The promoted foundation checkpoint is cumulative through native `SonnaEditor` slider-regression warm starts.
 - **Foundation versioning:** every foundation run warm-starts from the active foundation checkpoint by default, writes a new versioned checkpoint, and promotes that new checkpoint as active. The manifest is now schema-v2 with `active_version`, `versions[]`, checkpoint SHA256, foundation type, capabilities, and training-source tags. Older foundation checkpoints are never overwritten; use `scripts\rollback_foundation.py` to activate a previous version. If the active checkpoint is removed, foundation resolution still falls back to the newest remaining checkpoint under `SonnaEditorFoundation\checkpoints\`.
 - **Lite low-light exposure:** the preset/Lite exposure adjuster now gives low-light frames a stronger positive exposure lift when mean/median luminance are dark and highlights are not near clipping, matching the desired Imagen-like behavior more closely while keeping WB conservative unless explicitly enabled.

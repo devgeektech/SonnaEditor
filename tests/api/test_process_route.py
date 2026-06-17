@@ -92,6 +92,42 @@ def test_process_happy_path(
     assert any(r["path"] == str(folder) for r in recent)
 
 
+def test_process_catalog_source_forwards_raw_paths(
+    client: TestClient, isolated_paths: dict[str, Path], synthetic_catalog: Path
+) -> None:
+    _make_ckpt(isolated_paths["checkpoints_dir"], "model-v1.0.1.ckpt")
+    captured: dict[str, object] = {}
+
+    def capture(**kwargs):
+        captured.update(kwargs)
+        return {
+            "processed": 1, "failed": 0, "failures": [],
+            "output_paths": [], "low_confidence": [],
+            "predictions_path": None, "cancelled": False,
+        }
+
+    with patch("sonna_editor.api.routes.process.inference_pipeline.process_shoot_with_model",
+               side_effect=capture):
+        ack = client.post("/api/process", json={
+            "folder_path": str(synthetic_catalog),
+            "source_type": "catalog",
+            "profile_id": "dp-event-v1.0.1",
+        }).json()
+        for _ in range(50):
+            snap = client.get(f"/api/jobs/{ack['job_id']}").json()
+            if snap["state"] in ("complete", "failed", "cancelled"):
+                break
+            time.sleep(0.05)
+
+    assert snap["state"] == "complete"
+    assert captured["input_dir"] == synthetic_catalog.parent
+    assert captured["output_dir"] is None
+    raw_paths = captured["raw_paths"]
+    assert isinstance(raw_paths, list)
+    assert len(raw_paths) == 8
+    assert all(isinstance(p, Path) for p in raw_paths)
+
+
 def test_process_bad_folder(
     client: TestClient, isolated_paths: dict[str, Path]
 ) -> None:

@@ -15,6 +15,7 @@ from sonna_editor.api.models import (
     RawFileEntry,
     RecentFolder,
 )
+from sonna_editor.data.catalog import CatalogError, connect_catalog, find_edited_photos
 
 router = APIRouter()
 
@@ -29,6 +30,105 @@ def _scan_raws(folder: Path) -> list[Path]:
     )
 
 
+def raw_paths_from_catalog(catalog_path: Path) -> list[Path]:
+    """Return existing RAW paths referenced by a Lightroom catalog.
+
+    The catalog is opened read-only via `connect_catalog`; missing files,
+    rejected rows, duplicates, and unsupported image extensions are excluded.
+    """
+    conn = connect_catalog(catalog_path)
+    try:
+        photos = find_edited_photos(conn)
+    finally:
+        conn.close()
+
+    raws: list[Path] = []
+    seen: set[Path] = set()
+    for photo in photos:
+        if photo.get("is_missing"):
+            continue
+        raw = Path(photo["file_path"])
+        if raw.suffix.lower() not in config.SUPPORTED_RAW_EXTENSIONS:
+            continue
+        try:
+            resolved = raw.resolve()
+        except OSError:
+            resolved = raw
+        if resolved in seen:
+            continue
+        if not raw.is_file():
+            continue
+        seen.add(resolved)
+        raws.append(raw)
+    return sorted(raws, key=lambda p: (str(p.parent).lower(), p.name.lower()))
+
+
+def _scan_catalog(catalog_path: Path, raw_path_str: str) -> FolderScanResponse:
+    if not catalog_path.exists():
+        return FolderScanResponse(
+            folder_path=raw_path_str,
+            source_type="catalog",
+            raw_count=0,
+            files=[],
+            is_valid=False,
+            error="Catalog does not exist",
+        )
+    if not catalog_path.is_file():
+        return FolderScanResponse(
+            folder_path=raw_path_str,
+            source_type="catalog",
+            raw_count=0,
+            files=[],
+            is_valid=False,
+            error="Path is not a catalog file",
+        )
+    if catalog_path.suffix.lower() != ".lrcat":
+        return FolderScanResponse(
+            folder_path=raw_path_str,
+            source_type="catalog",
+            raw_count=0,
+            files=[],
+            is_valid=False,
+            error="Path is not a Lightroom catalog (.lrcat)",
+        )
+
+    try:
+        raws = raw_paths_from_catalog(catalog_path)
+    except CatalogError as exc:
+        return FolderScanResponse(
+            folder_path=raw_path_str,
+            source_type="catalog",
+            raw_count=0,
+            files=[],
+            is_valid=False,
+            error=str(exc),
+        )
+
+    if not raws:
+        return FolderScanResponse(
+            folder_path=raw_path_str,
+            source_type="catalog",
+            raw_count=0,
+            files=[],
+            is_valid=False,
+            error="No available RAW files found in this catalog",
+        )
+
+    truncated = len(raws) > _MAX_FILES_RETURNED
+    visible = raws[:_MAX_FILES_RETURNED]
+    xmp_conflict_count = sum(1 for raw in raws if raw.with_suffix(".xmp").exists())
+    return FolderScanResponse(
+        folder_path=raw_path_str,
+        source_type="catalog",
+        raw_count=len(raws),
+        files=[RawFileEntry(name=p.name, size_bytes=p.stat().st_size) for p in visible],
+        is_valid=True,
+        error=None,
+        truncated=truncated,
+        xmp_conflict_count=xmp_conflict_count,
+    )
+
+
 @router.post("/folders/scan", response_model=FolderScanResponse)
 def scan_folder(req: FolderScanRequest) -> FolderScanResponse:
     raw_path_str = req.folder_path
@@ -37,9 +137,13 @@ def scan_folder(req: FolderScanRequest) -> FolderScanResponse:
     if not folder.is_absolute():
         raise HTTPException(status_code=400, detail="Path must be absolute")
 
+    if req.source_type == "catalog" or folder.suffix.lower() == ".lrcat":
+        return _scan_catalog(folder, raw_path_str)
+
     if not folder.exists():
         return FolderScanResponse(
             folder_path=raw_path_str,
+            source_type="folder",
             raw_count=0,
             files=[],
             is_valid=False,
@@ -48,6 +152,7 @@ def scan_folder(req: FolderScanRequest) -> FolderScanResponse:
     if not folder.is_dir():
         return FolderScanResponse(
             folder_path=raw_path_str,
+            source_type="folder",
             raw_count=0,
             files=[],
             is_valid=False,
@@ -58,6 +163,7 @@ def scan_folder(req: FolderScanRequest) -> FolderScanResponse:
     if not raws:
         return FolderScanResponse(
             folder_path=raw_path_str,
+            source_type="folder",
             raw_count=0,
             files=[],
             is_valid=False,
@@ -75,6 +181,7 @@ def scan_folder(req: FolderScanRequest) -> FolderScanResponse:
     )
     return FolderScanResponse(
         folder_path=raw_path_str,
+        source_type="folder",
         raw_count=len(raws),
         files=[RawFileEntry(name=p.name, size_bytes=p.stat().st_size) for p in visible],
         is_valid=True,
