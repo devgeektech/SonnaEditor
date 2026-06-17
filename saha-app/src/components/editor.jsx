@@ -68,10 +68,6 @@ const folderBasename = (p) => {
   return segs[segs.length - 1] || p || '';
 };
 
-const dotColor = (status) =>
-  status === 'flag' ? SONNA.amber : status === 'fail' ? SONNA.red : SONNA.green;
-
-
 // ── LEFT column — multi-folder queue ─────────────────────
 function ChevronIcon({ expanded }) {
   return (
@@ -150,6 +146,8 @@ function FolderRow({
 }) {
   const folderName = folderBasename(folder.folderPath);
   const sourceLabel = folder.sourceType === 'catalog' ? 'catalog' : 'folder';
+  const visibleFiles = folder.fileList.slice(0, 50);
+  const hiddenFileCount = Math.max(0, folder.fileList.length - visibleFiles.length);
 
   return (
     <div style={{ padding: '4px 12px' }}>
@@ -219,7 +217,7 @@ function FolderRow({
       </div>
       {expanded && (
         <div style={{ padding: '4px 0 6px 28px' }}>
-          {folder.fileList.map((f, j) => (
+          {visibleFiles.map((f, j) => (
             <div key={`${f.name}-${j}`} style={{
               display: 'flex', justifyContent: 'space-between', alignItems: 'center',
               padding: '3px 8px',
@@ -233,6 +231,14 @@ function FolderRow({
               </span>
             </div>
           ))}
+          {hiddenFileCount > 0 && (
+            <div style={{
+              padding: '6px 8px 2px',
+              ...Tnum, fontSize: 10.5, color: SONNA.fgFaint,
+            }}>
+              +{hiddenFileCount.toLocaleString()} more
+            </div>
+          )}
           {folder.fileList.length === 0 && (
             <div style={{ padding: '6px 8px', fontSize: 11, color: SONNA.fgFaint }}>
               No files listed
@@ -248,6 +254,7 @@ function LeftFolderQueue({
   queue,
   expandedSet,
   locked,
+  isAddingCatalog,
   onAddFolder,
   onAddCatalog,
   onRemove,
@@ -256,6 +263,7 @@ function LeftFolderQueue({
 }) {
   const totalRaws = queue.reduce((sum, f) => sum + (f.fileCount || 0), 0);
   const catalogCount = queue.filter((f) => f.sourceType === 'catalog').length;
+  const controlsLocked = locked || isAddingCatalog;
 
   return (
     <div style={{
@@ -269,56 +277,66 @@ function LeftFolderQueue({
           display: 'flex', alignItems: 'baseline', justifyContent: 'space-between',
         }}>
           <div style={Tlabel}>Queue</div>
-          {locked && (
+          {(locked || isAddingCatalog) && (
             <span style={{ fontSize: 10, color: SONNA.fgFaint, fontStyle: 'italic' }}>
-              Locked while processing
+              {isAddingCatalog ? 'Loading catalog' : 'Locked while processing'}
             </span>
           )}
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginTop: 12 }}>
           <button
             onClick={onAddFolder}
-            disabled={locked}
+            disabled={controlsLocked}
             style={{
               height: 36,
               background: SONNA.bgLifted,
               border: `1px solid ${SONNA.line}`,
               borderRadius: 3,
-              color: locked ? SONNA.fgFaint : SONNA.fg,
+              color: controlsLocked ? SONNA.fgFaint : SONNA.fg,
               fontFamily: F, fontSize: 12, fontWeight: 500,
               display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
-              cursor: locked ? 'not-allowed' : 'pointer',
-              opacity: locked ? 0.5 : 1,
+              cursor: controlsLocked ? 'not-allowed' : 'pointer',
+              opacity: controlsLocked ? 0.5 : 1,
             }}
           >
             <svg width="11" height="11" viewBox="0 0 11 11" fill="none">
               <path d="M5.5 1.5v8M1.5 5.5h8"
-                stroke={locked ? SONNA.fgFaint : SONNA.fgMute}
+                stroke={controlsLocked ? SONNA.fgFaint : SONNA.fgMute}
                 strokeWidth="1.3" strokeLinecap="round" />
             </svg>
             <span>Add folder</span>
           </button>
           <button
             onClick={onAddCatalog}
-            disabled={locked}
+            disabled={controlsLocked}
             style={{
               height: 36,
               background: SONNA.bgLifted,
               border: `1px solid ${SONNA.line}`,
               borderRadius: 3,
-              color: locked ? SONNA.fgFaint : SONNA.fg,
+              color: controlsLocked ? SONNA.fgFaint : SONNA.fg,
               fontFamily: F, fontSize: 12, fontWeight: 500,
               display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
-              cursor: locked ? 'not-allowed' : 'pointer',
-              opacity: locked ? 0.5 : 1,
+              cursor: controlsLocked ? 'not-allowed' : 'pointer',
+              opacity: controlsLocked ? 0.5 : 1,
             }}
           >
-            <svg width="11" height="11" viewBox="0 0 11 11" fill="none">
-              <path d="M2 2.2h7v6.6H2zM3.4 4h4.2M3.4 5.5h4.2"
-                stroke={locked ? SONNA.fgFaint : SONNA.fgMute}
-                strokeWidth="1.1" strokeLinecap="round" strokeLinejoin="round" />
-            </svg>
-            <span>Add catalog</span>
+            {isAddingCatalog ? (
+              <div title="Loading catalog" style={{
+                width: 12, height: 12,
+                borderRadius: '50%',
+                border: `1.5px solid ${SONNA.ochre}`,
+                borderTopColor: 'transparent',
+                animation: 'saha-spin 0.8s linear infinite',
+              }} />
+            ) : (
+              <svg width="11" height="11" viewBox="0 0 11 11" fill="none">
+                <path d="M2 2.2h7v6.6H2zM3.4 4h4.2M3.4 5.5h4.2"
+                  stroke={controlsLocked ? SONNA.fgFaint : SONNA.fgMute}
+                  strokeWidth="1.1" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            )}
+            <span>{isAddingCatalog ? 'Loading catalog' : 'Add catalog'}</span>
           </button>
         </div>
       </div>
@@ -329,7 +347,20 @@ function LeftFolderQueue({
             padding: '40px 24px', textAlign: 'center',
             fontSize: 12, color: SONNA.fgFaint, lineHeight: 1.5,
           }}>
-            No sources queued.<br />Add a folder or catalog to start.
+            {isAddingCatalog ? (
+              <>
+                <div style={{
+                  width: 22, height: 22, margin: '0 auto 14px',
+                  borderRadius: '50%',
+                  border: `2px solid ${SONNA.ochre}`,
+                  borderTopColor: 'transparent',
+                  animation: 'saha-spin 0.8s linear infinite',
+                }} />
+                Loading catalog...
+              </>
+            ) : (
+              <>No sources queued.<br />Add a folder or catalog to start.</>
+            )}
           </div>
         ) : (
           queue.map((folder, i) => (
@@ -643,11 +674,12 @@ function RightTransitioning({ queue }) {
   );
 }
 
-function RightProcessing({ snapshot, liveLog, wsStatus, onCancel, queue }) {
+function RightProcessing({ snapshot, wsStatus, onCancel, queue }) {
   const total = snapshot.photos_total || 0;
   const processed = snapshot.photos_processed || 0;
   const prepared = snapshot.photos_prepared || 0;
-  const done = Math.max(processed, prepared);
+  const done = total ? Math.min(processed, total) : processed;
+  const preparedDone = total ? Math.min(prepared, total) : prepared;
   const pct = total ? Math.round((done / total) * 100) : 0;
 
   // Queue position: 1-based index of the row currently running, derived from
@@ -772,38 +804,40 @@ function RightProcessing({ snapshot, liveLog, wsStatus, onCancel, queue }) {
         padding: '10px 20px 6px',
         display: 'flex', justifyContent: 'space-between',
       }}>
-        <span style={Tlabel}>Live log</span>
-        <span style={{ ...Tnum, fontSize: 10, color: SONNA.fgFaint }}>tail -f</span>
+        <span style={Tlabel}>Output</span>
+        <span style={{ ...Tnum, fontSize: 10, color: SONNA.fgFaint }}>
+          {processed.toLocaleString()} done
+        </span>
       </div>
-      <div style={{ flex: 1, minHeight: 0, overflow: 'auto', padding: '4px 14px 12px' }}>
-        {liveLog.slice(0, 30).map((l, i) => (
-          <div key={i} style={{
-            padding: '5px 6px',
-            display: 'grid', gridTemplateColumns: '1fr 8px',
-            alignItems: 'center', columnGap: 10,
-            opacity: 1 - Math.min(i * 0.04, 0.6),
+      <div style={{ flex: 1, minHeight: 0, padding: '4px 14px 12px' }}>
+        <div style={{
+          padding: '8px 6px',
+          display: 'flex', flexDirection: 'column', gap: 8,
+        }}>
+          <div style={{
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+            ...Tnum, fontSize: 11, color: SONNA.fg,
           }}>
-            <div style={{ minWidth: 0 }}>
-              <div style={{
-                ...Tnum, fontSize: 11, color: SONNA.fg,
-                whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
-              }}>{l.name}</div>
-              <div style={{
-                ...Tnum, fontSize: 10, color: SONNA.fgFaint, marginTop: 1,
-                whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
-              }}>{l.edit_summary}</div>
-            </div>
-            <span style={{
-              width: 8, height: 8, borderRadius: '50%',
-              background: dotColor(l.status),
+            <span>XMP sidecars</span>
+            <span>{done.toLocaleString()} / {total.toLocaleString()}</span>
+          </div>
+          <div style={{
+            height: 3,
+            background: SONNA.bgLifted, borderRadius: 2, overflow: 'hidden',
+          }}>
+            <div style={{
+              width: `${pct}%`, height: '100%', background: SONNA.ochre,
+              transition: 'width 200ms ease-out',
             }} />
           </div>
-        ))}
-        {liveLog.length === 0 && (
-          <div style={{ padding: '12px 6px', fontSize: 11, color: SONNA.fgFaint }}>
-            Waiting for first photo…
+          <div style={{
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+            ...Tnum, fontSize: 10, color: SONNA.fgFaint,
+          }}>
+            <span>Previews ready</span>
+            <span>{preparedDone.toLocaleString()} / {total.toLocaleString()}</span>
           </div>
-        )}
+        </div>
       </div>
     </div>
   );
@@ -1067,6 +1101,7 @@ export function Editor({
   }, [activeProfile?.id]);
   const [autoStraighten, setAutoStraighten] = useState(false);
   const [error, setError] = useState(null);
+  const [isAddingCatalog, setIsAddingCatalog] = useState(false);
 
   // useRecentFolders is retained for RightEmpty's "Last run" tile only — the
   // left-panel Recent folders section was removed in 2a. Full hook removal is
@@ -1186,6 +1221,7 @@ export function Editor({
     if (runResults.length > 0 && !hasQueuedFolders) {
       clearRunState();
     }
+    setIsAddingCatalog(true);
     try {
       const result = await scanFolder(path, 'catalog');
       if (!result.is_valid) {
@@ -1204,6 +1240,8 @@ export function Editor({
       }]);
     } catch (e) {
       setError({ source: 'scan', message: e.message });
+    } finally {
+      setIsAddingCatalog(false);
     }
   }, [runResults.length, hasQueuedFolders, clearRunState]);
 
@@ -1516,7 +1554,6 @@ export function Editor({
       rightColumn = (
         <RightProcessing
           snapshot={job.current.snapshot}
-          liveLog={job.current.liveLog}
           wsStatus={job.current.wsStatus}
           onCancel={handleCancel}
           queue={queue}
@@ -1551,6 +1588,7 @@ export function Editor({
           queue={queue}
           expandedSet={expandedSet}
           locked={isQueueRunning}
+          isAddingCatalog={isAddingCatalog}
           onAddFolder={handleAddFolder}
           onAddCatalog={handleAddCatalog}
           onRemove={handleRemove}

@@ -471,6 +471,13 @@ Lite checkpoints are marked with `profile_type: mode_b_initial` in the sidecar J
   only those selected folders. This matters for per-run options like Auto
   straighten because they are forwarded through the selected `job.start()`
   payload.
+- Process queue/status UI, 2026-06-17: adding a Lightroom catalog shows a
+  queue-level loading spinner until the catalog scan returns. Expanded source
+  rows show at most 50 discovered files with a remaining-count summary. The
+  right Status sidebar uses a stable Output summary instead of a per-file Last
+  edit ticker, and its main percent follows completed XMP writes rather than
+  early preview-prepared progress so it does not hit 100% before file writing
+  is actually complete.
 - Raw metadata extraction uses embedded JPEG EXIF first, then supplements from a `.xmp` sidecar if present.
 - Fresh `arch_version=3` models consume preview-derived scene luminance statistics and use staged output-head conditioning. Existing `arch_version=1`/`2` checkpoints load unchanged and keep their saved head shapes.
 

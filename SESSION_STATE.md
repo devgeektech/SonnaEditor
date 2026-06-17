@@ -52,6 +52,21 @@ x86_64, while macOS resolves the matching public wheels.
 
 ## What Changed This Session
 
+- Polished the Process queue/status UI after catalog-processing feedback:
+  - Adding a Lightroom catalog now sets a visible queue-level loading state and
+    spinner while the `.lrcat` scan is running, instead of leaving the queue
+    panel looking idle after the file picker closes.
+  - Expanded queued-source rows now render only the first 50 discovered files
+    plus a remaining-count summary, so large catalogs do not make the queue
+    panel render thousands of filenames.
+  - The right Status sidebar no longer shows a per-file Last edit ticker while
+    the job is running. It now shows a stable Output summary with XMP sidecars
+    written and previews prepared.
+  - The main processing percent now follows completed XMP writes, not the
+    earlier preview-prepared count, so it does not show 100% while the app is
+    still writing files one by one.
+  - Verification: `npm run build:vite` passed in `saha-app\`.
+
 - Added catalog processing as a separate source path beside the existing RAW
   folder processing flow:
   - `/api/folders/scan` now accepts `source_type="catalog"` and can scan a

@@ -16,7 +16,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { cancelJob, getJob, jobStreamUrl, startProcess } from '../api/client.js';
 import { connectJobStream } from '../api/websocket.js';
 
-const LIVE_LOG_CAP = 200;
+const LIVE_LOG_CAP = 1;
 const POLL_INTERVAL_MS = 1000;
 
 const TERMINAL_STATES = new Set(['complete', 'cancelled', 'failed']);
