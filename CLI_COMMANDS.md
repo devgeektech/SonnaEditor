@@ -172,10 +172,11 @@ Do not reuse a previous --version-stem; old checkpoints are never overwritten.
    - Run through the Electron UI or `scripts/process_shoot_model.py`.
    - Output XMP files are written next to RAWs by default, plus `sonna_predictions.json` for later fine-tuning.
    - Optional auto straightening is controlled per run from the UI checkbox or
-     `--auto-straighten`; it uses OpenCV preview-line geometry and writes
-     Lightroom `CropAngle` metadata with full-frame crop bounds when
-     confident. The predictions sidecar records straightening engine and
-     line-support diagnostics. It does not require retraining.
+     `--auto-straighten`; it uses OpenCV preview-line geometry, then scores
+     horizon, architecture, and mixed-axis evidence before writing Lightroom
+     `CropAngle` metadata with full-frame crop bounds when confident. The
+     predictions sidecar records straightening engine, scene type, horizon/axis
+     scores, and line-support diagnostics. It does not require retraining.
 
 6. Fine-tune later.
    - Capture final Lightroom tweaks.

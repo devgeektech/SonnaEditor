@@ -555,5 +555,13 @@ def test_pipeline_auto_straighten_writes_crop_angle_and_sidecar(
     assert sidecar["auto_straighten"] is True
     assert sidecar["straightening_engine"].startswith("opencv-")
     assert sidecar["straightening"]["tilted.cr3"]["applied"] is True
+    assert sidecar["straightening"]["tilted.cr3"]["scene_type"] in {
+        "horizon",
+        "architecture",
+        "mixed_axis",
+    }
+    assert "horizon_score" in sidecar["straightening"]["tilted.cr3"]
+    assert "axis_score" in sidecar["straightening"]["tilted.cr3"]
     assert sidecar["straightening"]["tilted.cr3"]["line_count"] > 0
+    assert sidecar["straightening"]["tilted.cr3"]["horizontal_line_count"] > 0
     assert sidecar["straightening"]["tilted.cr3"]["line_length_px"] > 0

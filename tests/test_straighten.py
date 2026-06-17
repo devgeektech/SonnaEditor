@@ -100,6 +100,42 @@ def _fragmented_horizon_image(angle_degrees: float) -> Image.Image:
     return image
 
 
+def _horizon_with_opposing_verticals_image(
+    horizon_angle_degrees: float,
+    vertical_angle_degrees: float,
+) -> Image.Image:
+    image = Image.new("RGB", (720, 480), (166, 194, 226))
+    draw = ImageDraw.Draw(image)
+    draw.rectangle((0, 235, 720, 480), fill=(92, 130, 86))
+    centre = (360.0, 240.0)
+    horizon = [(40.0, 230.0), (680.0, 230.0)]
+    draw.line(
+        _rotate_points(horizon, horizon_angle_degrees, centre),
+        fill=(40, 68, 48),
+        width=4,
+    )
+
+    vertical_centre = (360.0, 240.0)
+    for x in (120.0, 170.0, 220.0, 500.0, 555.0, 610.0):
+        line = [(x, 70.0), (x, 430.0)]
+        draw.line(
+            _rotate_points(line, vertical_angle_degrees, vertical_centre),
+            fill=(76, 76, 76),
+            width=3,
+        )
+    return image
+
+
+def _soft_portrait_like_image() -> Image.Image:
+    image = Image.new("RGB", (420, 560), (212, 198, 184))
+    draw = ImageDraw.Draw(image)
+    draw.ellipse((132, 72, 288, 242), fill=(178, 132, 112))
+    draw.rounded_rectangle((105, 240, 315, 515), radius=80, fill=(58, 66, 78))
+    draw.line((150, 300, 270, 360), fill=(70, 75, 86), width=2)
+    draw.line((260, 285, 165, 390), fill=(72, 78, 88), width=2)
+    return image
+
+
 def test_estimate_straighten_angle_detects_small_tilt() -> None:
     result = estimate_straighten_angle(_tilted_line_image(3.0))
 
@@ -145,6 +181,30 @@ def test_estimate_straighten_angle_detects_fragmented_horizon() -> None:
 
     assert result.applied is True
     assert result.angle_degrees == pytest.approx(2.0, abs=0.8)
+    assert result.scene_type in {"horizon", "mixed_axis"}
+
+
+def test_estimate_straighten_angle_prefers_horizon_over_vertical_distractors() -> None:
+    result = estimate_straighten_angle(
+        _horizon_with_opposing_verticals_image(
+            horizon_angle_degrees=3.0,
+            vertical_angle_degrees=-2.0,
+        )
+    )
+
+    assert result.applied is True
+    assert result.scene_type == "horizon"
+    assert result.angle_degrees == pytest.approx(3.0, abs=0.7)
+    assert result.horizon_score > result.axis_score * 0.8
+    assert result.horizontal_line_count > 0
+    assert result.vertical_line_count > 0
+
+
+def test_estimate_straighten_angle_skips_soft_portrait_without_structure() -> None:
+    result = estimate_straighten_angle(_soft_portrait_like_image())
+
+    assert result.applied is False
+    assert result.reason in {"angle_too_small", "too_few_edges", "too_few_lines"}
 
 
 def test_estimate_straighten_angle_skips_random_texture() -> None:

@@ -75,12 +75,16 @@ This checkout is a Windows development/training workspace at `C:\Users\vikas.DES
   with `auto_straighten` forwarded through that selected-folder job payload.
   The estimator now uses CLAHE-normalized OpenCV Canny edges plus probabilistic
   Hough lines, OpenCV line segments, and a broad Hough fallback for fragmented
-  line evidence to derive the small Lightroom `CropAngle`, with high-texture
-  frames skipped. On 2026-06-16 the current estimator was validated read-only
+  line evidence, then classifies the line evidence into horizon, architecture,
+  or mixed-axis candidates before choosing the Lightroom `CropAngle`.
+  Horizon-specific scoring can prefer a long horizon over conflicting vertical
+  distractors, while high-texture frames are still skipped. On 2026-06-16 the
+  prior estimator was validated read-only
   on 500 real CR3 previews in `OneDrive\Pictures\Testing_Sonna`: 310 applied,
   190 skipped as `angle_too_small`, 0 extraction errors. New sidecars record
-  `straightening_engine`, `line_count`, and `line_length_px` so stale runs or
-  low-recall batches can be audited immediately. A later Lightroom Classic
+  `straightening_engine`, `scene_type`, `horizon_score`, `axis_score`,
+  horizontal/vertical line counts, `line_count`, and `line_length_px` so stale
+  runs or low-recall batches can be audited immediately. A later Lightroom Classic
   check with user-supplied `0H5A6295_.xmp` showed angle-only crop metadata
   (`HasCrop` + `CropAngle`) can still display as Angle `0.00`; applied
   straightening now writes full-frame `CropTop/CropLeft/CropBottom/CropRight`

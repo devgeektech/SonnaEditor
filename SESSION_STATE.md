@@ -95,9 +95,10 @@ x86_64, while macOS resolves the matching public wheels.
     that folder applied straightening to 310 files and skipped 190 as
     `angle_too_small`; there were no preview extraction errors.
   - `sonna_predictions.json` now records `straightening_engine:
-    opencv-clahe-canny-lines-v2` plus per-photo `line_count` and
-    `line_length_px`, so future 300+ image runs can be audited immediately if
-    Lightroom appears not to show crop-angle changes.
+    opencv-scene-horizon-lines-v3` plus per-photo `scene_type`,
+    `horizon_score`, `axis_score`, horizontal/vertical line counts,
+    `line_count`, and `line_length_px`, so future 300+ image runs can be
+    audited immediately if Lightroom appears not to show crop-angle changes.
   - Follow-up validation against user-supplied `0H5A6295_.xmp` showed the Mac
     run did write `crs:HasCrop="True"` / `crs:CropAngle="+5"`, while Lightroom
     Classic still displayed Angle `0.00`. The XMP lacked full-frame crop bounds,
@@ -108,6 +109,13 @@ x86_64, while macOS resolves the matching public wheels.
     manual correct direction `+5.94`). The OpenCV residual-to-Lightroom mapping
     was reversed; `estimate_straighten_angle()` now keeps the residual sign for
     Lightroom `CropAngle` instead of negating it.
+  - The estimator is now scene-aware and horizon-aware. Detected OpenCV line
+    evidence keeps orientation, length, and position, then scores horizon,
+    architecture, and mixed-axis candidates separately. Horizon-specific
+    handling can choose a long horizon over conflicting vertical distractors,
+    while architecture frames still rely on consistent horizontal plus vertical
+    support. Added regression coverage for horizon-over-vertical-distractor
+    selection and soft portrait/detail skip behavior.
   - Added `opencv-python-headless==4.13.0.92` to `pyproject.toml` / `uv.lock`.
   - Added regression coverage for room-like tilted geometry, random texture
     skip behavior, full-frame crop bounds, and direct XMP serialization of
@@ -121,6 +129,12 @@ x86_64, while macOS resolves the matching public wheels.
     `crs:HasCrop="True"`, full-frame crop bounds, `crs:CropAngle`, and the
     new diagnostics. A synthetic +3 degree tilt smoke check now writes
     `CropAngle="+2.9508"`, confirming the corrected Lightroom sign direction.
+  - Verification after the scene-aware pass: focused straightening suite passed
+    (`15 passed`), Ruff passed for touched files, and `py_compile` passed for
+    `src\sonna_editor\inference\straighten.py` plus
+    `src\sonna_editor\inference\pipeline.py`. Full backend verification also
+    passed: `uv run ruff check .` and `uv run pytest -q` (`771 passed, 45
+    skipped, 1 existing PyTorch scalar-conversion warning`).
 
 - Removed the login page "What's new" card and the compatibility/version strip
   underneath it.
@@ -820,10 +834,11 @@ x86_64, while macOS resolves the matching public wheels.
 - Mode B/Lite checkpoints now inherit the configured foundation checkpoint's native slider set and field count. Before fine-tuning, the UI/CLI processing path treats `mode_b_initial` as an Imagen-aligned Lite profile: preset look fixed, per-photo Exposure/WB corrections only. After fine-tuning, the same profile can move back to normal model inference.
 - Auto straightening is opt-in and runs after preview extraction during
   processing. It uses CLAHE-normalized OpenCV Canny edges plus Hough/LSD line
-  geometry to estimate small Lightroom `CropAngle` rotations, writes crop
-  metadata only when confidence is high, and records skipped/applied diagnostics
-  in `sonna_predictions.json`. It is independent of training and checkpoint
-  versioning.
+  geometry, then classifies the evidence into horizon, architecture, or
+  mixed-axis candidates before estimating small Lightroom `CropAngle`
+  rotations. It writes crop metadata only when scene-specific confidence is
+  high, and records skipped/applied diagnostics in `sonna_predictions.json`.
+  It is independent of training and checkpoint versioning.
 - The Process UI requires explicit row selection. With no checked queued rows,
   Process Selected is disabled and no job is dispatched; with checked rows, it
   runs only the selected queued folders. Auto straighten follows the same

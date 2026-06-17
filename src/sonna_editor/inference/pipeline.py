@@ -549,8 +549,13 @@ def process_shoot_with_model(
                 "confidence": round(straightening_result.confidence, 4),
                 "applied": straightening_result.applied,
                 "reason": straightening_result.reason,
+                "scene_type": straightening_result.scene_type,
+                "horizon_score": straightening_result.horizon_score,
+                "axis_score": straightening_result.axis_score,
                 "edge_count": straightening_result.edge_count,
                 "line_count": straightening_result.line_count,
+                "horizontal_line_count": straightening_result.horizontal_line_count,
+                "vertical_line_count": straightening_result.vertical_line_count,
                 "line_length_px": straightening_result.total_line_length,
             }
 
