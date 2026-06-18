@@ -102,7 +102,12 @@ def _grey_world_wb(image: Image.Image) -> tuple[float, float]:
 
     # Heuristic: each 0.1 deviation in rg/bg ≈ ~100K temp shift
     temp_delta = (bg - rg) * 1000.0  # positive = warmer correction needed
-    tint_delta = (rg - bg) * 10.0    # crude tint estimation
+
+    # Tint is the green-magenta axis, not the red-blue Temperature axis.
+    # If red+blue outweigh green, the frame is already magenta/pink and needs
+    # a negative (greener) correction; if green dominates, add magenta.
+    rb_over_g = ((mean_r + mean_b) * 0.5) / mean_g
+    tint_delta = (1.0 - rb_over_g) * 20.0
 
     return float(temp_delta), float(tint_delta)
 

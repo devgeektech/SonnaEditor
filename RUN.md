@@ -239,7 +239,7 @@ So `catalog_dataset.py` is the catalog-based dataset preparation module. It can 
 The Saha frontend has two profile creation paths:
 
 - **Personal AI profile:** choose a folder containing RAW files and matching Lightroom `.xmp` sidecars. The backend resolves the hidden foundation checkpoint, builds the dataset, warm-starts training from that foundation, publishes a versioned checkpoint into `v1_learning/`, and streams progress through the normal job API.
-- **Lite profile:** choose a Lightroom preset and answer the six-question style survey. The backend derives a `mode_b_initial` checkpoint from the configured foundation checkpoint, the preset, and all six survey answers. The initial Lite run dynamically adjusts Exposure, Temperature, and Tint while preset look sliders stay fixed.
+- **Lite profile:** choose a Lightroom preset and answer the six-question style survey. The backend derives a `mode_b_initial` checkpoint from the configured foundation checkpoint, the preset, and all six answers. The initial Lite run dynamically adjusts Exposure, Temperature, and Tint while preset look sliders stay fixed. Tint calibration is deliberately gentle: the strongest survey answer maps to 10 Lightroom tint units, and per-photo Tint correction uses green-vs-magenta balance.
 
 Profile deletion from the frontend asks for confirmation before removing the local checkpoint and sidecar files. Active profiles still cannot be deleted until another profile is activated.
 
@@ -384,8 +384,9 @@ uv run python scripts\process_shoot_model.py `
 OpenCV Canny + Hough/LSD line detection on the extracted preview, then scores
 horizon, architecture, and mixed-axis evidence before writing Lightroom
 `CropAngle` metadata. It does not retrain or alter the selected profile
-checkpoint. Applied results write full-frame crop bounds with the angle so
-Lightroom Classic activates the crop state. `sonna_predictions.json` records
+checkpoint. Applied results write centred same-as-shot aspect crop bounds with
+the angle so Lightroom Classic activates the crop state without forcing a new
+custom crop ratio. `sonna_predictions.json` records
 `straightening_engine`, `scene_type`, `horizon_score`, `axis_score`,
 horizontal/vertical line counts, `line_count`, and `line_length_px` for each
 photo so a batch can be audited if Lightroom does not appear to show

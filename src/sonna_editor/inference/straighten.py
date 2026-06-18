@@ -470,18 +470,62 @@ def estimate_straighten_angle(image: Image.Image) -> StraightenResult:
     )
 
 
-def crop_angle_attributes(result: StraightenResult) -> dict[str, str]:
-    """Return Lightroom CRS attributes for an applied straighten result."""
+def crop_angle_attributes(
+    result: StraightenResult,
+    image_size: tuple[int, int] | None = None,
+) -> dict[str, str]:
+    """Return Lightroom CRS crop attributes for an applied straighten result.
+
+    Lightroom needs explicit crop bounds for `CropAngle` to activate reliably
+    from a generated sidecar. Keep those bounds centred and same-as-shot aspect
+    so straightening does not turn the crop into a new arbitrary ratio.
+    """
     if not result.applied:
         return {}
+    top, left, bottom, right = _straighten_crop_bounds(
+        result.angle_degrees,
+        image_size,
+    )
     return {
         "HasCrop": "True",
-        "CropTop": "0",
-        "CropLeft": "0",
-        "CropBottom": "1",
-        "CropRight": "1",
+        "CropTop": _format_crop_bound(top),
+        "CropLeft": _format_crop_bound(left),
+        "CropBottom": _format_crop_bound(bottom),
+        "CropRight": _format_crop_bound(right),
         "CropAngle": _format_lightroom_angle(result.angle_degrees),
+        "CropConstrainToWarp": "0",
+        "CropConstrainToUnitSquare": "1",
+        "AlreadyApplied": "False",
     }
+
+
+def _straighten_crop_bounds(
+    angle_degrees: float,
+    image_size: tuple[int, int] | None,
+) -> tuple[float, float, float, float]:
+    if image_size is None:
+        return 0.0, 0.0, 1.0, 1.0
+    width, height = image_size
+    if width <= 0 or height <= 0:
+        return 0.0, 0.0, 1.0, 1.0
+
+    theta = abs(radians(angle_degrees))
+    c = abs(cos(theta))
+    s = abs(sin(theta))
+    scale_x = width / (width * c + height * s)
+    scale_y = height / (width * s + height * c)
+    scale = max(0.0, min(1.0, scale_x, scale_y))
+    margin = (1.0 - scale) * 0.5
+    return margin, margin, 1.0 - margin, 1.0 - margin
+
+
+def _format_crop_bound(value: float) -> str:
+    value = max(0.0, min(1.0, value))
+    if value == 0.0:
+        return "0"
+    if value == 1.0:
+        return "1"
+    return f"{value:.6f}".rstrip("0").rstrip(".")
 
 
 def _format_lightroom_angle(angle: float) -> str:

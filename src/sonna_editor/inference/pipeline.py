@@ -543,7 +543,9 @@ def process_shoot_with_model(
         straightening_result = None
         if auto_straighten:
             straightening_result = estimate_straighten_angle(previews[i])
-            extra_attributes.update(crop_angle_attributes(straightening_result))
+            extra_attributes.update(
+                crop_angle_attributes(straightening_result, previews[i].size)
+            )
             straightening_by_file[raw_path.name] = {
                 "angle_degrees": straightening_result.angle_degrees,
                 "confidence": round(straightening_result.confidence, 4),

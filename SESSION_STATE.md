@@ -1,7 +1,7 @@
 # Session State - Sonna Editor
 
-**Saved:** 2026-06-16 local time
-**Current phase/task:** Frontend macOS titlebar polish.
+**Saved:** 2026-06-18 local time
+**Current phase/task:** Auto-straighten crop metadata and Lite WB tint repair.
 
 ## Current Workspace
 
@@ -51,6 +51,30 @@ x86_64, while macOS resolves the matching public wheels.
 - A fresh scene-stats candidate was trained at `data/models/sonna-v2-scene-stats-run01/`, but it was rejected for frontend use. It briefly published as `v1_learning/model-v2.0.1.*`, then those frontend-visible copies were removed after collapse analysis showed worse prediction spread than v2.0.0.
 
 ## What Changed This Session
+
+- Repaired two issues from real processing feedback:
+  - Auto-straighten crop metadata no longer writes a hard-coded full-frame
+    `CropTop/CropLeft/CropBottom/CropRight` rectangle. It now writes a centred
+    crop rectangle computed from the straighten angle and preview aspect ratio,
+    preserving the original/as-shot aspect ratio while still activating
+    Lightroom's `CropAngle`. Applied crop metadata also includes
+    `CropConstrainToWarp=0`, `CropConstrainToUnitSquare=1`, and
+    `AlreadyApplied=False`, matching the Lightroom/Imagen sidecar shape more
+    closely.
+  - Lite/Mode B WB tint adjustment now uses green-vs-magenta balance for
+    `Tint` instead of red-vs-blue balance, so warm/red frames are no longer
+    pushed further magenta by the grey-world correction. The Lite survey's
+    maximum `Tint` calibration offset was reduced from 20 to 10 Lightroom tint
+    units to avoid large pink shifts on Sony/Canon RAWs.
+  - Read-only diagnostics on local Sony `.ARW` samples in
+    `OneDrive\Pictures\Test_cat` showed AsShot tint extraction around `+8` for
+    A7 IV samples and `-8.3` for one A7 III sample, so the observed `+20-27`
+    pink output is more consistent with survey/preset/heuristic stacking than
+    with the RAW AsShot baseline alone.
+  - Verification passed:
+    `uv run pytest tests\test_straighten.py tests\test_adjuster.py tests\test_style_survey.py tests\test_checkpoint_builder.py tests\test_xmp.py::TestExtraAttributes::test_write_xmp_with_crop_angle_attributes tests\api\test_callback_bridge.py::test_pipeline_auto_straighten_writes_crop_angle_and_sidecar tests\api\test_callback_bridge.py::test_mode_b_initial_uses_per_photo_preset_adjuster -q`
+    (`137 passed`) and
+    `uv run ruff check src\sonna_editor\inference\straighten.py src\sonna_editor\inference\pipeline.py src\sonna_editor\preset\adjuster.py src\sonna_editor\mode_b\survey.py tests\test_straighten.py tests\test_adjuster.py tests\test_style_survey.py tests\test_checkpoint_builder.py tests\test_xmp.py tests\api\test_callback_bridge.py`.
 
 - Fixed the macOS titlebar overlap where the Saha mark could sit behind the
   native traffic-light window controls:
@@ -267,8 +291,8 @@ x86_64, while macOS resolves the matching public wheels.
     corrections from RAW previews using OpenCV Canny/Hough/LSD line geometry,
     with conservative thresholds for minimum edge count, confidence, and angle
     size.
-  - `process_shoot_with_model()` writes `crs:HasCrop="True"`, full-frame crop
-    bounds, and `crs:CropAngle="..."` through
+  - `process_shoot_with_model()` writes `crs:HasCrop="True"`, same-as-shot
+    aspect crop bounds, and `crs:CropAngle="..."` through
     `write_xmp(extra_attributes=...)` only when `auto_straighten` is enabled
     and the estimator result is applied.
   - `sonna_predictions.json` records `auto_straighten`,
@@ -832,12 +856,18 @@ x86_64, while macOS resolves the matching public wheels.
 - Training on tiny splits now logs once that it adjusted `log_every_n_steps` instead of letting Lightning warn. This is expected for the current 132-row train split, which has 9 batches at batch size 16.
 - `Profile.profile_type` is already implemented in backend profile responses and frontend profile classification. `None` means a legacy trained profile; `"mode_b_initial"` means a Lite preset-derived profile.
 - Mode B/Lite checkpoints now inherit the configured foundation checkpoint's native slider set and field count. Before fine-tuning, the UI/CLI processing path treats `mode_b_initial` as an Imagen-aligned Lite profile: preset look fixed, per-photo Exposure/WB corrections only. After fine-tuning, the same profile can move back to normal model inference.
+- Lite per-photo WB correction keeps Temperature on the red-blue axis and now
+  computes Tint from green-vs-magenta balance. The Lite style survey still
+  stores all six answers, but the maximum Tint offset is now 10 units rather
+  than 20 to keep calibration from creating strong pink casts.
 - Auto straightening is opt-in and runs after preview extraction during
   processing. It uses CLAHE-normalized OpenCV Canny edges plus Hough/LSD line
   geometry, then classifies the evidence into horizon, architecture, or
   mixed-axis candidates before estimating small Lightroom `CropAngle`
   rotations. It writes crop metadata only when scene-specific confidence is
-  high, and records skipped/applied diagnostics in `sonna_predictions.json`.
+  high, using centred same-as-shot aspect crop bounds plus Lightroom crop
+  constraint flags, and records skipped/applied diagnostics in
+  `sonna_predictions.json`.
   It is independent of training and checkpoint versioning.
 - The Process UI requires explicit row selection. With no checked queued rows,
   Process Selected is disabled and no job is dispatched; with checked rows, it

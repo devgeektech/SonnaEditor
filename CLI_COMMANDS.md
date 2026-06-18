@@ -174,7 +174,8 @@ Do not reuse a previous --version-stem; old checkpoints are never overwritten.
    - Optional auto straightening is controlled per run from the UI checkbox or
      `--auto-straighten`; it uses OpenCV preview-line geometry, then scores
      horizon, architecture, and mixed-axis evidence before writing Lightroom
-     `CropAngle` metadata with full-frame crop bounds when confident. The
+     `CropAngle` metadata with centred same-as-shot aspect crop bounds when
+     confident. The
      predictions sidecar records straightening engine, scene type, horizon/axis
      scores, and line-support diagnostics. It does not require retraining.
 
@@ -186,7 +187,7 @@ Do not reuse a previous --version-stem; old checkpoints are never overwritten.
 ## Production Profile Paths
 
 - **Personal AI profile:** built from RAW files plus matching Lightroom XMP sidecars. This is the normal profile-training path for operators and is now started from the Saha frontend. The backend resolves the configured foundation checkpoint, uses the same dataset builder and `sonna_editor.training.profile_runner.train_profile()` recipe as the CLI, warm-starts from that foundation, then publishes a versioned profile into `v1_learning/`.
-- **Lite profile:** built from the configured foundation checkpoint plus a Lightroom preset and the six-question Lite survey. It does not depend on an active Personal AI profile. The first Lite processing pass dynamically adjusts Exposure, Temperature, and Tint because the preset owns the look sliders; all six survey answers are still stored in the profile package for calibration metadata and future fine-tuning.
+- **Lite profile:** built from the configured foundation checkpoint plus a Lightroom preset and the six-question Lite survey. It does not depend on an active Personal AI profile. The first Lite processing pass dynamically adjusts Exposure, Temperature, and Tint because the preset owns the look sliders; all six survey answers are still stored in the profile package for calibration metadata and future fine-tuning. Tint calibration is conservative: the strongest Lite survey tint answer maps to 10 Lightroom tint units, and per-photo Tint correction uses green-vs-magenta balance.
 - **Foundation model:** CLI-only and hidden from the UI. Use `FOUNDATION_TRAINING.md` for the complete train, resume, retrain, promotion, and FiveK guidance. The foundation CLI supports RAW+XMP folders and prepared Lightroom-parameter splits, including catalog-derived FiveK splits.
 
 ## Important Paths

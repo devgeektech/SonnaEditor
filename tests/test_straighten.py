@@ -216,16 +216,32 @@ def test_estimate_straighten_angle_skips_random_texture() -> None:
 
 
 def test_crop_angle_attributes_only_for_applied_result() -> None:
-    applied = estimate_straighten_angle(_tilted_line_image(2.0))
+    image = _tilted_line_image(2.0)
+    applied = estimate_straighten_angle(image)
     skipped = estimate_straighten_angle(Image.new("RGB", (400, 300), "white"))
 
-    assert crop_angle_attributes(applied)["HasCrop"] == "True"
-    assert crop_angle_attributes(applied)["CropTop"] == "0"
-    assert crop_angle_attributes(applied)["CropLeft"] == "0"
-    assert crop_angle_attributes(applied)["CropBottom"] == "1"
-    assert crop_angle_attributes(applied)["CropRight"] == "1"
-    assert crop_angle_attributes(applied)["CropAngle"].startswith("+")
-    assert crop_angle_attributes(skipped) == {}
+    attrs = crop_angle_attributes(applied, image.size)
+    assert attrs["HasCrop"] == "True"
+    assert float(attrs["CropTop"]) == pytest.approx(float(attrs["CropLeft"]))
+    assert float(attrs["CropBottom"]) == pytest.approx(float(attrs["CropRight"]))
+    assert float(attrs["CropTop"]) > 0.0
+    assert float(attrs["CropBottom"]) < 1.0
+    assert attrs["CropAngle"].startswith("+")
+    assert attrs["CropConstrainToWarp"] == "0"
+    assert attrs["CropConstrainToUnitSquare"] == "1"
+    assert attrs["AlreadyApplied"] == "False"
+    assert crop_angle_attributes(skipped, image.size) == {}
+
+
+def test_crop_angle_attributes_preserve_as_shot_aspect_ratio() -> None:
+    image = _tilted_room_image(3.0)
+    result = estimate_straighten_angle(image)
+
+    attrs = crop_angle_attributes(result, image.size)
+    crop_width = float(attrs["CropRight"]) - float(attrs["CropLeft"])
+    crop_height = float(attrs["CropBottom"]) - float(attrs["CropTop"])
+
+    assert crop_width == pytest.approx(crop_height)
 
 
 def test_straighten_engine_version_is_recorded_for_diagnostics() -> None:

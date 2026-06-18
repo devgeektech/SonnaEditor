@@ -106,7 +106,7 @@ This section tracks what each backend source file/folder does. Keep it updated w
 | `src/sonna_editor/inference/__init__.py` | Package marker for inference code. |
 | `src/sonna_editor/inference/engine.py` | Checkpoint loading and batched prediction engine. Builds tensors from extracted previews/metadata plus scene stats, maps categorical metadata through the checkpoint registry, supports uncertainty sampling, and postprocesses outputs. |
 | `src/sonna_editor/inference/pipeline.py` | End-to-end shoot processing: scan RAW files using the central `config.SUPPORTED_RAW_EXTENSIONS` set, extract features, run inference, apply WB/skip semantics, optionally apply preview-based auto straightening, write XMP sidecars, write `sonna_predictions.json` including straightening engine/line diagnostics, and emit progress callbacks. |
-| `src/sonna_editor/inference/straighten.py` | Optional auto-straightening postprocess. Uses CLAHE-normalized OpenCV Canny edges plus probabilistic Hough lines, OpenCV line segments, and a broad Hough fallback for fragmented line evidence, then classifies evidence as horizon, architecture, or mixed-axis geometry before estimating small Lightroom `CropAngle` corrections. It writes full-frame CRS crop attributes only when selected per processing job and confidence passes the scene-specific thresholds. This is not a trained model output. |
+| `src/sonna_editor/inference/straighten.py` | Optional auto-straightening postprocess. Uses CLAHE-normalized OpenCV Canny edges plus probabilistic Hough lines, OpenCV line segments, and a broad Hough fallback for fragmented line evidence, then classifies evidence as horizon, architecture, or mixed-axis geometry before estimating small Lightroom `CropAngle` corrections. It writes centred same-as-shot aspect CRS crop bounds plus Lightroom crop constraint flags only when selected per processing job and confidence passes the scene-specific thresholds. This is not a trained model output. |
 
 ### Fine-Tune Package
 
@@ -123,9 +123,9 @@ This section tracks what each backend source file/folder does. Keep it updated w
 |---|---|
 | `src/sonna_editor/mode_b/__init__.py` | Package marker for Lite/Mode B profile creation. |
 | `src/sonna_editor/mode_b/checkpoint_builder.py` | Builds a Lite initial checkpoint/sidecar package from the configured foundation checkpoint, Lightroom preset, and style survey. It keeps pretrained foundation feature layers for future fine-tuning and stores preset/survey provenance for the adaptive initial Lite processing path. This is not supervised photo training. |
-| `src/sonna_editor/mode_b/survey.py` | Lite style survey models and conversion from six user answers into slider offsets for Exposure2012, Temperature, Tint, Contrast2012, Saturation, and Shadows2012. Initial Lite runtime applies only Exposure/WB dynamically, but all six answers are stored in the profile package. |
+| `src/sonna_editor/mode_b/survey.py` | Lite style survey models and conversion from six user answers into slider offsets for Exposure2012, Temperature, Tint, Contrast2012, Saturation, and Shadows2012. Initial Lite runtime applies only Exposure/WB dynamically, but all six answers are stored in the profile package. Tint survey calibration is intentionally gentle: max 10 Lightroom tint units. |
 | `src/sonna_editor/preset/__init__.py` | Package marker for preset code. |
-| `src/sonna_editor/preset/adjuster.py` | Heuristic content-aware preset adjustments for exposure, WB, shadows/highlights, and similar safe corrections. Auto exposure uses mean luminance with 85th/95th percentile upper-tone guards so dark suits/rooms do not force bright faces/signage into overexposure. |
+| `src/sonna_editor/preset/adjuster.py` | Heuristic content-aware preset adjustments for exposure, WB, shadows/highlights, and similar safe corrections. Auto exposure uses mean luminance with 85th/95th percentile upper-tone guards so dark suits/rooms do not force bright faces/signage into overexposure. Lite WB keeps Temperature on red-vs-blue balance and Tint on green-vs-magenta balance to avoid pushing warm frames pink. |
 | `src/sonna_editor/preset/parser.py` | Parses Lightroom `.xmp`, `.xmpsettings`, and `.lrtemplate` presets and validates extreme preset values. |
 | `src/sonna_editor/preset/pipeline.py` | Legacy preset application pipeline that writes preset-derived XMP files for a RAW folder. It is useful for Mode B/preset output, not supervised model training. |
 
@@ -450,6 +450,17 @@ Lite checkpoints are marked with `profile_type: mode_b_initial` in the sidecar J
   horizontal plus vertical support. `sonna_predictions.json` records the
   chosen `scene_type`, horizon/axis scores, and horizontal/vertical line
   counts for batch audits.
+- Auto straightening crop-ratio repair, 2026-06-18: applied straightening now
+  writes centred crop bounds computed from the preview aspect ratio and
+  `CropAngle`, preserving the original/as-shot aspect instead of forcing a
+  hard-coded full-frame crop rectangle. The XMP attributes also include
+  `CropConstrainToWarp=0`, `CropConstrainToUnitSquare=1`, and
+  `AlreadyApplied=False`, matching Lightroom/Imagen sidecars more closely.
+- Lite WB/tint repair, 2026-06-18: `preset.adjuster` no longer derives Tint
+  from red-vs-blue balance. Temperature remains red-vs-blue, while Tint now
+  uses green-vs-magenta balance so warm/red frames do not get an extra magenta
+  push. The Lite survey's maximum Tint offset was reduced from 20 to 10 units
+  after Sony/Canon feedback showed +20-range pink output was too strong.
 
 ## Important behavior notes
 
@@ -458,11 +469,15 @@ Lite checkpoints are marked with `profile_type: mode_b_initial` in the sidecar J
 - Legacy v1 checkpoint support is preserved via checkpoint sidecar heuristics and output count gating.
 - Lite profile creation from a v2 base must keep `slider_set_version="v2"`; down-converting via `from_checkpoint(target_slider_set_version="v1")` is intentionally rejected by the model loader.
 - Initial Mode B/Lite checkpoints are intentionally profile carriers with preset/survey metadata and the configured foundation checkpoint's native slider set. Before fine-tuning, the UI/CLI processing path is Imagen-aligned Lite execution: uploaded preset controls the look, with per-photo Exposure/WB corrections only.
+- Lite survey Tint calibration is deliberately conservative: a strongest
+  green/magenta answer maps to 10 Lightroom tint units, and per-photo WB Tint
+  correction uses green-vs-magenta balance rather than red-vs-blue balance.
 - Auto straightening is an opt-in inference postprocess, shared by Personal AI
   and Lite processing. It writes Lightroom crop-angle metadata from OpenCV
   preview-geometry analysis when confident, while high-texture/no-line frames
-  are skipped. Applied results include full-frame crop bounds plus
-  `CropAngle`, because Lightroom Classic may ignore angle-only crop metadata.
+  are skipped. Applied results include centred same-as-shot aspect crop bounds
+  plus `CropAngle`, because Lightroom Classic may ignore angle-only crop metadata
+  and hard-coded full-frame crop bounds can flip the crop into a custom ratio.
   The estimator is scene-aware: horizon, architecture, and mixed-axis evidence
   use separate scores and confidence gates. `sonna_predictions.json` records
   the straightening engine, chosen scene type, horizon/axis scores, and

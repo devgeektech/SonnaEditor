@@ -179,6 +179,20 @@ def test_wb_on_warm_image_gets_cooling_delta() -> None:
     assert "Temperature" in delta or "Tint" in delta
 
 
+def test_wb_on_warm_magenta_image_does_not_add_pink_tint() -> None:
+    img = _solid(230, 120, 80)
+    delta = compute_adjustment(img, {}, _base_preset(), _opts(auto_white_balance=True))
+
+    assert delta.get("Tint", 0.0) <= 0.0
+
+
+def test_wb_on_green_image_adds_magenta_tint() -> None:
+    img = _solid(80, 150, 80)
+    delta = compute_adjustment(img, {}, _base_preset(), _opts(auto_white_balance=True))
+
+    assert delta.get("Tint", 0.0) > 0.0
+
+
 # ---------------------------------------------------------------------------
 # apply_adjustment
 # ---------------------------------------------------------------------------
