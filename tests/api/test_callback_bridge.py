@@ -545,10 +545,10 @@ def test_pipeline_auto_straighten_writes_crop_angle_and_sidecar(
     assert attrs["LensProfileEnable"] == "1"
     assert attrs["AutoLateralCA"] == "1"
     assert attrs["HasCrop"] == "True"
-    assert float(attrs["CropTop"]) == pytest.approx(float(attrs["CropLeft"]))
-    assert float(attrs["CropBottom"]) == pytest.approx(float(attrs["CropRight"]))
-    assert float(attrs["CropTop"]) > 0.0
-    assert float(attrs["CropBottom"]) < 1.0
+    assert attrs["CropTop"] == "0"
+    assert attrs["CropLeft"] == "0"
+    assert attrs["CropBottom"] == "1"
+    assert attrs["CropRight"] == "1"
     assert float(attrs["CropAngle"]) == pytest.approx(3.0, abs=0.5)
     assert attrs["CropConstrainToWarp"] == "0"
     assert attrs["CropConstrainToUnitSquare"] == "1"

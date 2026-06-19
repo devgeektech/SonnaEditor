@@ -384,9 +384,10 @@ uv run python scripts\process_shoot_model.py `
 OpenCV Canny + Hough/LSD line detection on the extracted preview, then scores
 horizon, architecture, and mixed-axis evidence before writing Lightroom
 `CropAngle` metadata. It does not retrain or alter the selected profile
-checkpoint. Applied results write centred same-as-shot aspect crop bounds with
-the angle so Lightroom Classic activates the crop state without forcing a new
-custom crop ratio. `sonna_predictions.json` records
+checkpoint. Applied results write full-frame `CropTop=0`, `CropLeft=0`,
+`CropBottom=1`, `CropRight=1` bounds with the angle so Lightroom Classic
+activates the Crop Angle state without intentionally shrinking the crop
+rectangle. `sonna_predictions.json` records
 `straightening_engine`, `scene_type`, `horizon_score`, `axis_score`,
 horizontal/vertical line counts, `line_count`, and `line_length_px` for each
 photo so a batch can be audited if Lightroom does not appear to show

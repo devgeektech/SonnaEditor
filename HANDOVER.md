@@ -77,6 +77,8 @@ This checkout is a Windows development/training workspace at `C:\Users\vikas.DES
   Hough lines, OpenCV line segments, and a broad Hough fallback for fragmented
   line evidence, then classifies the line evidence into horizon, architecture,
   or mixed-axis candidates before choosing the Lightroom `CropAngle`.
+  Centre-band horizontal evidence is preferred when present so the visible
+  centre/horizon line can win over off-centre distractor lines.
   Horizon-specific scoring can prefer a long horizon over conflicting vertical
   distractors, while high-texture frames are still skipped. On 2026-06-16 the
   prior estimator was validated read-only
@@ -87,8 +89,8 @@ This checkout is a Windows development/training workspace at `C:\Users\vikas.DES
   runs or low-recall batches can be audited immediately. A later Lightroom Classic
   check with user-supplied `0H5A6295_.xmp` showed angle-only crop metadata
   (`HasCrop` + `CropAngle`) can still display as Angle `0.00`; applied
-  straightening now writes centred same-as-shot aspect
-  `CropTop/CropLeft/CropBottom/CropRight` bounds plus
+  straightening now writes full-frame
+  `CropTop=0`, `CropLeft=0`, `CropBottom=1`, `CropRight=1` bounds plus
   `CropConstrainToWarp=0`, `CropConstrainToUnitSquare=1`, and
   `AlreadyApplied=False` with every `CropAngle`. A follow-up screenshot on `0H5A6236.CR3`
   showed the earlier OpenCV-to-Lightroom sign mapping was reversed (`-1.96`

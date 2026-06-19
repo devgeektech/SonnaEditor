@@ -72,6 +72,8 @@ _AXIS_CANDIDATE_TOLERANCE_DEGREES = 7.0
 _AXIS_SUPPORT_TOLERANCE_DEGREES = 2.8
 _HORIZON_BAND_TOP = 0.16
 _HORIZON_BAND_BOTTOM = 0.82
+_CENTRE_HORIZON_BAND_TOP = 0.34
+_CENTRE_HORIZON_BAND_BOTTOM = 0.66
 
 
 def _resize_for_analysis(image: Image.Image) -> Image.Image:
@@ -289,6 +291,21 @@ def _position_band_score(observations: list[_LineObservation], height: int) -> f
     return score / total
 
 
+def _centre_band_observations(
+    observations: list[_LineObservation],
+    height: int,
+) -> list[_LineObservation]:
+    if height <= 0:
+        return []
+    return [
+        item
+        for item in observations
+        if _CENTRE_HORIZON_BAND_TOP
+        <= item.mid_y / float(height)
+        <= _CENTRE_HORIZON_BAND_BOTTOM
+    ]
+
+
 def _horizontal_coverage_score(observations: list[_LineObservation], width: int) -> float:
     if width <= 0:
         return 0.0
@@ -309,17 +326,22 @@ def _scene_candidates(
 ) -> tuple[str, _AngleCandidate | None, float, float, int, int]:
     height, width = image_shape
     horizontal = [item for item in observations if item.orientation == "horizontal"]
+    centre_horizontal = _centre_band_observations(horizontal, height)
+    horizon_source = centre_horizontal or horizontal
     vertical = [item for item in observations if item.orientation == "vertical"]
 
     axis_candidate = _candidate_from_observations(observations, image_shape)
-    horizon_candidate = _candidate_from_observations(horizontal, image_shape)
+    horizon_candidate = _candidate_from_observations(horizon_source, image_shape)
     vertical_candidate = _candidate_from_observations(vertical, image_shape)
 
     horizon_score = 0.0
     if horizon_candidate is not None:
-        band_score = _position_band_score(horizontal, height)
-        coverage_score = _horizontal_coverage_score(horizontal, width)
-        horizon_score = horizon_candidate.confidence * (0.55 + 0.30 * band_score + 0.15 * coverage_score)
+        band_score = _position_band_score(horizon_source, height)
+        coverage_score = _horizontal_coverage_score(horizon_source, width)
+        centre_bonus = 0.12 if centre_horizontal else 0.0
+        horizon_score = horizon_candidate.confidence * (
+            0.55 + 0.30 * band_score + 0.15 * coverage_score + centre_bonus
+        )
 
     axis_score = axis_candidate.confidence if axis_candidate is not None else 0.0
     if axis_candidate is not None and horizon_candidate is not None and vertical_candidate is not None:
@@ -477,8 +499,9 @@ def crop_angle_attributes(
     """Return Lightroom CRS crop attributes for an applied straighten result.
 
     Lightroom needs explicit crop bounds for `CropAngle` to activate reliably
-    from a generated sidecar. Keep those bounds centred and same-as-shot aspect
-    so straightening does not turn the crop into a new arbitrary ratio.
+    from a generated sidecar. Keep those bounds at the full-frame unit square
+    so the sidecar rotates the crop angle without shrinking the visible crop
+    rectangle.
     """
     if not result.applied:
         return {}
@@ -503,20 +526,8 @@ def _straighten_crop_bounds(
     angle_degrees: float,
     image_size: tuple[int, int] | None,
 ) -> tuple[float, float, float, float]:
-    if image_size is None:
-        return 0.0, 0.0, 1.0, 1.0
-    width, height = image_size
-    if width <= 0 or height <= 0:
-        return 0.0, 0.0, 1.0, 1.0
-
-    theta = abs(radians(angle_degrees))
-    c = abs(cos(theta))
-    s = abs(sin(theta))
-    scale_x = width / (width * c + height * s)
-    scale_y = height / (width * s + height * c)
-    scale = max(0.0, min(1.0, scale_x, scale_y))
-    margin = (1.0 - scale) * 0.5
-    return margin, margin, 1.0 - margin, 1.0 - margin
+    _ = angle_degrees, image_size
+    return 0.0, 0.0, 1.0, 1.0
 
 
 def _format_crop_bound(value: float) -> str:

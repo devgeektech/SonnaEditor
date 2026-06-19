@@ -53,14 +53,18 @@ x86_64, while macOS resolves the matching public wheels.
 ## What Changed This Session
 
 - Repaired two issues from real processing feedback:
-  - Auto-straighten crop metadata no longer writes a hard-coded full-frame
-    `CropTop/CropLeft/CropBottom/CropRight` rectangle. It now writes a centred
-    crop rectangle computed from the straighten angle and preview aspect ratio,
-    preserving the original/as-shot aspect ratio while still activating
-    Lightroom's `CropAngle`. Applied crop metadata also includes
+  - Auto-straighten crop metadata now writes Lightroom `CropAngle` with
+    full-frame crop bounds (`CropTop=0`, `CropLeft=0`, `CropBottom=1`,
+    `CropRight=1`). This may still make Lightroom label the crop as
+    Custom/Original, but it avoids intentionally shrinking the crop rectangle
+    while still activating Lightroom's Crop Angle slider. Applied crop metadata also includes
     `CropConstrainToWarp=0`, `CropConstrainToUnitSquare=1`, and
     `AlreadyApplied=False`, matching the Lightroom/Imagen sidecar shape more
     closely.
+  - Auto-straighten angle selection now prefers horizontal line evidence near
+    the centre of the preview when present, so the centre/horizon line is not
+    overruled by off-centre architectural/background lines with a different
+    tilt.
   - Lite/Mode B WB tint adjustment now uses green-vs-magenta balance for
     `Tint` instead of red-vs-blue balance, so warm/red frames are no longer
     pushed further magenta by the grey-world correction. The Lite survey's
@@ -291,8 +295,9 @@ x86_64, while macOS resolves the matching public wheels.
     corrections from RAW previews using OpenCV Canny/Hough/LSD line geometry,
     with conservative thresholds for minimum edge count, confidence, and angle
     size.
-  - `process_shoot_with_model()` writes `crs:HasCrop="True"`, same-as-shot
-    aspect crop bounds, and `crs:CropAngle="..."` through
+  - `process_shoot_with_model()` writes `crs:HasCrop="True"`, full-frame
+    `crs:CropTop="0"`, `crs:CropLeft="0"`, `crs:CropBottom="1"`,
+    `crs:CropRight="1"` bounds, and `crs:CropAngle="..."` through
     `write_xmp(extra_attributes=...)` only when `auto_straighten` is enabled
     and the estimator result is applied.
   - `sonna_predictions.json` records `auto_straighten`,
@@ -865,9 +870,11 @@ x86_64, while macOS resolves the matching public wheels.
   geometry, then classifies the evidence into horizon, architecture, or
   mixed-axis candidates before estimating small Lightroom `CropAngle`
   rotations. It writes crop metadata only when scene-specific confidence is
-  high, using centred same-as-shot aspect crop bounds plus Lightroom crop
-  constraint flags, and records skipped/applied diagnostics in
+  high, using full-frame `CropTop=0`, `CropLeft=0`, `CropBottom=1`,
+  `CropRight=1` bounds plus Lightroom crop constraint flags, and records
+  skipped/applied diagnostics in
   `sonna_predictions.json`.
+  Centre-band horizontal evidence is preferred when present.
   It is independent of training and checkpoint versioning.
 - The Process UI requires explicit row selection. With no checked queued rows,
   Process Selected is disabled and no job is dispatched; with checked rows, it
