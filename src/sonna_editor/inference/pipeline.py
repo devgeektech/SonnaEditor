@@ -144,6 +144,19 @@ ALWAYS_ON_POSTPROCESS: dict[str, str] = {
     "AutoLateralCA": "1",
 }
 
+# Lightroom-native denoise values applied when the operator enables Denoise
+# and a photo's extracted ISO is above the configured threshold. This is an
+# inference postprocess, not a trained model output.
+DEFAULT_DENOISE_ISO_THRESHOLD = 1200
+DENOISE_SETTINGS: dict[str, float] = {
+    "LuminanceSmoothing": 35.0,
+    "LuminanceNoiseReductionDetail": 50.0,
+    "LuminanceNoiseReductionContrast": 0.0,
+    "ColorNoiseReduction": 25.0,
+    "ColorNoiseReductionDetail": 50.0,
+    "ColorNoiseReductionSmoothness": 50.0,
+}
+
 # Epistemic clamp: bounds the model's log-space Temperature prediction to the
 # range covered by training data. Refusing to extrapolate beyond observed
 # signal — prevents catastrophic exp() amplification when the model drifts
@@ -178,6 +191,47 @@ def _apply_temperature_clamp(slider_dict: dict[str, float | None]) -> None:
         slider_dict["Temperature"] = math.exp(log_min)
     elif log_pred > log_max:
         slider_dict["Temperature"] = math.exp(log_max)
+
+
+def _safe_iso_value(metadata: dict) -> float | None:
+    value = metadata.get("iso")
+    if value is None:
+        return None
+    try:
+        iso = float(value)
+    except (TypeError, ValueError):
+        return None
+    if not math.isfinite(iso) or iso <= 0:
+        return None
+    return iso
+
+
+def _apply_denoise_if_needed(
+    slider_dict: dict[str, float | None],
+    metadata: dict,
+    *,
+    denoise_enabled: bool,
+    denoise_iso_threshold: int,
+) -> dict[str, float | int | bool] | None:
+    """Apply Lightroom denoise sliders for photos above the ISO threshold."""
+    iso = _safe_iso_value(metadata)
+    should_apply = (
+        denoise_enabled
+        and iso is not None
+        and iso > float(denoise_iso_threshold)
+    )
+    if should_apply:
+        for field, value in DENOISE_SETTINGS.items():
+            slider_dict[field] = value
+
+    if not denoise_enabled:
+        return None
+    return {
+        "iso": round(iso, 3) if iso is not None else None,
+        "threshold": int(denoise_iso_threshold),
+        "applied": bool(should_apply),
+        "settings": dict(DENOISE_SETTINGS) if should_apply else {},
+    }
 
 
 _PREDICTIONS_FILENAME = "sonna_predictions.json"
@@ -293,6 +347,8 @@ def process_shoot_with_model(
     preserve_wb: bool = False,
     extra_skip_fields: Optional[Iterable[str]] = None,
     auto_straighten: bool = False,
+    denoise_enabled: bool = False,
+    denoise_iso_threshold: int = DEFAULT_DENOISE_ISO_THRESHOLD,
     on_photo_prepared: Optional[Callable[[dict], None]] = None,
     on_photo_complete: Optional[Callable[[dict], None]] = None,
     cancel_event: Optional[threading.Event] = None,
@@ -341,6 +397,12 @@ def process_shoot_with_model(
                                conservative thresholds. This is a postprocess
                                feature, not a model prediction, and is skipped
                                entirely when False.
+        denoise_enabled:       If True, write Lightroom-native denoise slider
+                               values for photos whose extracted ISO is greater
+                               than denoise_iso_threshold. This is a per-run
+                               postprocess and does not create new RAW/DNG files.
+        denoise_iso_threshold: Maximum ISO allowed before denoise is applied.
+                               Default is 1200, matching the Imagen-style gate.
         on_photo_prepared:     Optional callback fired after preview/metadata
                                extraction succeeds. Used for early UI progress
                                before model prediction/XMP writing.
@@ -488,6 +550,7 @@ def process_shoot_with_model(
     # Full (unfiltered) predictions keyed by filename — for sonna_predictions.json
     full_predictions_by_file: dict[str, dict[str, float | None]] = {}
     straightening_by_file: dict[str, dict[str, float | int | str | bool]] = {}
+    denoise_by_file: dict[str, dict[str, float | int | bool | dict[str, float] | None]] = {}
 
     xmp_dir = output_dir if output_dir is not None else input_dir
 
@@ -521,6 +584,14 @@ def process_shoot_with_model(
             # See TEMPERATURE_LOG_CLAMP definition above for rationale.
             _apply_temperature_clamp(full_slider_dict)
             _stabilise_rgb_tone_curve_endpoints(full_slider_dict)
+        denoise_result = _apply_denoise_if_needed(
+            full_slider_dict,
+            metadatas[i],
+            denoise_enabled=denoise_enabled,
+            denoise_iso_threshold=denoise_iso_threshold,
+        )
+        if denoise_result is not None:
+            denoise_by_file[raw_path.name] = denoise_result
         full_predictions_by_file[raw_path.name] = full_slider_dict
 
         filtered_slider_dict: dict[str, float | None] = {
@@ -631,6 +702,10 @@ def process_shoot_with_model(
             "auto_straighten": bool(auto_straighten),
             "straightening_engine": STRAIGHTEN_ENGINE_VERSION,
             "straightening": straightening_by_file,
+            "denoise_enabled": bool(denoise_enabled),
+            "denoise_iso_threshold": int(denoise_iso_threshold),
+            "denoise_settings": DENOISE_SETTINGS,
+            "denoise": denoise_by_file,
             "slider_fields": list(config.SLIDER_FIELDS),
             "photos": full_predictions_by_file,
         }

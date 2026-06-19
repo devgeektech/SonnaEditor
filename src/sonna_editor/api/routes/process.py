@@ -62,6 +62,8 @@ async def _run_process_job(
     preserve_wb: bool,
     skip_fields: list[str],
     auto_straighten: bool,
+    denoise_enabled: bool,
+    denoise_iso_threshold: int,
 ) -> None:
     """Background task: run the inference pipeline and emit terminal message."""
     jobs.transition(record, "running")
@@ -81,6 +83,8 @@ async def _run_process_job(
             preserve_wb=preserve_wb,
             extra_skip_fields=skip_fields,
             auto_straighten=auto_straighten,
+            denoise_enabled=denoise_enabled,
+            denoise_iso_threshold=denoise_iso_threshold,
             on_photo_prepared=prepared_cb,
             on_photo_complete=photo_cb,
             cancel_event=record.cancel_event,
@@ -131,6 +135,8 @@ async def start_process(req: ProcessRequest) -> JobAck:
         preserve_wb=req.preserve_wb,
         skip_fields=list(req.skip_fields),
         auto_straighten=req.auto_straighten,
+        denoise_enabled=req.denoise_enabled,
+        denoise_iso_threshold=req.denoise_iso_threshold,
     ))
 
     return JobAck(job_id=record.job_id, state=record.state)

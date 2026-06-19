@@ -116,6 +116,11 @@ class ProcessRequest(BaseModel):
     # backend estimates a small crop angle from the RAW preview and writes it
     # only if confidence is high enough. No model retraining is involved.
     auto_straighten: bool = False
+    # Optional Lightroom-native denoise postprocess. When enabled, the backend
+    # writes noise-reduction slider values only for photos whose ISO is greater
+    # than denoise_iso_threshold.
+    denoise_enabled: bool = False
+    denoise_iso_threshold: int = Field(default=1200, ge=0)
 
 
 class FinetuneRequest(BaseModel):

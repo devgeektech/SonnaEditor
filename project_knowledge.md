@@ -105,7 +105,7 @@ This section tracks what each backend source file/folder does. Keep it updated w
 |---|---|
 | `src/sonna_editor/inference/__init__.py` | Package marker for inference code. |
 | `src/sonna_editor/inference/engine.py` | Checkpoint loading and batched prediction engine. Builds tensors from extracted previews/metadata plus scene stats, maps categorical metadata through the checkpoint registry, supports uncertainty sampling, and postprocesses outputs. |
-| `src/sonna_editor/inference/pipeline.py` | End-to-end shoot processing: scan RAW files using the central `config.SUPPORTED_RAW_EXTENSIONS` set, extract features, run inference, apply WB/skip semantics, optionally apply preview-based auto straightening, write XMP sidecars, write `sonna_predictions.json` including straightening engine/line diagnostics, and emit progress callbacks. |
+| `src/sonna_editor/inference/pipeline.py` | End-to-end shoot processing: scan RAW files using the central `config.SUPPORTED_RAW_EXTENSIONS` set, extract features, run inference, apply WB/skip semantics, optionally apply preview-based auto straightening and ISO-gated Lightroom denoise, write XMP sidecars, write `sonna_predictions.json` including straightening and denoise diagnostics, and emit progress callbacks. |
 | `src/sonna_editor/inference/straighten.py` | Optional auto-straightening postprocess. Uses CLAHE-normalized OpenCV Canny edges plus probabilistic Hough lines, OpenCV line segments, and a broad Hough fallback for fragmented line evidence, then classifies evidence as horizon, architecture, or mixed-axis geometry before estimating small Lightroom straighten corrections. Centre-band horizontal evidence is preferred when present so the visible centre/horizon line is not overruled by off-centre distractor lines. On the `Persepective_rotate` branch it writes `PerspectiveRotate` plus minimal `PerspectiveScale` Transform metadata, avoiding `CropAngle` and `CropTop/CropLeft/CropBottom/CropRight`. This is not a trained model output. |
 
 ### Fine-Tune Package
@@ -471,6 +471,16 @@ Lite checkpoints are marked with `profile_type: mode_b_initial` in the sidecar J
   uses green-vs-magenta balance so warm/red frames do not get an extra magenta
   push. The Lite survey's maximum Tint offset was reduced from 20 to 10 units
   after Sony/Canon feedback showed +20-range pink output was too strong.
+- ISO-gated denoise, 2026-06-19: the Process UI exposes a `Denoise` checkbox
+  and editable `ISO >` threshold, defaulting to 1200. `/api/process`,
+  `scripts/process_shoot_model.py`, and `inference/pipeline.py` share the same
+  behavior. When enabled, photos with extracted ISO greater than the threshold
+  get Lightroom-native detail noise sliders written into the output XMP:
+  `LuminanceSmoothing=35`, `LuminanceNoiseReductionDetail=50`,
+  `LuminanceNoiseReductionContrast=0`, `ColorNoiseReduction=25`,
+  `ColorNoiseReductionDetail=50`, and
+  `ColorNoiseReductionSmoothness=50`. `sonna_predictions.json` records the
+  threshold, settings, and per-photo applied/skipped audit data.
 
 ## Important behavior notes
 
@@ -494,6 +504,11 @@ Lite checkpoints are marked with `profile_type: mode_b_initial` in the sidecar J
   the straightening engine, chosen scene type, horizon/axis scores, and
   per-photo line support for diagnostics. It does not use or update model
   checkpoints and it does not train on crop labels.
+- Denoise is an opt-in inference postprocess, shared by Personal AI and Lite
+  processing. It uses extracted RAW ISO metadata as a gate, applies only when
+  ISO is greater than the selected threshold, and writes Lightroom noise
+  reduction sliders directly into XMP. It does not run external AI denoise,
+  create enhanced DNGs, train, or change checkpoints.
 - Process dispatch behavior: with no selected queued folders, the UI does not
   dispatch a process job. With one or more selected queued folders, it processes
   only those selected folders. This matters for per-run options like Auto

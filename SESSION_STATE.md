@@ -52,6 +52,28 @@ x86_64, while macOS resolves the matching public wheels.
 
 ## What Changed This Session
 
+- Added an opt-in Imagen-style denoise gate:
+  - The Process UI now has a `Denoise` checkbox plus an `ISO >` numeric input
+    defaulting to `1200`.
+  - `/api/process` accepts `denoise_enabled` and `denoise_iso_threshold`, and
+    forwards them into `process_shoot_with_model`.
+  - `scripts\process_shoot_model.py` exposes matching `--denoise` and
+    `--denoise-iso-threshold` flags.
+  - The inference pipeline reads extracted ISO metadata per photo and applies
+    Lightroom-native denoise sliders only when denoise is enabled and ISO is
+    greater than the threshold. Current values are
+    `LuminanceSmoothing=35`, `LuminanceNoiseReductionDetail=50`,
+    `LuminanceNoiseReductionContrast=0`, `ColorNoiseReduction=25`,
+    `ColorNoiseReductionDetail=50`, and
+    `ColorNoiseReductionSmoothness=50`.
+  - `sonna_predictions.json` now records `denoise_enabled`,
+    `denoise_iso_threshold`, `denoise_settings`, and per-photo `denoise`
+    audit entries with ISO/applied/settings.
+  - Verification passed:
+    `uv run pytest tests\api\test_process_route.py::test_process_denoise_options_forwarded tests\api\test_callback_bridge.py::test_pipeline_denoise_applies_only_above_iso_threshold tests\api\test_callback_bridge.py::test_pipeline_callback_and_cancel_kwargs_no_op_when_none -q`,
+    `uv run ruff check src\sonna_editor\inference\pipeline.py src\sonna_editor\api\models.py src\sonna_editor\api\routes\process.py scripts\process_shoot_model.py tests\api\test_process_route.py tests\api\test_callback_bridge.py`,
+    and `npm run build:vite` in `saha-app\`.
+
 - Repaired two issues from real processing feedback:
   - `Auto_Straighten` is the crop-angle comparison branch: it writes Lightroom
     `CropAngle` with full-frame crop bounds (`CropTop=0`, `CropLeft=0`,
@@ -881,6 +903,11 @@ x86_64, while macOS resolves the matching public wheels.
   Process Selected is disabled and no job is dispatched; with checked rows, it
   runs only the selected queued folders. Auto straighten follows the same
   selected dispatch path.
+- Denoise is an opt-in inference postprocess, shared by Personal AI and Lite
+  processing. When enabled, the backend applies Lightroom-native noise
+  reduction only to photos whose extracted ISO is greater than the selected
+  threshold; the default threshold is 1200. It does not train, create DNGs, or
+  change checkpoints.
 
 ## Next Suggested Step
 

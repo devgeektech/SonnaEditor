@@ -56,6 +56,10 @@ def main() -> None:
                         help="Skip writing sonna_predictions.json (disables continuous learning capture).")
     parser.add_argument("--auto-straighten", action="store_true",
                         help="Estimate and write Lightroom crop-angle metadata when confident.")
+    parser.add_argument("--denoise", action="store_true",
+                        help="Apply Lightroom-native denoise sliders above the ISO threshold.")
+    parser.add_argument("--denoise-iso-threshold", type=int, default=1200,
+                        help="Apply denoise when extracted ISO is greater than this value (default: 1200).")
     args = parser.parse_args()
     if args.model_path is None:
         args.model_path = _latest_published_model()
@@ -88,6 +92,8 @@ def main() -> None:
         print(f"Uncertainty: MC dropout, {args.uncertainty_samples} samples")
     if args.auto_straighten:
         print("Auto straighten: enabled")
+    if args.denoise:
+        print(f"Denoise:   enabled above ISO {args.denoise_iso_threshold}")
     print()
 
     summary = process_shoot_with_model(
@@ -102,6 +108,8 @@ def main() -> None:
         device=args.device,
         save_predictions=args.save_predictions,
         auto_straighten=args.auto_straighten,
+        denoise_enabled=args.denoise,
+        denoise_iso_threshold=args.denoise_iso_threshold,
     )
 
     print("Done.")

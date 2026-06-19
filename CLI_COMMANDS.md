@@ -178,6 +178,10 @@ Do not reuse a previous --version-stem; old checkpoints are never overwritten.
      when confident. The
      predictions sidecar records straightening engine, scene type, horizon/axis
      scores, and line-support diagnostics. It does not require retraining.
+   - Optional ISO-gated denoise is controlled per run from the UI checkbox or
+     `--denoise --denoise-iso-threshold N`. It writes Lightroom-native noise
+     reduction sliders only for photos whose extracted ISO is greater than the
+     threshold. The default threshold is 1200.
 
 6. Fine-tune later.
    - Capture final Lightroom tweaks.
@@ -313,7 +317,9 @@ uv run python scripts\process_shoot_model.py `
   --input-dir D:\Shoots\ClientShoot01 `
   --model-path v1_learning\model-v0.2.0.ckpt `
   --output-dir D:\Shoots\ClientShoot01\SahaOutput `
-  --auto-straighten
+  --auto-straighten `
+  --denoise `
+  --denoise-iso-threshold 1200
 ```
 
 Lite checkpoints are visible in the UI when they are published into
@@ -871,10 +877,16 @@ uv run python scripts\process_shoot_model.py `
   --input-dir D:\Shoots\ClientShoot01 `
   --model-path v1_learning\model-v2.0.0.ckpt `
   --output-dir D:\Shoots\ClientShoot01\SahaOutput `
-  --auto-straighten
+  --auto-straighten `
+  --denoise `
+  --denoise-iso-threshold 1200
 ```
 
-The Electron app uses the same backend inference path.
+The Electron app uses the same backend inference path. `--denoise` matches the
+Process UI Denoise checkbox: it uses extracted ISO metadata and writes
+Lightroom detail noise sliders only when ISO is greater than
+`--denoise-iso-threshold` (default 1200). The predictions sidecar records the
+threshold, denoise settings, and per-photo applied/skipped audit data.
 
 ## 10. Fine-Tune Existing Profile
 

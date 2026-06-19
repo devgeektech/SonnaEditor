@@ -429,6 +429,10 @@ function CentreAction({
   onProcess,
   autoStraighten,
   onAutoStraightenChange,
+  denoiseEnabled,
+  onDenoiseEnabledChange,
+  denoiseIsoThreshold,
+  onDenoiseIsoThresholdChange,
   processRaws,
   selectedQueuedCount,
   canProcess,
@@ -478,6 +482,71 @@ function CentreAction({
           />
           <span>Auto straighten</span>
         </label>
+        <div style={{
+          minHeight: 38,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: 12,
+          color: isProcessing ? SONNA.fgFaint : SONNA.fg,
+          fontSize: 13,
+        }}>
+          <label style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 10,
+            cursor: isProcessing ? 'not-allowed' : 'pointer',
+            userSelect: 'none',
+          }}>
+            <input
+              type="checkbox"
+              checked={denoiseEnabled}
+              disabled={isProcessing}
+              onChange={(e) => onDenoiseEnabledChange(e.target.checked)}
+              title="Apply Lightroom denoise to high-ISO photos"
+              style={{
+                width: 15,
+                height: 15,
+                accentColor: SONNA.ochre,
+                cursor: isProcessing ? 'not-allowed' : 'pointer',
+              }}
+            />
+            <span>Denoise</span>
+          </label>
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+            opacity: denoiseEnabled ? 1 : 0.55,
+          }}>
+            <span style={{ ...Tnum, fontSize: 11, color: SONNA.fgFaint }}>ISO &gt;</span>
+            <input
+              type="number"
+              min="0"
+              step="100"
+              value={denoiseIsoThreshold}
+              disabled={isProcessing || !denoiseEnabled}
+              onChange={(e) => {
+                const next = Number(e.target.value);
+                onDenoiseIsoThresholdChange(Number.isFinite(next) ? Math.max(0, Math.round(next)) : 1200);
+              }}
+              title="ISO threshold"
+              style={{
+                width: 84,
+                height: 30,
+                boxSizing: 'border-box',
+                background: SONNA.bgPanel,
+                border: `1px solid ${SONNA.line}`,
+                borderRadius: 3,
+                color: (isProcessing || !denoiseEnabled) ? SONNA.fgFaint : SONNA.fg,
+                fontFamily: M,
+                fontSize: 12,
+                padding: '0 8px',
+                outline: 'none',
+              }}
+            />
+          </div>
+        </div>
       </Section>
 
       <div style={{ flex: 1 }} />
@@ -1040,6 +1109,8 @@ export function Editor({
     setSkipFields(new Set(activeProfile?.default_skip_fields || []));
   }, [activeProfile?.id]);
   const [autoStraighten, setAutoStraighten] = useState(false);
+  const [denoiseEnabled, setDenoiseEnabled] = useState(false);
+  const [denoiseIsoThreshold, setDenoiseIsoThreshold] = useState(1200);
   const [error, setError] = useState(null);
 
   // useRecentFolders is retained for RightEmpty's "Last run" tile only — the
@@ -1383,6 +1454,8 @@ export function Editor({
       flag_low_confidence: false,
       skip_fields: Array.from(skipFields),
       auto_straighten: autoStraighten,
+      denoise_enabled: denoiseEnabled,
+      denoise_iso_threshold: denoiseIsoThreshold,
     }).catch((e) => {
       // job.start rejected before opening the WS (HTTP error). Mark the
       // folder failed and let the effect re-fire to advance.
@@ -1397,7 +1470,7 @@ export function Editor({
       }]);
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isQueueRunning, cancelRequested, job.current?.id, job.current?.snapshot?.state, queue, activeProfile, skipFields, autoStraighten, selectedQueuedCount]);
+  }, [isQueueRunning, cancelRequested, job.current?.id, job.current?.snapshot?.state, queue, activeProfile, skipFields, autoStraighten, denoiseEnabled, denoiseIsoThreshold, selectedQueuedCount]);
 
 
   // Keyboard shortcuts (⌘O / ⌘R / ⌘.) — global for the editor.
@@ -1500,6 +1573,10 @@ export function Editor({
           onProcess={handleProcess}
           autoStraighten={autoStraighten}
           onAutoStraightenChange={setAutoStraighten}
+          denoiseEnabled={denoiseEnabled}
+          onDenoiseEnabledChange={setDenoiseEnabled}
+          denoiseIsoThreshold={denoiseIsoThreshold}
+          onDenoiseIsoThresholdChange={setDenoiseIsoThreshold}
           processRaws={processRaws}
           selectedQueuedCount={selectedQueuedCount}
           canProcess={canProcess}

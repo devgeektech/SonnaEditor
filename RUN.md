@@ -377,7 +377,9 @@ uv run python scripts\process_shoot_model.py `
   --input-dir D:\Shoots\ClientShoot01 `
   --model-path v1_learning\model-v0.2.0.ckpt `
   --output-dir D:\Shoots\ClientShoot01\SahaOutput `
-  --auto-straighten
+  --auto-straighten `
+  --denoise `
+  --denoise-iso-threshold 1200
 ```
 
 `--auto-straighten` is optional and matches the Process UI checkbox. It uses
@@ -391,6 +393,10 @@ does not retrain or alter the selected profile checkpoint. This branch avoids
 horizontal/vertical line counts, `line_count`, and `line_length_px` for each
 photo so a batch can be audited if Lightroom does not appear to show
 straightening.
+`--denoise` is optional and matches the Process UI Denoise checkbox. It writes
+Lightroom-native noise reduction sliders only when extracted ISO is greater
+than `--denoise-iso-threshold` (default 1200), and records per-photo denoise
+audit data in `sonna_predictions.json`.
 
 ### UI-based Lite profile creation and processing
 

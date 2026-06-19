@@ -344,6 +344,41 @@ def test_process_auto_straighten_forwarded(
     assert captured.get("auto_straighten") is True
 
 
+def test_process_denoise_options_forwarded(
+    client: TestClient, isolated_paths: dict[str, Path], tmp_path: Path
+) -> None:
+    """denoise options in the request body reach process_shoot_with_model."""
+    _make_ckpt(isolated_paths["checkpoints_dir"], "model-v1.0.1.ckpt")
+    folder = tmp_path / "shoot"
+    _make_raws(folder, n=1)
+
+    captured: dict[str, object] = {}
+
+    def capture(**kwargs):
+        captured.update(kwargs)
+        return {
+            "processed": 1, "failed": 0, "failures": [],
+            "output_paths": [], "low_confidence": [], "predictions_path": None,
+            "cancelled": False,
+        }
+
+    with patch("sonna_editor.api.routes.process.inference_pipeline.process_shoot_with_model",
+               side_effect=capture):
+        ack = client.post("/api/process", json={
+            "folder_path": str(folder),
+            "profile_id": "dp-event-v1.0.1",
+            "denoise_enabled": True,
+            "denoise_iso_threshold": 1000,
+        }).json()
+        for _ in range(50):
+            if client.get(f"/api/jobs/{ack['job_id']}").json()["state"] == "complete":
+                break
+            time.sleep(0.05)
+
+    assert captured.get("denoise_enabled") is True
+    assert captured.get("denoise_iso_threshold") == 1000
+
+
 def test_profile_endpoint_returns_default_skip_fields(
     client: TestClient, isolated_paths: dict[str, Path], tmp_path: Path
 ) -> None:

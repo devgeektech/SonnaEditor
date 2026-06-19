@@ -101,6 +101,15 @@ This checkout is a Windows development/training workspace at `C:\Users\vikas.DES
   detector but writes `PerspectiveRotate` plus minimal `PerspectiveScale`
   instead of `CropAngle` and crop bounds, so it can be tested against
   `Auto_Straighten`.
+- **Opt-in ISO-gated denoise:** the Process UI now has a `Denoise` checkbox
+  plus editable `ISO >` threshold defaulting to 1200. `/api/process` accepts
+  `denoise_enabled` / `denoise_iso_threshold`, and
+  `scripts\process_shoot_model.py` exposes `--denoise` /
+  `--denoise-iso-threshold`. When enabled, `inference/pipeline.py` applies
+  Lightroom-native detail noise sliders only when extracted ISO is greater
+  than the threshold. It does not run external AI denoise, create enhanced
+  DNGs, train, or change checkpoints. `sonna_predictions.json` records the
+  threshold, settings, and per-photo applied/skipped audit data.
 - **Verified this pass:** full local verification on 2026-06-12 passed after the
   Pylance cleanup and foundation CLI repair. `scripts\verify_environment.py`
   passed `11/11`; `uv run ruff check .` passed; `uv run python -m compileall -q
