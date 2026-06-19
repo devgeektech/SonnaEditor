@@ -97,6 +97,10 @@ This checkout is a Windows development/training workspace at `C:\Users\vikas.DES
   from Saha vs `+5.94` manual correction); the estimator now keeps the OpenCV
   residual sign for Lightroom `CropAngle` instead of negating it. No model
   retraining is required.
+  The `Persepective_rotate` comparison branch keeps this centre-line-aware
+  detector but writes `PerspectiveRotate` plus minimal `PerspectiveScale`
+  instead of `CropAngle` and crop bounds, so it can be tested against
+  `Auto_Straighten`.
 - **Verified this pass:** full local verification on 2026-06-12 passed after the
   Pylance cleanup and foundation CLI repair. `scripts\verify_environment.py`
   passed `11/11`; `uv run ruff check .` passed; `uv run python -m compileall -q

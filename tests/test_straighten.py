@@ -7,8 +7,8 @@ from PIL import Image, ImageDraw
 
 from sonna_editor.inference.straighten import (
     STRAIGHTEN_ENGINE_VERSION,
-    crop_angle_attributes,
     estimate_straighten_angle,
+    perspective_rotate_attributes,
     rotated_content_scale,
 )
 
@@ -251,34 +251,34 @@ def test_estimate_straighten_angle_skips_random_texture() -> None:
     assert result.applied is False
 
 
-def test_crop_angle_attributes_only_for_applied_result() -> None:
+def test_perspective_rotate_attributes_only_for_applied_result() -> None:
     image = _tilted_line_image(2.0)
     applied = estimate_straighten_angle(image)
     skipped = estimate_straighten_angle(Image.new("RGB", (400, 300), "white"))
 
-    attrs = crop_angle_attributes(applied, image.size)
-    assert attrs["HasCrop"] == "True"
-    assert attrs["CropTop"] == "0"
-    assert attrs["CropLeft"] == "0"
-    assert attrs["CropBottom"] == "1"
-    assert attrs["CropRight"] == "1"
-    assert attrs["CropAngle"].startswith("+")
-    assert attrs["CropConstrainToWarp"] == "0"
-    assert attrs["CropConstrainToUnitSquare"] == "1"
+    attrs = perspective_rotate_attributes(applied, image.size)
+    assert attrs["PerspectiveRotate"].startswith("+")
+    assert float(attrs["PerspectiveScale"]) > 100.0
     assert attrs["AlreadyApplied"] == "False"
-    assert crop_angle_attributes(skipped, image.size) == {}
+    assert "HasCrop" not in attrs
+    assert "CropAngle" not in attrs
+    assert "CropTop" not in attrs
+    assert perspective_rotate_attributes(skipped, image.size) == {}
 
 
-def test_crop_angle_attributes_keep_full_frame_bounds() -> None:
+def test_perspective_rotate_attributes_avoid_crop_bounds() -> None:
     image = _tilted_room_image(3.0)
     result = estimate_straighten_angle(image)
 
-    attrs = crop_angle_attributes(result, image.size)
+    attrs = perspective_rotate_attributes(result, image.size)
 
-    assert attrs["CropTop"] == "0"
-    assert attrs["CropLeft"] == "0"
-    assert attrs["CropBottom"] == "1"
-    assert attrs["CropRight"] == "1"
+    assert set(attrs) == {
+        "PerspectiveRotate",
+        "PerspectiveScale",
+        "AlreadyApplied",
+    }
+    assert float(attrs["PerspectiveRotate"]) == pytest.approx(3.0, abs=0.7)
+    assert 100.0 < float(attrs["PerspectiveScale"]) < 115.0
 
 
 def test_straighten_engine_version_is_recorded_for_diagnostics() -> None:

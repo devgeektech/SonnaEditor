@@ -106,7 +106,7 @@ This section tracks what each backend source file/folder does. Keep it updated w
 | `src/sonna_editor/inference/__init__.py` | Package marker for inference code. |
 | `src/sonna_editor/inference/engine.py` | Checkpoint loading and batched prediction engine. Builds tensors from extracted previews/metadata plus scene stats, maps categorical metadata through the checkpoint registry, supports uncertainty sampling, and postprocesses outputs. |
 | `src/sonna_editor/inference/pipeline.py` | End-to-end shoot processing: scan RAW files using the central `config.SUPPORTED_RAW_EXTENSIONS` set, extract features, run inference, apply WB/skip semantics, optionally apply preview-based auto straightening, write XMP sidecars, write `sonna_predictions.json` including straightening engine/line diagnostics, and emit progress callbacks. |
-| `src/sonna_editor/inference/straighten.py` | Optional auto-straightening postprocess. Uses CLAHE-normalized OpenCV Canny edges plus probabilistic Hough lines, OpenCV line segments, and a broad Hough fallback for fragmented line evidence, then classifies evidence as horizon, architecture, or mixed-axis geometry before estimating small Lightroom `CropAngle` corrections. Centre-band horizontal evidence is preferred when present so the visible centre/horizon line is not overruled by off-centre distractor lines. It writes full-frame `CropTop=0`, `CropLeft=0`, `CropBottom=1`, `CropRight=1` bounds plus Lightroom crop constraint flags only when selected per processing job and confidence passes the scene-specific thresholds, so the Crop Angle loads without intentionally shrinking the crop rectangle. This is not a trained model output. |
+| `src/sonna_editor/inference/straighten.py` | Optional auto-straightening postprocess. Uses CLAHE-normalized OpenCV Canny edges plus probabilistic Hough lines, OpenCV line segments, and a broad Hough fallback for fragmented line evidence, then classifies evidence as horizon, architecture, or mixed-axis geometry before estimating small Lightroom straighten corrections. Centre-band horizontal evidence is preferred when present so the visible centre/horizon line is not overruled by off-centre distractor lines. On the `Persepective_rotate` branch it writes `PerspectiveRotate` plus minimal `PerspectiveScale` Transform metadata, avoiding `CropAngle` and `CropTop/CropLeft/CropBottom/CropRight`. This is not a trained model output. |
 
 ### Fine-Tune Package
 
@@ -461,6 +461,11 @@ Lite checkpoints are marked with `profile_type: mode_b_initial` in the sidecar J
   prefers horizontal evidence in the centre band of the preview when present,
   so the visible centre/horizon line can win over off-centre architectural or
   background lines with a conflicting tilt.
+- Perspective-rotate comparison branch, 2026-06-19: `Persepective_rotate`
+  keeps the same centre-line-aware angle detector, but writes
+  `PerspectiveRotate` and minimal `PerspectiveScale` instead of `CropAngle`
+  and crop bounds. This branch is for Lightroom comparison testing against
+  `Auto_Straighten`.
 - Lite WB/tint repair, 2026-06-18: `preset.adjuster` no longer derives Tint
   from red-vs-blue balance. Temperature remains red-vs-blue, while Tint now
   uses green-vs-magenta balance so warm/red frames do not get an extra magenta
@@ -478,13 +483,12 @@ Lite checkpoints are marked with `profile_type: mode_b_initial` in the sidecar J
   green/magenta answer maps to 10 Lightroom tint units, and per-photo WB Tint
   correction uses green-vs-magenta balance rather than red-vs-blue balance.
 - Auto straightening is an opt-in inference postprocess, shared by Personal AI
-  and Lite processing. It writes Lightroom crop-angle metadata from OpenCV
-  preview-geometry analysis when confident, while high-texture/no-line frames
-  are skipped. Applied results include full-frame `CropTop=0`, `CropLeft=0`,
-  `CropBottom=1`, `CropRight=1` bounds
-  plus `CropAngle`, because Lightroom Classic may ignore angle-only crop metadata
-  and explicit crop bounds are needed for reliable sidecar loading. Centre-band
-  horizontal evidence is preferred when present.
+  and Lite processing. On the `Persepective_rotate` branch it writes Lightroom
+  Transform metadata (`PerspectiveRotate` plus minimal `PerspectiveScale`) from
+  OpenCV preview-geometry analysis when confident, while high-texture/no-line
+  frames are skipped. It intentionally avoids `CropAngle` and
+  `CropTop/CropLeft/CropBottom/CropRight`; centre-band horizontal evidence is
+  preferred when present.
   The estimator is scene-aware: horizon, architecture, and mixed-axis evidence
   use separate scores and confidence gates. `sonna_predictions.json` records
   the straightening engine, chosen scene type, horizon/axis scores, and

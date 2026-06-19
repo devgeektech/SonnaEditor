@@ -383,11 +383,10 @@ uv run python scripts\process_shoot_model.py `
 `--auto-straighten` is optional and matches the Process UI checkbox. It uses
 OpenCV Canny + Hough/LSD line detection on the extracted preview, then scores
 horizon, architecture, and mixed-axis evidence before writing Lightroom
-`CropAngle` metadata. It does not retrain or alter the selected profile
-checkpoint. Applied results write full-frame `CropTop=0`, `CropLeft=0`,
-`CropBottom=1`, `CropRight=1` bounds with the angle so Lightroom Classic
-activates the Crop Angle state without intentionally shrinking the crop
-rectangle. `sonna_predictions.json` records
+Transform metadata (`PerspectiveRotate` plus minimal `PerspectiveScale`). It
+does not retrain or alter the selected profile checkpoint. This branch avoids
+`CropAngle` and crop bounds entirely for A/B testing against `Auto_Straighten`.
+`sonna_predictions.json` records
 `straightening_engine`, `scene_type`, `horizon_score`, `axis_score`,
 horizontal/vertical line counts, `line_count`, and `line_length_px` for each
 photo so a batch can be audited if Lightroom does not appear to show

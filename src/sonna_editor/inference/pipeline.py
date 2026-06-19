@@ -19,8 +19,8 @@ from sonna_editor.data.xmp import LR_DEFAULTS, write_xmp
 from sonna_editor.inference.engine import InferenceEngine
 from sonna_editor.inference.straighten import (
     STRAIGHTEN_ENGINE_VERSION,
-    crop_angle_attributes,
     estimate_straighten_angle,
+    perspective_rotate_attributes,
 )
 from sonna_editor.model.postprocess import predictions_to_dict
 from sonna_editor.mode_b.survey import load_survey
@@ -335,12 +335,12 @@ def process_shoot_with_model(
                                sidecar's v1_skip_fields list so the finetune
                                capture pipeline correctly attributes them as
                                "model_filtered" source.
-        auto_straighten:       If True, estimate a small crop angle from the
-                               extracted preview and write Lightroom crop
-                               metadata only when confidence passes conservative
-                               thresholds. This is a postprocess feature, not a
-                               model prediction, and is skipped entirely when
-                               False.
+        auto_straighten:       If True, estimate a small straighten angle from
+                               the extracted preview and write Lightroom
+                               Transform metadata only when confidence passes
+                               conservative thresholds. This is a postprocess
+                               feature, not a model prediction, and is skipped
+                               entirely when False.
         on_photo_prepared:     Optional callback fired after preview/metadata
                                extraction succeeds. Used for early UI progress
                                before model prediction/XMP writing.
@@ -544,7 +544,7 @@ def process_shoot_with_model(
         if auto_straighten:
             straightening_result = estimate_straighten_angle(previews[i])
             extra_attributes.update(
-                crop_angle_attributes(straightening_result, previews[i].size)
+                perspective_rotate_attributes(straightening_result, previews[i].size)
             )
             straightening_by_file[raw_path.name] = {
                 "angle_degrees": straightening_result.angle_degrees,

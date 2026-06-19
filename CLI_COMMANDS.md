@@ -174,8 +174,8 @@ Do not reuse a previous --version-stem; old checkpoints are never overwritten.
    - Optional auto straightening is controlled per run from the UI checkbox or
      `--auto-straighten`; it uses OpenCV preview-line geometry, then scores
      horizon, architecture, and mixed-axis evidence before writing Lightroom
-     `CropAngle` metadata with full-frame `CropTop=0`, `CropLeft=0`,
-     `CropBottom=1`, `CropRight=1` bounds when confident. The
+     Transform metadata (`PerspectiveRotate` plus minimal `PerspectiveScale`)
+     when confident. The
      predictions sidecar records straightening engine, scene type, horizon/axis
      scores, and line-support diagnostics. It does not require retraining.
 

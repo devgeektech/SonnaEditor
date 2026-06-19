@@ -2,7 +2,8 @@
 
 This module deliberately stays outside the trained model. Straightening is a
 geometry postprocess: estimate a small horizon/architectural tilt from the RAW
-preview, then write Lightroom crop metadata only when confidence is reasonable.
+preview, then write Lightroom straighten metadata only when confidence is
+reasonable.
 """
 
 from __future__ import annotations
@@ -365,7 +366,7 @@ def _scene_candidates(
 
 
 def estimate_straighten_angle(image: Image.Image) -> StraightenResult:
-    """Estimate a Lightroom CropAngle from a preview image.
+    """Estimate a Lightroom straighten angle from a preview image.
 
     The estimator uses OpenCV, not a learned model. It detects strong preview
     edges with Canny, extracts straight horizontal/vertical candidates through
@@ -416,9 +417,9 @@ def estimate_straighten_angle(image: Image.Image) -> StraightenResult:
         )
 
     confidence = candidate.confidence
-    # Lightroom's CropAngle sign is the visible correction direction. OpenCV
-    # line residuals already describe that direction for Lightroom's crop
-    # slider, so keep the sign instead of negating it.
+    # Lightroom's visible correction direction matches the OpenCV line
+    # residuals for the straighten routes we write, so keep the sign instead
+    # of negating it.
     angle = float(candidate.angle)
     angle = max(-_MAX_APPLY_ANGLE, min(_MAX_APPLY_ANGLE, angle))
 
@@ -492,51 +493,31 @@ def estimate_straighten_angle(image: Image.Image) -> StraightenResult:
     )
 
 
-def crop_angle_attributes(
+def perspective_rotate_attributes(
     result: StraightenResult,
     image_size: tuple[int, int] | None = None,
 ) -> dict[str, str]:
-    """Return Lightroom CRS crop attributes for an applied straighten result.
+    """Return Lightroom CRS Transform attributes for an applied straighten result.
 
-    Lightroom needs explicit crop bounds for `CropAngle` to activate reliably
-    from a generated sidecar. Keep those bounds at the full-frame unit square
-    so the sidecar rotates the crop angle without shrinking the visible crop
-    rectangle.
+    This branch intentionally avoids CropAngle/CropTop/CropLeft/CropBottom/
+    CropRight and uses Lightroom's Transform rotation path instead. The
+    PerspectiveScale value zooms just enough to hide empty corners after the
+    rotation when a preview size is available.
     """
     if not result.applied:
         return {}
-    top, left, bottom, right = _straighten_crop_bounds(
-        result.angle_degrees,
-        image_size,
-    )
+    scale = 100.0
+    if image_size is not None:
+        width, height = image_size
+        scale = max(
+            100.0,
+            min(150.0, rotated_content_scale(result.angle_degrees, width, height) * 100.0),
+        )
     return {
-        "HasCrop": "True",
-        "CropTop": _format_crop_bound(top),
-        "CropLeft": _format_crop_bound(left),
-        "CropBottom": _format_crop_bound(bottom),
-        "CropRight": _format_crop_bound(right),
-        "CropAngle": _format_lightroom_angle(result.angle_degrees),
-        "CropConstrainToWarp": "0",
-        "CropConstrainToUnitSquare": "1",
+        "PerspectiveRotate": _format_lightroom_angle(result.angle_degrees),
+        "PerspectiveScale": _format_scale(scale),
         "AlreadyApplied": "False",
     }
-
-
-def _straighten_crop_bounds(
-    angle_degrees: float,
-    image_size: tuple[int, int] | None,
-) -> tuple[float, float, float, float]:
-    _ = angle_degrees, image_size
-    return 0.0, 0.0, 1.0, 1.0
-
-
-def _format_crop_bound(value: float) -> str:
-    value = max(0.0, min(1.0, value))
-    if value == 0.0:
-        return "0"
-    if value == 1.0:
-        return "1"
-    return f"{value:.6f}".rstrip("0").rstrip(".")
 
 
 def _format_lightroom_angle(angle: float) -> str:
@@ -544,6 +525,11 @@ def _format_lightroom_angle(angle: float) -> str:
         return f"+{int(angle)}" if angle > 0 else str(int(angle))
     text = f"{angle:+.4f}".rstrip("0").rstrip(".")
     return text if text != "-0" else "0"
+
+
+def _format_scale(scale: float) -> str:
+    text = f"{scale:.4f}".rstrip("0").rstrip(".")
+    return text if text else "100"
 
 
 def rotated_content_scale(angle_degrees: float, width: int, height: int) -> float:

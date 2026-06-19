@@ -1,7 +1,7 @@
 # Session State - Sonna Editor
 
 **Saved:** 2026-06-18 local time
-**Current phase/task:** Auto-straighten crop metadata and Lite WB tint repair.
+**Current phase/task:** Auto-straighten comparison branches and Lite WB tint repair.
 
 ## Current Workspace
 
@@ -53,18 +53,20 @@ x86_64, while macOS resolves the matching public wheels.
 ## What Changed This Session
 
 - Repaired two issues from real processing feedback:
-  - Auto-straighten crop metadata now writes Lightroom `CropAngle` with
-    full-frame crop bounds (`CropTop=0`, `CropLeft=0`, `CropBottom=1`,
-    `CropRight=1`). This may still make Lightroom label the crop as
-    Custom/Original, but it avoids intentionally shrinking the crop rectangle
-    while still activating Lightroom's Crop Angle slider. Applied crop metadata also includes
-    `CropConstrainToWarp=0`, `CropConstrainToUnitSquare=1`, and
-    `AlreadyApplied=False`, matching the Lightroom/Imagen sidecar shape more
-    closely.
+  - `Auto_Straighten` is the crop-angle comparison branch: it writes Lightroom
+    `CropAngle` with full-frame crop bounds (`CropTop=0`, `CropLeft=0`,
+    `CropBottom=1`, `CropRight=1`). This may still make Lightroom label the
+    crop as Custom/Original, but it avoids intentionally shrinking the crop
+    rectangle while still activating Lightroom's Crop Angle slider.
+  - `Persepective_rotate` is the Transform comparison branch: it writes
+    `PerspectiveRotate` plus minimal `PerspectiveScale`, and intentionally
+    avoids `CropAngle` and crop bounds.
   - Auto-straighten angle selection now prefers horizontal line evidence near
     the centre of the preview when present, so the centre/horizon line is not
     overruled by off-centre architectural/background lines with a different
     tilt.
+  - The `Persepective_rotate` comparison branch keeps the same centre-line-aware
+    detector as `Auto_Straighten`.
   - Lite/Mode B WB tint adjustment now uses green-vs-magenta balance for
     `Tint` instead of red-vs-blue balance, so warm/red frames are no longer
     pushed further magenta by the grey-world correction. The Lite survey's
@@ -868,11 +870,10 @@ x86_64, while macOS resolves the matching public wheels.
 - Auto straightening is opt-in and runs after preview extraction during
   processing. It uses CLAHE-normalized OpenCV Canny edges plus Hough/LSD line
   geometry, then classifies the evidence into horizon, architecture, or
-  mixed-axis candidates before estimating small Lightroom `CropAngle`
-  rotations. It writes crop metadata only when scene-specific confidence is
-  high, using full-frame `CropTop=0`, `CropLeft=0`, `CropBottom=1`,
-  `CropRight=1` bounds plus Lightroom crop constraint flags, and records
-  skipped/applied diagnostics in
+  mixed-axis candidates before estimating small Lightroom straighten
+  rotations. On the `Persepective_rotate` branch it writes Transform metadata
+  only when scene-specific confidence is high, using `PerspectiveRotate` plus
+  minimal `PerspectiveScale`, and records skipped/applied diagnostics in
   `sonna_predictions.json`.
   Centre-band horizontal evidence is preferred when present.
   It is independent of training and checkpoint versioning.

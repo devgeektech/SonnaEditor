@@ -479,7 +479,7 @@ def test_mode_b_initial_uses_per_photo_preset_adjuster(tmp_path: Path) -> None:
     )
 
 
-def test_pipeline_auto_straighten_writes_crop_angle_and_sidecar(
+def test_pipeline_auto_straighten_writes_perspective_rotate_and_sidecar(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -544,14 +544,11 @@ def test_pipeline_auto_straighten_writes_crop_angle_and_sidecar(
     attrs = captured["extra_attributes"]
     assert attrs["LensProfileEnable"] == "1"
     assert attrs["AutoLateralCA"] == "1"
-    assert attrs["HasCrop"] == "True"
-    assert attrs["CropTop"] == "0"
-    assert attrs["CropLeft"] == "0"
-    assert attrs["CropBottom"] == "1"
-    assert attrs["CropRight"] == "1"
-    assert float(attrs["CropAngle"]) == pytest.approx(3.0, abs=0.5)
-    assert attrs["CropConstrainToWarp"] == "0"
-    assert attrs["CropConstrainToUnitSquare"] == "1"
+    assert float(attrs["PerspectiveRotate"]) == pytest.approx(3.0, abs=0.5)
+    assert float(attrs["PerspectiveScale"]) > 100.0
+    assert "HasCrop" not in attrs
+    assert "CropAngle" not in attrs
+    assert "CropTop" not in attrs
     assert attrs["AlreadyApplied"] == "False"
 
     sidecar = _json.loads((folder / "sonna_predictions.json").read_text())
