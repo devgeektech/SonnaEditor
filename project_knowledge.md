@@ -4,12 +4,17 @@
 
 Sonna Editor is a local desktop tool for predicting Lightroom slider adjustments from RAW images. It uses a PyTorch regression model trained on Lightroom-edited photos, then writes XMP sidecars alongside RAW files. The UI is Electron + React and the backend is Python. The runtime target is cross-platform: macOS, Windows, and Linux.
 
-Current local workspace state as of 2026-06-15:
+Current local workspace state as of 2026-06-19:
 - Windows path: `C:\Users\vikas.DESKTOP-61LEE8B\Projects\SonnaEditor`
+- Branch: `Auto_Straighten`, tracking `origin/Auto_Straighten`. Treat this
+  branch as the current context for auto-straighten behavior, Lite WB/tint
+  repair, selected-folder processing, and the tracked hidden foundation
+  checkpoint.
 - Python 3.11.15 via uv 0.11.17. `pyproject.toml` / `uv.lock` require Python `3.11.*`.
 - PyTorch `2.11.0+cu128`, CUDA active on NVIDIA GeForce RTX 3050. `torch==2.11.0` / `torchvision==0.26.0` are exact-pinned in `pyproject.toml`; Windows/Linux x86_64 resolve CUDA 12.8 local wheels through the configured PyTorch index, while macOS resolves public wheels.
 - Training/profile caches were intentionally cleared for a fresh dataset reset.
 - There is no guaranteed local `data/training_workspace/sonna_personal_001_dataset/` split set or frontend-visible `v1_learning/model-v*.ckpt` profile until fresh RAW+XMP data is added and a Personal AI profile is trained or a checkpoint is intentionally published. The duplicate generated folder `v1_learning/dataset` was removed. Generated datasets, splits, thumbnails, audits, and run workspaces belong under `data/training_workspace`; `v1_learning` is reserved for frontend-visible checkpoint/sidecar/preset/survey files.
+- Hidden foundation state is present and tracked in this branch. `SonnaEditorFoundation/foundation_manifest.json` has active version `foundation-sonna-raw-xmp-004-visual`, pointing at `SonnaEditorFoundation/checkpoints/foundation-sonna-raw-xmp-004-visual.ckpt` and matching `.json` sidecar. The sidecar records `profile_type=mode_a_trained`, `slider_set_version=v2`, `arch_version=3`, `resolution=512`, `train_rows=5021`, and `val_loss=0.02533668652176857`.
 - Historical diagnostics from the previous 189-photo local dataset remain useful for collapse analysis context, but do not assume those local Parquet/checkpoint files are present in this checkout.
 - Supported RAW extension scanning is centralised in `config.SUPPORTED_RAW_EXTENSIONS` and currently covers `.cr2`, `.cr3`, `.nef`, `.arw`, `.raf`, `.orf`, `.rw2`, `.pef`, `.dng`, `.x3f`, `.rwl`, and `.srw` across dataset building, folder/API scans, preset processing, model inference, and fine-tune capture. Decode/conversion still depends on `rawpy`/LibRaw or Adobe DNG Converter supporting the specific camera file.
 - Preferred app startup is now one command: `.\run_saha.cmd` on Windows and
@@ -18,11 +23,11 @@ Current local workspace state as of 2026-06-15:
   readiness guard waits up to 30s with 1s `/api/health` probes, configurable
   via `SAHA_BACKEND_STARTUP_TIMEOUT_MS`, to avoid false failures during cold
   Windows/CUDA startup.
-- Latest full local verification on 2026-06-12 passed: environment `11/11`,
-  `uv run ruff check .`, `uv run python -m compileall -q src scripts tests`,
-  `npm run build:vite`, and `uv run pytest -q` (`753 passed, 45 skipped,
-  1 warning`). The remaining warning is the known PyTorch scalar-conversion
-  warning in `tests/test_losses.py`.
+- Latest full backend verification recorded in `SESSION_STATE.md` for the
+  auto-straighten branch passed with `uv run ruff check .` and
+  `uv run pytest -q` (`771 passed, 45 skipped, 1 existing PyTorch
+  scalar-conversion warning`). The documentation reconciliation itself was
+  docs-only; it did not rerun the full suite.
 
 The core inference flow is:
 - extract RAW preview + metadata
@@ -49,7 +54,7 @@ The core inference flow is:
 - `v1_learning/`: frontend-visible published profile checkpoints plus sidecar/preset/survey files only. Generated datasets do not belong here.
 - `.saha/`: repo-local runtime state for active-profile selection, recent folders, job snapshots, Personal AI training scratch runs, and fine-tune scratch runs. Auto-created at runtime and gitignored.
 - `MAC_SETUP.md`: Mac-specific setup and run guide covering clean install, backend/frontend startup, frontend-capable workflows, and CLI equivalents.
-- `SonnaEditorFoundation/`: repo-local hidden foundation-model folder by default, or `SONNA_FOUNDATION_REPO` if overridden. It contains schema-v2 `foundation_manifest.json` with `active_version` / `versions[]` lineage metadata and versioned `checkpoints/foundation-vN.ckpt` files. The active checkpoint is cumulative across real Lightroom-parameter sources: catalog and RAW+XMP runs update the same native `SonnaEditor` slider-regression checkpoint. Keep this out of gitignored `data/` but inside the SonnaEditor project root so the workspace stays self-contained. Checkpoint binaries are Git LFS-managed through `.gitattributes`; normal `git push` uploads them after `git lfs install`.
+- `SonnaEditorFoundation/`: repo-local hidden foundation-model folder by default, or `SONNA_FOUNDATION_REPO` if overridden. It contains schema-v2 `foundation_manifest.json` with `active_version` / `versions[]` lineage metadata and versioned checkpoints under `checkpoints/`. In this branch the active checkpoint is `foundation-sonna-raw-xmp-004-visual`. The active checkpoint is cumulative across real Lightroom-parameter sources: catalog and RAW+XMP runs update the same native `SonnaEditor` slider-regression checkpoint. Keep this out of gitignored `data/` but inside the SonnaEditor project root so the workspace stays self-contained. Checkpoint binaries are Git LFS-managed through `.gitattributes`; normal `git push` uploads them after `git lfs install`.
 
  ## Source Package Map (`src/sonna_editor`)
 
@@ -145,7 +150,7 @@ This section tracks what each backend source file/folder does. Keep it updated w
 | `src/sonna_editor/api/routes/folders.py` | Folder scan and recent-folder endpoints for UI file selection workflows. |
 | `src/sonna_editor/api/routes/health.py` | Health endpoint exposing backend status, device information, git SHA, and model-loaded state. |
 | `src/sonna_editor/api/routes/process.py` | Process-shoot job endpoints, job snapshots, cancellation, and websocket event streaming. |
-| `src/sonna_editor/api/routes/profiles.py` | Profile management endpoints. Scans `v1_learning/model-v*.ckpt`, reads sidecar JSON files, activates/deletes profiles, starts frontend Personal AI RAW+XMP training jobs warm-started from the configured hidden foundation checkpoint, and creates Lite profiles from the configured foundation checkpoint. |
+| `src/sonna_editor/api/routes/profiles.py` | Profile management endpoints. Scans `v1_learning/model-v*.ckpt`, reads sidecar JSON files, activates/deletes profiles, starts backend Personal AI RAW+XMP training jobs warm-started from the configured hidden foundation checkpoint, and creates Lite profiles from the configured foundation checkpoint. The current frontend keeps the Personal AI creation tile disabled as "Coming soon" while exposing Lite creation. |
 
 ### Profiles And UI Placeholders
 
@@ -390,9 +395,9 @@ Lite checkpoints are marked with `profile_type: mode_b_initial` in the sidecar J
 - Foundation checkpoint versioning, 2026-06-03 and schema-v2 update 2026-06-04: promotion never overwrites old foundation checkpoints. Each run updates `foundation_manifest.json` so the new checkpoint becomes active, records `active_version`, `versions[]`, SHA256, capabilities, and training source tags, and `scripts/rollback_foundation.py` can switch the active version without deleting files. `resolve_foundation_checkpoint()` still falls back to the newest remaining checkpoint if the active manifest target has been removed.
 - Git LFS checkpoint workflow, 2026-06-10: `.gitattributes` routes `SonnaEditorFoundation/checkpoints/*.ckpt`, `v1_learning/*.ckpt`, and `models/**/*.ckpt` through Git LFS. Operators run `git lfs install` once per machine, use normal `git add` / `git commit` / `git push` for checkpoints, and run `git lfs pull` on new machines to materialize real `.ckpt` files.
 - Legacy foundation manifest compatibility, 2026-06-05: `list_foundation_versions()` now includes the active checkpoint from older manifests that only have `active_checkpoint` plus `history`, so `scripts\rollback_foundation.py --list` shows both historical and active entries before the next schema-v2 promotion rewrites the manifest.
-- Foundation clean slate, 2026-06-05: previous local trained profile and foundation checkpoint artifacts were removed (`v1_learning\model-v0.1.0.*`, `SonnaEditorFoundation\checkpoints\foundation-sonna-raw-xmp-001.*`, `foundation-sonna-raw-xmp-003.*`, and old `data\training_workspace\foundation_runs\`). `foundation_manifest.json` is now an empty schema-v2 manifest. `resolve_foundation_checkpoint()` raises `FileNotFoundError` for that state, and `scripts\train_foundation_model.py` treats it as no warm-start so the first new FiveK catalog foundation run can train from scratch and then become the default base.
+- Foundation clean-slate history, 2026-06-05: previous local trained profile and foundation checkpoint artifacts were removed (`v1_learning\model-v0.1.0.*`, `SonnaEditorFoundation\checkpoints\foundation-sonna-raw-xmp-001.*`, `foundation-sonna-raw-xmp-003.*`, and old `data\training_workspace\foundation_runs\`). That was a historical reset state, not the current `Auto_Straighten` branch state.
 - Foundation warm-start retention, 2026-06-04 and simplification/capacity update 2026-06-05/08: frontend Personal AI uses the progressive backbone schedule by default. Foundation training uses adaptive capacity: larger splits start with the final ConvNeXt stage trainable (`stage:7`) plus feature fusion/heads, while splits below 500 train rows default to heads/fusion-only (`custom` + `none`) to reduce overfitting. Compact specs such as `block:7:2,stage:6`, `block:7:1-2,stage:6`, `stage:7`, and `from:6` are supported for ablations. Warm starts now come from native `SonnaEditor` slider-regression checkpoints only. Use `scripts/analyse_backbone_drift.py` after training to quantify whether foundation features were preserved.
-- Foundation bad-run triage, 2026-06-05: `foundation-sonna-raw-xmp-001` was rejected as the active foundation after diagnostics showed the Sonna continuation used only 132 train rows with 16.2M trainable parameters, overfit, and collapsed `Highlights2012`/`Shadows2012`. `SonnaEditorFoundation\foundation_manifest.json` was rolled back to `foundation-fivek-catalog-expert-c-001`. Future training summaries include split row counts, parquet paths, train-batch count, and all-slider `test_per_field_mae`; `quick_diagnostic.py` prints an all-parameter check when available.
+- Foundation active state, 2026-06-19: `foundation-sonna-raw-xmp-001` remains rejected because diagnostics showed only 132 train rows, overfitting, and collapsed `Highlights2012`/`Shadows2012`. Earlier docs described a rollback to `foundation-fivek-catalog-expert-c-001`; the current branch now tracks `foundation-sonna-raw-xmp-004-visual` as the active hidden foundation checkpoint.
 - Dataset-location cleanup, 2026-06-05: removed the duplicate generated `v1_learning/dataset` folder and moved remaining active defaults to the canonical `data/training_workspace/sonna_personal_001_dataset` layout. Updated `config.ORIGINAL_TRAIN_PARQUET`, `quick_diagnostic`, `finetune_profile`, legacy v1 audit/training helpers, and `migrate_labels_to_v2`; added config regression coverage so the default train parquet cannot drift back to `v1_learning/dataset`.
 - RAW+XMP foundation runbook cleanup, 2026-06-03 and path correction 2026-06-04: `FOUNDATION_TRAINING.md` now documents the parameter-supervised foundation path with direct script commands only: export Lightroom XMP sidecars, place source files under `data/training_sources/`, build inspectable Parquet splits, audit the dataset, then train from `--splits-dir` or use the direct `--raw-xmp-dir` shortcut. `CLI_COMMANDS.md`, `RUN.md`, `MAC_SETUP.md`, `README.md`, `HANDOVER.md`, and `SESSION_STATE.md` are aligned with the repo-local `SonnaEditorFoundation/` folder and the current cleared-local-cache state.
 - Dataset audit dependency fix, 2026-06-03: `matplotlib` is now a base dependency so `scripts/audit_catalog.py` can generate ISO and slider-distribution PNGs without optional-import warnings. The audit CLI prints ASCII status labels to avoid Windows PowerShell emoji encoding errors.

@@ -8,11 +8,15 @@ sidecars for new shoots.
 
 - Backend: Python 3.11 only, uv, FastAPI, PyTorch, pytest.
 - Frontend: Electron + React in `saha-app/`.
+- Current branch context: `Auto_Straighten`, with opt-in Lightroom-native crop
+  angle straightening and Lite WB/tint repair active in source.
 - Production profile lineage: frontend-visible profiles live under `v1_learning/`.
-- Personal AI profiles train from RAW+XMP through the frontend and warm-start
-  from the hidden foundation checkpoint. Lite profiles use the same hidden
-  foundation checkpoint plus preset/survey style with adaptive per-photo
-  Exposure/WB corrections before fine-tuning.
+- Personal AI profile training is implemented in the backend RAW+XMP route and
+  warm-starts from the hidden foundation checkpoint, but the current Profile
+  screen tile is disabled and labelled "Coming soon". Lite profiles are exposed
+  in the frontend and use the same hidden foundation checkpoint plus
+  preset/survey style with adaptive per-photo Exposure/WB corrections before
+  fine-tuning.
 - Platform target: macOS, Windows, and Linux. CUDA and Apple MPS are used when
   available; CPU fallback is supported for development and small runs.
 - Current dependency pins are recorded directly in `pyproject.toml` and
@@ -20,8 +24,14 @@ sidecars for new shoots.
   through the CUDA 12.8 wheel index and is verified on an NVIDIA GeForce RTX
   3050. macOS resolves the matching public `torch==2.11.0` /
   `torchvision==0.26.0` wheels.
-- Training/profile caches are currently cleared so a fresh dataset can be
-  added. There is currently no guaranteed local dataset or visible checkpoint.
+- Training/profile caches are currently cleared so a fresh Personal AI dataset
+  can be added. There is currently no guaranteed local Personal AI dataset or
+  visible `v1_learning/model-v*.ckpt` profile.
+- Hidden foundation state is configured in this branch. The active foundation
+  manifest points to
+  `SonnaEditorFoundation/checkpoints/foundation-sonna-raw-xmp-004-visual.ckpt`
+  with matching sidecar metadata (`slider_set_version=v2`, `arch_version=3`,
+  `resolution=512`, `train_rows=5021`).
 - Current training defaults use geometry-only augmentation, Exposure loss
   weight 5.0, and output-head target-prior calibration from the training split.
   Fresh runs zero final head weights before applying priors; warm-started runs

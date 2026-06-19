@@ -250,8 +250,9 @@ Check the same list through the backend:
 curl http://127.0.0.1:8765/api/profiles
 ```
 
-If no profiles are listed, create a Personal AI profile from the frontend or
-train/publish one from the CLI.
+If no profiles are listed, create a Lite profile from the frontend or
+train/publish a Personal AI profile from the CLI/backend path when that flow is
+ready for operator use.
 
 The hidden foundation checkpoint is not listed as a frontend profile. Check it
 separately:
@@ -259,6 +260,11 @@ separately:
 ```bash
 uv run python scripts/rollback_foundation.py --list
 ```
+
+On the current `Auto_Straighten` branch this should list
+`foundation-sonna-raw-xmp-004-visual` as the active hidden foundation. That
+checkpoint lives under `SonnaEditorFoundation/checkpoints/` and is the base
+Lite profile creation resolves unless an environment override is set.
 
 ## 7. Prepare Lightroom Data
 
@@ -268,7 +274,7 @@ for frontend-visible checkpoint and sidecar files only.
 
 ### RAW + XMP
 
-This can be done from the frontend when creating a Personal AI profile: choose a
+This is the same RAW+XMP folder shape used by Personal AI training: choose a
 folder that contains RAW files with matching `.xmp` sidecars.
 
 Recommended Mac source folder:
@@ -324,10 +330,12 @@ data/training_workspace/sonna_personal_001_dataset/splits_v2_stratified/test.par
 
 ## 8. Train A Personal AI Profile
 
-This can be done from the frontend: open the Profiles page, choose Personal AI,
-select the RAW + XMP folder, enter the profile name, and start training. The
-backend builds the dataset, trains with the production recipe, publishes a
-versioned checkpoint into `v1_learning/`, and streams progress to the UI.
+The backend route and wizard code path exist for RAW+XMP Personal AI training,
+but the current Profile screen tile is disabled and labelled "Coming soon".
+Use the CLI equivalent below, or re-enable the frontend tile deliberately when
+the operator-facing Personal AI flow is ready. The backend builds the dataset,
+trains with the production recipe, publishes a versioned checkpoint into
+`v1_learning/`, and streams progress through the normal job API when invoked.
 
 Personal AI training resolves the active hidden foundation checkpoint when one
 is configured. Warm-started runs keep learned foundation weights but recalibrate

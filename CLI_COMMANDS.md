@@ -4,7 +4,7 @@ This is the practical runbook for command-line data prep, Personal AI profiles,
 Lite profiles, processing, diagnostics, and fine-tuning. Foundation-only
 training, resume, and retrain commands live in `FOUNDATION_TRAINING.md`.
 
-## Current Local State (2026-06-12)
+## Current Local State (2026-06-19)
 
 - Python 3.11.15 via uv 0.11.17. `pyproject.toml` and `uv.lock` now require
   Python `3.11.*`; use `uv python pin 3.11` on Mac if uv tries a newer Python.
@@ -15,20 +15,30 @@ training, resume, and retrain commands live in `FOUNDATION_TRAINING.md`.
   preserves CUDA PyTorch on Windows/Linux x86_64 through the pinned PyTorch CUDA
   12.8 index, while macOS resolves the public `torch==2.11.0` /
   `torchvision==0.26.0` wheels.
-- Training/profile caches were intentionally cleared so a fresh dataset can be added.
+- Training/profile caches were intentionally cleared so a fresh Personal AI
+  dataset can be added.
 - `data\training_workspace\sonna_personal_001_dataset\`, `data\models\`, `data\parquet\`, `data\captures\`, `data\thumbnails\`, `data\audits\`, `data\dbg\`, `data\raw\sonna_training\`, `.pytest_cache`, `.ruff_cache`, and `.saha\active_profile.txt` were removed or emptied.
-- There is currently no guaranteed local frontend-visible checkpoint in `v1_learning\`. Add fresh RAW+XMP data and train a Personal AI profile from the UI, or configure the hidden foundation checkpoint using `FOUNDATION_TRAINING.md`.
+- There is currently no guaranteed local frontend-visible checkpoint in
+  `v1_learning\`. Add fresh RAW+XMP data and train a Personal AI profile via
+  the backend/CLI path when ready, or create a Lite profile from the frontend.
+- The hidden foundation checkpoint is configured in this branch. The active
+  manifest version is `foundation-sonna-raw-xmp-004-visual`, pointing at
+  `SonnaEditorFoundation\checkpoints\foundation-sonna-raw-xmp-004-visual.ckpt`
+  with a matching sidecar. `uv run python scripts\rollback_foundation.py
+  --list` should show that version as active.
 - Runtime directories are now created automatically from the project root. A fresh clone will bootstrap repo-local `data\training_sources\`, `data\raw\`, `data\raw\sonna_training\`, `v1_learning\`, and `.saha\` on backend or CLI startup.
 - App startup is now wrapped by a one-command launcher. Use `.\run_saha.cmd`
   on Windows and `bash run_saha.sh` on macOS/Linux. The old two-terminal
   backend/frontend commands remain below as a debugging reference. Electron's
   backend readiness wait is 30s by default and can be overridden with
   `SAHA_BACKEND_STARTUP_TIMEOUT_MS` for unusually slow cold starts.
-- Latest full local verification on 2026-06-12 passed: environment `11/11`,
-  `uv run ruff check .`, `uv run python -m compileall -q src scripts tests`,
-  `npm run build:vite`, and full pytest (`753 passed, 45 skipped, 1 warning`).
-  The foundation CLI help now exposes the documented `--tone-presence-retry`
-  and repeatable `--field-loss-weight FIELD=WEIGHT` flags.
+- Latest full backend verification recorded for the auto-straighten branch
+  passed with `uv run ruff check .` and `uv run pytest -q` (`771 passed, 45
+  skipped, 1 existing PyTorch scalar-conversion warning`). Earlier full-flow
+  verification also confirmed `scripts\verify_environment.py`, compileall,
+  `npm run build:vite`, launcher help, and foundation CLI help. The foundation
+  CLI exposes `--tone-presence-retry` and repeatable
+  `--field-loss-weight FIELD=WEIGHT` flags.
 - Lite profile creation now uses the configured foundation checkpoint. It does not depend on whichever Personal AI profile is active in the frontend.
 - Raw training photos should live in separate repo-local child folders under `data/training_sources/` by default. Generated datasets and foundation runs default to `data/training_workspace/` unless you override `SONNA_TRAINING_WORKSPACE`.
 - `scripts\train_profile.py` now logs default recipe values as `Training recipe ...`; only values explicitly supplied as CLI flags are logged as `Override ...`.
@@ -44,7 +54,7 @@ training, resume, and retrain commands live in `FOUNDATION_TRAINING.md`.
 RAW+XMP data preparation and foundation training are not the same thing.
 
 - **RAW+XMP dataset build:** reads edited photos, extracts previews/metadata/slider labels, and writes Parquet splits. This is just data preparation.
-- **Personal AI profile training:** trains from those splits, warm-starting from the configured hidden foundation checkpoint in the frontend flow, and publishes a frontend-visible profile into `v1_learning/`.
+- **Personal AI profile training:** trains from those splits, warm-starting from the configured hidden foundation checkpoint, and publishes a frontend-visible profile into `v1_learning/`. The backend route exists; the current frontend tile is still disabled as "Coming soon".
 - **Foundation training:** trains from real Lightroom
   slider labels (`RAW+XMP` or catalog-derived settings), but promotes the final
   checkpoint into the repo-local hidden foundation folder. It does not publish
@@ -101,8 +111,9 @@ Parquet splits with a foundation weight warm start by default, not
 
 Current triage note: `foundation-sonna-raw-xmp-001` was rejected as the active
 foundation because it trained from only 132 train rows, overfit, and collapsed
-Highlights/Shadows. The active foundation manifest was rolled back to
-`foundation-fivek-catalog-expert-c-001`.
+Highlights/Shadows. Earlier docs described a rollback to
+`foundation-fivek-catalog-expert-c-001`; this branch now tracks
+`foundation-sonna-raw-xmp-004-visual` as the active hidden foundation.
 
 Output-head prior initialisation is bias-only for warm-started runs and
 bias-plus-zero-final-weights for fresh runs. It does not freeze the head and it
@@ -186,7 +197,7 @@ Do not reuse a previous --version-stem; old checkpoints are never overwritten.
 
 ## Production Profile Paths
 
-- **Personal AI profile:** built from RAW files plus matching Lightroom XMP sidecars. This is the normal profile-training path for operators and is now started from the Saha frontend. The backend resolves the configured foundation checkpoint, uses the same dataset builder and `sonna_editor.training.profile_runner.train_profile()` recipe as the CLI, warm-starts from that foundation, then publishes a versioned profile into `v1_learning/`.
+- **Personal AI profile:** built from RAW files plus matching Lightroom XMP sidecars. The backend route and wizard code path exist and resolve the configured foundation checkpoint, use the same dataset builder and `sonna_editor.training.profile_runner.train_profile()` recipe as the CLI, warm-start from that foundation, then publish a versioned profile into `v1_learning/`. In the current frontend, the Profile screen's Personal AI creation tile is disabled and labelled "Coming soon", so operators should not assume the UI exposes this flow yet.
 - **Lite profile:** built from the configured foundation checkpoint plus a Lightroom preset and the six-question Lite survey. It does not depend on an active Personal AI profile. The first Lite processing pass dynamically adjusts Exposure, Temperature, and Tint because the preset owns the look sliders; all six survey answers are still stored in the profile package for calibration metadata and future fine-tuning. Tint calibration is conservative: the strongest Lite survey tint answer maps to 10 Lightroom tint units, and per-photo Tint correction uses green-vs-magenta balance.
 - **Foundation model:** CLI-only and hidden from the UI. Use `FOUNDATION_TRAINING.md` for the complete train, resume, retrain, promotion, and FiveK guidance. The foundation CLI supports RAW+XMP folders and prepared Lightroom-parameter splits, including catalog-derived FiveK splits.
 
@@ -456,9 +467,10 @@ To resume an interrupted training run, add `--resume-from-checkpoint` and point 
 Omit `--resume-from-checkpoint` for a scratch CLI experiment. Pass
 `--base-model-checkpoint <foundation.ckpt>` when you want a CLI warm start from
 the hidden foundation checkpoint without carrying over optimizer or epoch state.
-The frontend Personal AI route supplies that configured hidden foundation
-checkpoint automatically, so normal operator-created Personal AI profiles start
-from the foundation model.
+The backend Personal AI route supplies that configured hidden foundation
+checkpoint automatically. In the current frontend, the Personal AI tile is
+disabled, so use this CLI path or re-enable the UI deliberately before asking
+operators to start Personal AI training from the app.
 
 Note on `--resume-from-checkpoint`:
 

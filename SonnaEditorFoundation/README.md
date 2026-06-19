@@ -8,4 +8,7 @@ Files:
 - `checkpoints/*.ckpt`: versioned foundation checkpoints.
 - `checkpoints/*.json`: matching checkpoint sidecars.
 
+Current active checkpoint in this branch:
+`checkpoints/foundation-sonna-raw-xmp-004-visual.ckpt`.
+
 Checkpoint binaries are tracked by the parent SonnaEditor repo through Git LFS.

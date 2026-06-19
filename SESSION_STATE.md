@@ -1,23 +1,20 @@
 # Session State - Sonna Editor
 
-**Saved:** 2026-06-18 local time
-**Current phase/task:** Auto-straighten crop metadata and Lite WB tint repair.
+**Saved:** 2026-06-19 local time
+**Current phase/task:** Documentation/context reconciliation for the `Auto_Straighten` branch.
 
 ## Current Workspace
 
 - Repo path: `C:\Users\vikas.DESKTOP-61LEE8B\Projects\SonnaEditor`
-- Branch: `main`, tracking `origin/main`
-- Recent committed history in this checkout: `aac360a feat: Enhance dataset building and training scripts` on top of four earlier commits.
-- Current worktree includes the launcher/docs updates plus unrelated existing
-  code/test modifications under `scripts\train_foundation_model.py`,
-  `src\sonna_editor\data\dataset.py`, `src\sonna_editor\foundation.py`,
-  `src\sonna_editor\training\profile_runner.py`, and focused tests. The
-  launcher/docs pass did not revert or normalize those code changes.
+- Branch: `Auto_Straighten`, tracking `origin/Auto_Straighten`.
+- Worktree was clean before this documentation reconciliation. There were no
+  uncommitted source changes to reverse-engineer; the docs were compared
+  against the tracked branch code and the tracked foundation manifest.
 - Training/profile caches were intentionally cleared for a fresh dataset reset.
 - Cleared repo-local generated artifacts: `data\training_workspace\sonna_personal_001_dataset`, `data\models`, `data\parquet`, `data\captures`, `data\thumbnails`, `data\audits`, `data\dbg`, `data\raw\sonna_training`, `.pytest_cache`, `.ruff_cache`.
 - Cleared frontend active-profile pointer: `.saha\active_profile.txt`.
 - `v1_learning\` currently has no trained profile checkpoint and no generated dataset folder; there is no frontend-visible profile until a fresh Personal AI/Lite profile is trained or intentionally published.
-- Previous foundation checkpoints were cleared from `SonnaEditorFoundation\checkpoints\`, and `foundation_manifest.json` is reset to an empty schema-v2 manifest. The next successful foundation training run will promote the new checkpoint and make it the default base for Mode A and Mode B.
+- Hidden foundation state is not empty on this branch. `SonnaEditorFoundation\foundation_manifest.json` has `active_version: foundation-sonna-raw-xmp-004-visual`, pointing at `SonnaEditorFoundation\checkpoints\foundation-sonna-raw-xmp-004-visual.ckpt` plus its `.json` sidecar. `uv run python scripts\rollback_foundation.py --list` reports this as the active foundation version.
 
 ## Environment
 
@@ -47,10 +44,31 @@ x86_64, while macOS resolves the matching public wheels.
 - Temperature labels in the current dataset mostly cool relative to AsShot WB, so a warmer model output points to training flow/initialisation/split issues rather than warmer target labels.
 - Tint labels are consistently positive/magenta relative to AsShot, so some magenta tendency is present in the labels.
 - No `v1_learning/model-v*.ckpt` profile is present after the reset.
+- The tracked hidden foundation checkpoint is present and active:
+  `foundation-sonna-raw-xmp-004-visual`. Its sidecar records
+  `profile_type=mode_a_trained`, `slider_set_version=v2`, `arch_version=3`,
+  `resolution=512`, `train_rows=5021`, and
+  `val_loss=0.02533668652176857`.
 - Lite profile creation now uses the configured foundation checkpoint as its base; the builder preserves the foundation checkpoint's native slider set and writes a profile sidecar that lets initial Mode B processing use preset+survey style plus adaptive per-photo Exposure/WB correction.
 - A fresh scene-stats candidate was trained at `data/models/sonna-v2-scene-stats-run01/`, but it was rejected for frontend use. It briefly published as `v1_learning/model-v2.0.1.*`, then those frontend-visible copies were removed after collapse analysis showed worse prediction spread than v2.0.0.
 
 ## What Changed This Session
+
+- Reconciled the Markdown context files against the actual `Auto_Straighten`
+  branch code and tracked foundation manifest:
+  - Corrected branch context from stale `main` notes to
+    `Auto_Straighten`.
+  - Corrected hidden foundation state from stale empty/FiveK rollback notes to
+    active `foundation-sonna-raw-xmp-004-visual`.
+  - Reconfirmed current UI/code boundaries: Personal AI backend route exists
+    but the Profile screen tile is disabled as "Coming soon"; Lite profile
+    creation remains available; active/last profile deletion is allowed with
+    automatic active promotion or pointer clearing.
+  - Reconfirmed auto-straighten current behavior from source:
+    `opencv-scene-horizon-lines-v3`, centre-band horizon preference,
+    full-frame crop bounds, `CropConstrainToWarp=0`,
+    `CropConstrainToUnitSquare=1`, and `AlreadyApplied=False`.
+  - No generated diagnostic reports under `scripts/output/` were modified.
 
 - Repaired two issues from real processing feedback:
   - Auto-straighten crop metadata now writes Lightroom `CropAngle` with
@@ -538,13 +556,15 @@ x86_64, while macOS resolves the matching public wheels.
   from the same prepared splits with `--tone-presence-retry`. It does not
   require rebuilding the dataset unless the new baseline, collapse, or diversity
   diagnostics show weak label coverage.
-- Removed the currently tracked foundation checkpoint artifacts from the parent
-  repo so the Mac RAW+XMP foundation run can replace them:
+- Historical cleanup, now superseded by the active
+  `foundation-sonna-raw-xmp-004-visual` checkpoint: removed the then-tracked
+  foundation checkpoint artifacts from the parent repo so a Mac RAW+XMP
+  foundation run could replace them:
   `SonnaEditorFoundation\checkpoints\foundation-fivek-catalog-expert-c-001.*`
   and `SonnaEditorFoundation\checkpoints\foundation-sonna-raw-xmp-001.*` are
   deleted in the worktree, and `SonnaEditorFoundation\foundation_manifest.json`
-  is reset to an empty schema-v2 manifest. Until the Mac checkpoint is added and
-  pushed, the parent repo has no active hidden foundation checkpoint.
+  was reset to an empty schema-v2 manifest. That no-active-foundation state is
+  no longer current in this branch.
 - Removed all remaining local `.ckpt` files under the repo, including generated
   foundation-run checkpoints under `data\training_workspace\foundation_runs\`
   and the stale frontend-visible `v1_learning\model-v0.2.0.ckpt`. Removed the
@@ -599,7 +619,10 @@ x86_64, while macOS resolves the matching public wheels.
 - Diagnosed the pasted training diagnostics for the two foundation runs:
   - `foundation-fivek-catalog-expert-c-001` trained on the full FiveK Expert C split (`3769/536/695` train/val/test rows in the current local `splits_v2_stratified_fiveK` folder). Collapse audit on 200 validation photos found `0` collapsed sliders, but Saturation/Vibrance and Temperature still need visual review before treating it as production-quality Mode A output.
   - `foundation-sonna-raw-xmp-001` trained on only `132/27/30` train/val/test rows from `data\training_workspace\sonna_foundation_001_dataset\splits_v2_stratified` while starting with `stage:7` trainable (`16.2M` trainable params). It overfit (`test_loss / best_val_loss = 1.616x`) and failed key visual sliders: Exposure, Shadows, Highlights, Whites, Blacks, Vibrance, and Saturation. Collapse audit on its 27-row val split found collapsed `Highlights2012` and `Shadows2012`.
-- Rolled the active foundation manifest back from the bad Sonna continuation to `foundation-fivek-catalog-expert-c-001`. New Lite/Personal AI runs now resolve the FiveK checkpoint unless an environment override is set.
+- Historical rollback, now superseded: rolled the active foundation manifest
+  back from the bad Sonna continuation to `foundation-fivek-catalog-expert-c-001`.
+  The current branch's active hidden foundation is
+  `foundation-sonna-raw-xmp-004-visual` unless an environment override is set.
 - Added foundation promotion guardrails in `scripts\train_foundation_model.py`:
   - foundation runs now refuse to train/promote from fewer than `75` train rows unless `--allow-small-foundation-dataset` is explicitly passed
   - small foundation splits below `500` train rows now automatically use `--backbone-unfreeze-strategy custom --backbone-trainable-layers none` unless explicit backbone flags are supplied, avoiding the 16.2M-trainable-parameter path that overfit the 132-row Sonna continuation
@@ -628,7 +651,9 @@ x86_64, while macOS resolves the matching public wheels.
 - Foundation promotion now auto-allocates `foundation-vN` when no explicit version stem is supplied, still refuses to overwrite existing checkpoints, and keeps older versions available for rollback.
 - Added `scripts\rollback_foundation.py` with `--list` and explicit version activation so bad foundation runs can be rolled back by changing the manifest pointer instead of deleting checkpoint files.
 - Fixed legacy foundation manifest listing so the active checkpoint is included even when the manifest predates schema-v2 `versions[]`. The current active checkpoint `foundation-sonna-raw-xmp-003.ckpt` now resolves and appears in `scripts\rollback_foundation.py --list` alongside `foundation-sonna-raw-xmp-001`.
-- Cleared previous local trained profile/checkpoint artifacts before the new FiveK foundation run:
+- Historical clean start, now superseded by the tracked
+  `foundation-sonna-raw-xmp-004-visual` checkpoint: cleared previous local
+  trained profile/checkpoint artifacts before the new foundation work:
   - removed `v1_learning\model-v0.1.0.*`
   - removed `SonnaEditorFoundation\checkpoints\foundation-sonna-raw-xmp-001.*`
   - removed `SonnaEditorFoundation\checkpoints\foundation-sonna-raw-xmp-003.*`
@@ -885,7 +910,13 @@ x86_64, while macOS resolves the matching public wheels.
 
 For immediate FiveK foundation training, build the Expert C catalog dataset with `scripts\build_dataset_from_catalog.py --collection-name "C" --include-unedited-looking`, audit it, then train from prepared splits with `scripts\train_foundation_model.py --splits-dir ...`. Do not mix all 60,000 FiveK virtual-copy rows in one unconditioned model.
 
-Add the fresh RAW+XMP dataset, start the backend/Electron app, and create a Personal AI profile from the frontend. Use Lite profile creation from the frontend after a foundation checkpoint is configured in `SONNA_FOUNDATION_CHECKPOINT`, `SONNA_FOUNDATION_REPO/foundation_manifest.json`, or `SONNA_FOUNDATION_REPO/foundation.ckpt`.
+Add the fresh RAW+XMP dataset, then train a Personal AI profile through the
+CLI/backend path when that flow is ready for operator use. The backend route
+exists, but the current Profile screen tile is disabled and labelled "Coming
+soon". Lite profile creation is available from the frontend and resolves the
+active tracked foundation checkpoint,
+`foundation-sonna-raw-xmp-004-visual`, unless `SONNA_FOUNDATION_CHECKPOINT` or
+`SONNA_FOUNDATION_REPO` overrides it.
 
 For current foundation model work, use `scripts\train_foundation_model.py --raw-xmp-dir ...` or `--splits-dir ...` so the checkpoint is promoted to `SonnaEditorFoundation\` and stays out of the frontend profile list. It will warm-start from the active foundation checkpoint unless `--no-warm-start` is supplied. For MIT-Adobe FiveK, use catalog-derived splits from `build_dataset_from_catalog.py`.
 

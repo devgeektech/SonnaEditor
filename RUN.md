@@ -68,6 +68,12 @@ Preferred torch device: cuda
 GPU: NVIDIA GeForce RTX 3050
 ```
 
+Current branch context: this checkout is the `Auto_Straighten` branch. The
+hidden foundation manifest is active and points to
+`foundation-sonna-raw-xmp-004-visual` under
+`SonnaEditorFoundation/checkpoints/`; `v1_learning/` remains only for
+frontend-visible Personal AI or Lite profiles.
+
 ## 3. Start The App
 
 From the repo root, use the one-command launcher.
@@ -213,10 +219,11 @@ active foundation by default. It is not `--resume-from-checkpoint`; resume is
 only for continuing an interrupted run from that same run's Lightning
 checkpoint.
 
-Current active foundation note: `foundation-sonna-raw-xmp-001` was rolled back
-after diagnostics showed only 132 train rows, overfitting, and collapsed
-Highlights/Shadows. The active manifest now points to
-`foundation-fivek-catalog-expert-c-001`.
+Current active foundation note: `foundation-sonna-raw-xmp-001` remains a
+rejected historical run after diagnostics showed only 132 train rows,
+overfitting, and collapsed Highlights/Shadows. Earlier docs described a
+rollback to `foundation-fivek-catalog-expert-c-001`; this branch's active
+manifest now points to `foundation-sonna-raw-xmp-004-visual`.
 
 When copying foundation commands, change both `--run-name` and `--version-stem`
 for every new run. Keep them the same, for example
@@ -236,12 +243,16 @@ So `catalog_dataset.py` is the catalog-based dataset preparation module. It can 
 
 ### Frontend profile creation
 
-The Saha frontend has two profile creation paths:
+The Saha backend has two profile creation paths, with one current frontend
+boundary:
 
-- **Personal AI profile:** choose a folder containing RAW files and matching Lightroom `.xmp` sidecars. The backend resolves the hidden foundation checkpoint, builds the dataset, warm-starts training from that foundation, publishes a versioned checkpoint into `v1_learning/`, and streams progress through the normal job API.
+- **Personal AI profile:** choose a folder containing RAW files and matching Lightroom `.xmp` sidecars. The backend resolves the hidden foundation checkpoint, builds the dataset, warm-starts training from that foundation, publishes a versioned checkpoint into `v1_learning/`, and streams progress through the normal job API. In the current frontend, the Profile screen tile for this flow is disabled and labelled "Coming soon".
 - **Lite profile:** choose a Lightroom preset and answer the six-question style survey. The backend derives a `mode_b_initial` checkpoint from the configured foundation checkpoint, the preset, and all six answers. The initial Lite run dynamically adjusts Exposure, Temperature, and Tint while preset look sliders stay fixed. Tint calibration is deliberately gentle: the strongest survey answer maps to 10 Lightroom tint units, and per-photo Tint correction uses green-vs-magenta balance.
 
-Profile deletion from the frontend asks for confirmation before removing the local checkpoint and sidecar files. Active profiles still cannot be deleted until another profile is activated.
+Profile deletion from the frontend asks for confirmation before removing the
+local checkpoint, sidecar, preset copy, and survey copy. Active profile
+deletion is allowed; if another profile remains it is promoted active
+automatically, and if no profiles remain the active pointer is cleared.
 
 Foundation model training is intentionally **not** exposed in the frontend. Train and promote it with:
 
@@ -468,7 +479,14 @@ Optional flags:
 
 ### Train from prepared splits
 
-Use the stratified by-shoot splits and train a fresh Personal AI profile. The current frontend Personal AI path warm-starts from the configured foundation checkpoint. The direct CLI command below starts from scratch unless you pass `--base-model-checkpoint` for a warm start or `--resume-from-checkpoint` for an interrupted-run resume. The current default recipe uses 512px input, direct AsShot WB metadata skip, stronger Temperature/Tint/Exposure loss weights, and frontend publishing into `v1_learning/`.
+Use the stratified by-shoot splits and train a fresh Personal AI profile. The
+backend Personal AI route warm-starts from the configured foundation checkpoint,
+but the current frontend tile is disabled as "Coming soon". The direct CLI
+command below starts from scratch unless you pass `--base-model-checkpoint` for
+a warm start or `--resume-from-checkpoint` for an interrupted-run resume. The
+current default recipe uses 512px input, direct AsShot WB metadata skip,
+stronger Temperature/Tint/Exposure loss weights, and publishes into
+`v1_learning/` unless `--no-publish` is supplied.
 
 ```bash
 uv run python scripts/train_profile.py \
