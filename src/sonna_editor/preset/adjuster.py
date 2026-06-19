@@ -89,10 +89,7 @@ def _grey_world_wb(image: Image.Image) -> tuple[float, float]:
     Returns (temp_delta, tint_delta) — additive corrections to apply on top
     of the base preset's Temperature and Tint values.
     """
-    arr = np.asarray(image.convert("RGB"), dtype=np.float32)
-    mean_r = arr[:, :, 0].mean()
-    mean_g = arr[:, :, 1].mean()
-    mean_b = arr[:, :, 2].mean()
+    mean_r, mean_g, mean_b = _neutral_reference_rgb(image)
 
     if mean_g == 0:
         return 0.0, 0.0
@@ -110,6 +107,45 @@ def _grey_world_wb(image: Image.Image) -> tuple[float, float]:
     tint_delta = (1.0 - rb_over_g) * 20.0
 
     return float(temp_delta), float(tint_delta)
+
+
+def _neutral_reference_rgb(image: Image.Image) -> tuple[float, float, float]:
+    """Return an RGB reference from likely neutral midtones when possible.
+
+    Whole-image grey-world is easily fooled by warm venues, coloured clothing,
+    stage lights, or a dominant brand/background colour. For Lite WB, prefer
+    low-chroma midtone pixels because they are more likely to represent shirts,
+    walls, tables, whites, greys, or other useful neutral anchors. Fall back to
+    the whole frame only when no stable neutral sample exists.
+    """
+    arr = np.asarray(image.convert("RGB"), dtype=np.float32)
+    if arr.size == 0:
+        return 0.0, 0.0, 0.0
+
+    luma = 0.2126 * arr[:, :, 0] + 0.7152 * arr[:, :, 1] + 0.0722 * arr[:, :, 2]
+    max_channel = arr.max(axis=2)
+    min_channel = arr.min(axis=2)
+    mean_channel = arr.mean(axis=2)
+    chroma_ratio = (max_channel - min_channel) / np.maximum(mean_channel, 1.0)
+
+    neutral_mask = (luma > 34.0) & (luma < 242.0) & (chroma_ratio < 0.18)
+    min_pixels = max(64, int(arr.shape[0] * arr.shape[1] * 0.015))
+    if int(neutral_mask.sum()) < min_pixels:
+        neutral_mask = (luma > 24.0) & (luma < 248.0) & (chroma_ratio < 0.28)
+
+    if int(neutral_mask.sum()) >= min_pixels:
+        sample = arr[neutral_mask]
+        return (
+            float(np.median(sample[:, 0])),
+            float(np.median(sample[:, 1])),
+            float(np.median(sample[:, 2])),
+        )
+
+    return (
+        float(arr[:, :, 0].mean()),
+        float(arr[:, :, 1].mean()),
+        float(arr[:, :, 2].mean()),
+    )
 
 
 def _clip_ratio_at_ends(image: Image.Image) -> tuple[float, float]:

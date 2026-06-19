@@ -110,8 +110,8 @@ This section tracks what each backend source file/folder does. Keep it updated w
 |---|---|
 | `src/sonna_editor/inference/__init__.py` | Package marker for inference code. |
 | `src/sonna_editor/inference/engine.py` | Checkpoint loading and batched prediction engine. Builds tensors from extracted previews/metadata plus scene stats, maps categorical metadata through the checkpoint registry, supports uncertainty sampling, and postprocesses outputs. |
-| `src/sonna_editor/inference/pipeline.py` | End-to-end shoot processing: scan RAW files using the central `config.SUPPORTED_RAW_EXTENSIONS` set, extract features, run inference, apply WB/skip semantics, optionally apply preview-based auto straightening, write XMP sidecars, write `sonna_predictions.json` including straightening engine/line diagnostics, and emit progress callbacks. |
-| `src/sonna_editor/inference/straighten.py` | Optional auto-straightening postprocess. Uses CLAHE-normalized OpenCV Canny edges plus probabilistic Hough lines, OpenCV line segments, and a broad Hough fallback for fragmented line evidence, then classifies evidence as horizon, architecture, or mixed-axis geometry before estimating small Lightroom `CropAngle` corrections. Centre-band horizontal evidence is preferred when present so the visible centre/horizon line is not overruled by off-centre distractor lines. It writes full-frame `CropTop=0`, `CropLeft=0`, `CropBottom=1`, `CropRight=1` bounds plus Lightroom crop constraint flags only when selected per processing job and confidence passes the scene-specific thresholds, so the Crop Angle loads without intentionally shrinking the crop rectangle. This is not a trained model output. |
+| `src/sonna_editor/inference/pipeline.py` | End-to-end shoot processing: scan RAW files using the central `config.SUPPORTED_RAW_EXTENSIONS` set, extract features, run inference, apply WB/skip semantics, optionally apply preview-based auto straightening, write XMP sidecars, write `sonna_predictions.json` including straightening engine/line diagnostics, and emit progress callbacks. Initial Lite/Mode B processing anchors preset Temperature/Tint to each photo's AsShot WB as bounded style offsets so absolute preset WB values do not create shoot-wide colour casts. |
+| `src/sonna_editor/inference/straighten.py` | Optional auto-straightening postprocess. Uses CLAHE-normalized OpenCV Canny edges plus probabilistic Hough lines, OpenCV line segments, and a broad Hough fallback for fragmented line evidence, then classifies evidence as horizon, architecture, or mixed-axis geometry before estimating small Lightroom `CropAngle` corrections. Centre-band horizontal evidence is preferred when present so the visible centre/horizon line is not overruled by off-centre distractor lines. It writes centred same-scale crop bounds plus Lightroom crop constraint flags only when selected per processing job and confidence passes the scene-specific thresholds, so the pixel crop ratio remains exactly the same as the original shot ratio. High-angle corrections are skipped as `crop_too_deep` when the required aspect-locked crop scale would fall below `0.91`. This is not a trained model output. |
 
 ### Fine-Tune Package
 
@@ -130,7 +130,7 @@ This section tracks what each backend source file/folder does. Keep it updated w
 | `src/sonna_editor/mode_b/checkpoint_builder.py` | Builds a Lite initial checkpoint/sidecar package from the configured foundation checkpoint, Lightroom preset, and style survey. It keeps pretrained foundation feature layers for future fine-tuning and stores preset/survey provenance for the adaptive initial Lite processing path. This is not supervised photo training. |
 | `src/sonna_editor/mode_b/survey.py` | Lite style survey models and conversion from six user answers into slider offsets for Exposure2012, Temperature, Tint, Contrast2012, Saturation, and Shadows2012. Initial Lite runtime applies only Exposure/WB dynamically, but all six answers are stored in the profile package. Tint survey calibration is intentionally gentle: max 10 Lightroom tint units. |
 | `src/sonna_editor/preset/__init__.py` | Package marker for preset code. |
-| `src/sonna_editor/preset/adjuster.py` | Heuristic content-aware preset adjustments for exposure, WB, shadows/highlights, and similar safe corrections. Auto exposure uses mean luminance with 85th/95th percentile upper-tone guards so dark suits/rooms do not force bright faces/signage into overexposure. Lite WB keeps Temperature on red-vs-blue balance and Tint on green-vs-magenta balance to avoid pushing warm frames pink. |
+| `src/sonna_editor/preset/adjuster.py` | Heuristic content-aware preset adjustments for exposure, WB, shadows/highlights, and similar safe corrections. Auto exposure uses mean luminance with 85th/95th percentile upper-tone guards so dark suits/rooms do not force bright faces/signage into overexposure. Lite WB keeps Temperature on red-vs-blue balance and Tint on green-vs-magenta balance, preferring likely neutral midtone pixels over whole-frame colour averages to avoid chasing dominant venue/clothing/background colours. |
 | `src/sonna_editor/preset/parser.py` | Parses Lightroom `.xmp`, `.xmpsettings`, and `.lrtemplate` presets and validates extreme preset values. |
 | `src/sonna_editor/preset/pipeline.py` | Legacy preset application pipeline that writes preset-derived XMP files for a RAW folder. It is useful for Mode B/preset output, not supervised model training. |
 
@@ -412,8 +412,9 @@ Lite checkpoints are marked with `profile_type: mode_b_initial` in the sidecar J
   `inference/straighten.py` estimates a small Lightroom-native `CropAngle`
   from the extracted preview and writes Lightroom crop metadata only when
   confidence passes conservative thresholds. Applied results include
-  `HasCrop=True`, full-frame `CropTop/CropLeft/CropBottom/CropRight` bounds,
-  and `CropAngle=...`. The result is recorded under `auto_straighten` and
+  `HasCrop=True`, explicit centred crop bounds that preserve the original shot
+  aspect ratio, and `CropAngle=...`. The result is recorded under
+  `auto_straighten` and
   `straightening` in `sonna_predictions.json`. No model retraining is required.
 - Auto straightening repair, 2026-06-15: `saha-app/src/components/editor.jsx`
   requires explicit queued-row selection before processing. Queued folders
@@ -466,11 +467,30 @@ Lite checkpoints are marked with `profile_type: mode_b_initial` in the sidecar J
   prefers horizontal evidence in the centre band of the preview when present,
   so the visible centre/horizon line can win over off-centre architectural or
   background lines with a conflicting tilt.
+- Auto straightening aspect-locked crop repair, 2026-06-19: applied
+  straightening no longer writes full-frame crop bounds. It computes centred
+  same-scale `CropTop/CropLeft/CropBottom/CropRight` bounds from the
+  rotate-then-inscribe math, so the Lightroom crop pixel aspect remains exactly
+  the original shot aspect. High-angle corrections that would require an
+  aspect-locked crop scale below `0.91` are skipped as `crop_too_deep` instead
+  of over-cropping.
 - Lite WB/tint repair, 2026-06-18: `preset.adjuster` no longer derives Tint
   from red-vs-blue balance. Temperature remains red-vs-blue, while Tint now
   uses green-vs-magenta balance so warm/red frames do not get an extra magenta
   push. The Lite survey's maximum Tint offset was reduced from 20 to 10 units
   after Sony/Canon feedback showed +20-range pink output was too strong.
+- Lite preset WB anchoring, 2026-06-19: Mode B processing no longer applies
+  absolute preset `Temperature`/`Tint` across a new shoot. When AsShot WB is
+  available, `inference.pipeline` treats preset WB as a bounded style offset
+  from Lightroom defaults (`±300K`, `±5 Tint`) and adds that to each photo's
+  AsShot WB before the normal grey-world correction. This protects against
+  presets that accidentally carry a source photo's warm/magenta WB.
+- Lite neutral-anchor WB, 2026-06-19: `preset.adjuster._grey_world_wb()` now
+  uses likely neutral midtone pixels when available, rather than blindly
+  averaging the whole image. This gives Temperature/Tint intelligence a better
+  signal in photos dominated by warm venue light, coloured clothing, decor, or
+  branded backgrounds. It falls back to whole-frame RGB only when there is no
+  stable neutral sample.
 
 ## Important behavior notes
 
@@ -482,14 +502,22 @@ Lite checkpoints are marked with `profile_type: mode_b_initial` in the sidecar J
 - Lite survey Tint calibration is deliberately conservative: a strongest
   green/magenta answer maps to 10 Lightroom tint units, and per-photo WB Tint
   correction uses green-vs-magenta balance rather than red-vs-blue balance.
+  During initial Lite/Mode B processing, preset Temperature/Tint values are
+  anchored to the current photo's AsShot WB as bounded style offsets (`±300K`,
+  `±5 Tint`) instead of being copied as absolute WB from the preset source
+  image. The per-photo WB estimator prefers likely neutral midtone pixels when
+  available, which makes Lite WB more image-specific without allowing other
+  preset-owned sliders to drift.
 - Auto straightening is an opt-in inference postprocess, shared by Personal AI
   and Lite processing. It writes Lightroom crop-angle metadata from OpenCV
   preview-geometry analysis when confident, while high-texture/no-line frames
-  are skipped. Applied results include full-frame `CropTop=0`, `CropLeft=0`,
-  `CropBottom=1`, `CropRight=1` bounds
-  plus `CropAngle`, because Lightroom Classic may ignore angle-only crop metadata
-  and explicit crop bounds are needed for reliable sidecar loading. Centre-band
-  horizontal evidence is preferred when present.
+  are skipped. Applied results include explicit centred crop bounds plus
+  `CropAngle`, because Lightroom Classic may ignore angle-only crop metadata
+  and explicit crop bounds are needed for reliable sidecar loading. The crop
+  bounds shrink by the same normalized amount on both axes so the pixel crop
+  aspect stays exactly as shot, and high-angle corrections are skipped as
+  `crop_too_deep` when the required crop scale would fall below `0.91`.
+  Centre-band horizontal evidence is preferred when present.
   The estimator is scene-aware: horizon, architecture, and mixed-axis evidence
   use separate scores and confidence gates. `sonna_predictions.json` records
   the straightening engine, chosen scene type, horizon/axis scores, and

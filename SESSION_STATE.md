@@ -1,7 +1,7 @@
 # Session State - Sonna Editor
 
 **Saved:** 2026-06-19 local time
-**Current phase/task:** Documentation/context reconciliation for the `Auto_Straighten` branch.
+**Current phase/task:** Lite preset WB pink-cast repair.
 
 ## Current Workspace
 
@@ -54,6 +54,62 @@ x86_64, while macOS resolves the matching public wheels.
 
 ## What Changed This Session
 
+- Repaired another Lite/Mode B pink-cast failure mode found when using a
+  different preset:
+  - `src\sonna_editor\inference\pipeline.py` now anchors Mode B preset
+    `Temperature` and `Tint` to each photo's AsShot WB whenever AsShot metadata
+    is available. Preset WB values are treated as a bounded style offset from
+    Lightroom defaults, not as absolute WB values copied from the preset source
+    image.
+  - The bounded Mode B WB style offset is currently capped at `±300K` for
+    Temperature and `±5` Lightroom Tint units. This keeps a warm or magenta
+    preset from painting the whole shoot pink while still allowing a gentle
+    preset/survey colour preference.
+  - Added regression coverage for a preset carrying `Temperature=6200` and
+    `Tint=14` on a photo with AsShot WB `(4300, -4)`. The Lite output now writes
+    about `4600K / +1` rather than copying `6200 / +14`.
+  - Verification passed after rerunning outside the Windows sandbox because
+    the sandbox hit the known `CreateProcessAsUserW failed: 1312` runner issue:
+    `uv run pytest tests\api\test_callback_bridge.py::test_mode_b_initial_anchors_absolute_preset_wb_to_as_shot tests\api\test_callback_bridge.py::test_mode_b_initial_uses_per_photo_preset_adjuster tests\test_adjuster.py -q`
+    (`39 passed`) and
+    `uv run ruff check src\sonna_editor\inference\pipeline.py tests\api\test_callback_bridge.py tests\test_adjuster.py`.
+- Improved Lite WB intelligence while keeping Lite's dynamic-slider boundary:
+  - `src\sonna_editor\preset\adjuster.py` now estimates WB from likely neutral
+    midtone pixels first instead of whole-frame RGB means. This lets neutral
+    shirts, walls, tables, or grey/white details guide Temperature/Tint even
+    when the frame is dominated by warm venue light, red clothing, coloured
+    decor, or a branded background.
+  - If no stable neutral sample exists, the adjuster falls back to the older
+    whole-frame estimate.
+  - Added regression coverage proving a mostly warm/red frame with a neutral
+    patch leaves Temperature/Tint essentially unchanged rather than chasing the
+    dominant warm colour.
+  - Verification passed after rerunning outside the Windows sandbox:
+    `uv run pytest tests\test_adjuster.py tests\api\test_callback_bridge.py::test_mode_b_initial_anchors_absolute_preset_wb_to_as_shot tests\api\test_callback_bridge.py::test_mode_b_initial_uses_per_photo_preset_adjuster -q`
+    (`41 passed`) and
+    `uv run ruff check src\sonna_editor\preset\adjuster.py src\sonna_editor\inference\pipeline.py tests\test_adjuster.py tests\api\test_callback_bridge.py`.
+
+- Repaired Auto straighten crop aspect preservation after user feedback that
+  Lightroom was over-cropping and changing the crop aspect:
+  - `src\sonna_editor\inference\straighten.py` now computes centred crop bounds
+    from the rotate-then-inscribe math instead of writing full-frame crop
+    bounds. `CropTop/CropLeft/CropBottom/CropRight` shrink by the same
+    normalized amount, so
+    `(CropRight-CropLeft)*image_width / ((CropBottom-CropTop)*image_height)`
+    stays equal to the original shot aspect ratio.
+  - Added a crop-depth threshold: if the required aspect-locked crop scale is
+    below `0.91`, the straightening result is skipped with reason
+    `crop_too_deep` instead of applying a high-angle crop that would cut too
+    much of the frame.
+  - Updated regression tests so they assert mathematical aspect preservation
+    rather than full-frame `0/1` bounds, and added coverage for the high-angle
+    crop-depth skip.
+  - Verification passed after rerunning outside the Windows sandbox because
+    the sandbox hit the known `CreateProcessAsUserW failed: 1312` runner issue:
+    `uv run pytest tests\test_straighten.py tests\api\test_callback_bridge.py::test_pipeline_auto_straighten_writes_crop_angle_and_sidecar tests\test_xmp.py::TestExtraAttributes::test_write_xmp_with_crop_angle_attributes -q`
+    (`17 passed`) and
+    `uv run ruff check src\sonna_editor\inference\straighten.py tests\test_straighten.py tests\api\test_callback_bridge.py`.
+
 - Reconciled the Markdown context files against the actual `Auto_Straighten`
   branch code and tracked foundation manifest:
   - Corrected branch context from stale `main` notes to
@@ -66,19 +122,17 @@ x86_64, while macOS resolves the matching public wheels.
     automatic active promotion or pointer clearing.
   - Reconfirmed auto-straighten current behavior from source:
     `opencv-scene-horizon-lines-v3`, centre-band horizon preference,
-    full-frame crop bounds, `CropConstrainToWarp=0`,
-    `CropConstrainToUnitSquare=1`, and `AlreadyApplied=False`.
+    centred aspect-locked crop bounds, high-angle `crop_too_deep` skipping,
+    `CropConstrainToWarp=0`, `CropConstrainToUnitSquare=1`, and
+    `AlreadyApplied=False`.
   - No generated diagnostic reports under `scripts/output/` were modified.
 
 - Repaired two issues from real processing feedback:
   - Auto-straighten crop metadata now writes Lightroom `CropAngle` with
-    full-frame crop bounds (`CropTop=0`, `CropLeft=0`, `CropBottom=1`,
-    `CropRight=1`). This may still make Lightroom label the crop as
-    Custom/Original, but it avoids intentionally shrinking the crop rectangle
-    while still activating Lightroom's Crop Angle slider. Applied crop metadata also includes
-    `CropConstrainToWarp=0`, `CropConstrainToUnitSquare=1`, and
-    `AlreadyApplied=False`, matching the Lightroom/Imagen sidecar shape more
-    closely.
+    explicit centred same-scale crop bounds that preserve the original shot
+    aspect ratio. Applied crop metadata also includes `CropConstrainToWarp=0`,
+    `CropConstrainToUnitSquare=1`, and `AlreadyApplied=False`, matching the
+    Lightroom/Imagen sidecar shape more closely.
   - Auto-straighten angle selection now prefers horizontal line evidence near
     the centre of the preview when present, so the centre/horizon line is not
     overruled by off-centre architectural/background lines with a different
@@ -313,9 +367,9 @@ x86_64, while macOS resolves the matching public wheels.
     corrections from RAW previews using OpenCV Canny/Hough/LSD line geometry,
     with conservative thresholds for minimum edge count, confidence, and angle
     size.
-  - `process_shoot_with_model()` writes `crs:HasCrop="True"`, full-frame
-    `crs:CropTop="0"`, `crs:CropLeft="0"`, `crs:CropBottom="1"`,
-    `crs:CropRight="1"` bounds, and `crs:CropAngle="..."` through
+  - `process_shoot_with_model()` writes `crs:HasCrop="True"`, centred
+    aspect-locked `crs:CropTop`, `crs:CropLeft`, `crs:CropBottom`,
+    `crs:CropRight` bounds, and `crs:CropAngle="..."` through
     `write_xmp(extra_attributes=...)` only when `auto_straighten` is enabled
     and the estimator result is applied.
   - `sonna_predictions.json` records `auto_straighten`,
@@ -887,17 +941,23 @@ x86_64, while macOS resolves the matching public wheels.
 - `Profile.profile_type` is already implemented in backend profile responses and frontend profile classification. `None` means a legacy trained profile; `"mode_b_initial"` means a Lite preset-derived profile.
 - Mode B/Lite checkpoints now inherit the configured foundation checkpoint's native slider set and field count. Before fine-tuning, the UI/CLI processing path treats `mode_b_initial` as an Imagen-aligned Lite profile: preset look fixed, per-photo Exposure/WB corrections only. After fine-tuning, the same profile can move back to normal model inference.
 - Lite per-photo WB correction keeps Temperature on the red-blue axis and now
-  computes Tint from green-vs-magenta balance. The Lite style survey still
-  stores all six answers, but the maximum Tint offset is now 10 units rather
-  than 20 to keep calibration from creating strong pink casts.
+  computes Tint from green-vs-magenta balance. The estimator prefers likely
+  neutral midtone pixels over whole-frame colour averages, falling back to the
+  whole frame only when no stable neutral sample exists. For Mode B processing,
+  preset Temperature/Tint values are anchored to each photo's AsShot WB as
+  bounded style offsets (`±300K`, `±5 Tint`) rather than copied as absolute WB
+  from the preset source photo. The Lite style survey still stores all six
+  answers, but the maximum Tint offset is now 10 units rather than 20 to keep
+  calibration from creating strong pink casts.
 - Auto straightening is opt-in and runs after preview extraction during
   processing. It uses CLAHE-normalized OpenCV Canny edges plus Hough/LSD line
   geometry, then classifies the evidence into horizon, architecture, or
   mixed-axis candidates before estimating small Lightroom `CropAngle`
   rotations. It writes crop metadata only when scene-specific confidence is
-  high, using full-frame `CropTop=0`, `CropLeft=0`, `CropBottom=1`,
-  `CropRight=1` bounds plus Lightroom crop constraint flags, and records
-  skipped/applied diagnostics in
+  high, using centred same-scale crop bounds that preserve the original shot
+  aspect ratio plus Lightroom crop constraint flags. High-angle corrections are
+  skipped as `crop_too_deep` when the required aspect-locked crop scale would
+  fall below `0.91`. Skipped/applied diagnostics are recorded in
   `sonna_predictions.json`.
   Centre-band horizontal evidence is preferred when present.
   It is independent of training and checkpoint versioning.

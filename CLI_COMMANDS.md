@@ -185,10 +185,12 @@ Do not reuse a previous --version-stem; old checkpoints are never overwritten.
    - Optional auto straightening is controlled per run from the UI checkbox or
      `--auto-straighten`; it uses OpenCV preview-line geometry, then scores
      horizon, architecture, and mixed-axis evidence before writing Lightroom
-     `CropAngle` metadata with full-frame `CropTop=0`, `CropLeft=0`,
-     `CropBottom=1`, `CropRight=1` bounds when confident. The
-     predictions sidecar records straightening engine, scene type, horizon/axis
-     scores, and line-support diagnostics. It does not require retraining.
+     `CropAngle` metadata with centred same-scale crop bounds when confident,
+     preserving the original shot aspect ratio mathematically. High-angle
+     corrections are skipped as `crop_too_deep` when the required
+     aspect-locked crop scale would fall below `0.91`. The predictions sidecar
+     records straightening engine, scene type, horizon/axis scores, and
+     line-support diagnostics. It does not require retraining.
 
 6. Fine-tune later.
    - Capture final Lightroom tweaks.
@@ -198,7 +200,7 @@ Do not reuse a previous --version-stem; old checkpoints are never overwritten.
 ## Production Profile Paths
 
 - **Personal AI profile:** built from RAW files plus matching Lightroom XMP sidecars. The backend route and wizard code path exist and resolve the configured foundation checkpoint, use the same dataset builder and `sonna_editor.training.profile_runner.train_profile()` recipe as the CLI, warm-start from that foundation, then publish a versioned profile into `v1_learning/`. In the current frontend, the Profile screen's Personal AI creation tile is disabled and labelled "Coming soon", so operators should not assume the UI exposes this flow yet.
-- **Lite profile:** built from the configured foundation checkpoint plus a Lightroom preset and the six-question Lite survey. It does not depend on an active Personal AI profile. The first Lite processing pass dynamically adjusts Exposure, Temperature, and Tint because the preset owns the look sliders; all six survey answers are still stored in the profile package for calibration metadata and future fine-tuning. Tint calibration is conservative: the strongest Lite survey tint answer maps to 10 Lightroom tint units, and per-photo Tint correction uses green-vs-magenta balance.
+- **Lite profile:** built from the configured foundation checkpoint plus a Lightroom preset and the six-question Lite survey. It does not depend on an active Personal AI profile. The first Lite processing pass dynamically adjusts Exposure, Temperature, and Tint because the preset owns the look sliders; all six survey answers are still stored in the profile package for calibration metadata and future fine-tuning. Tint calibration is conservative: the strongest Lite survey tint answer maps to 10 Lightroom tint units, and per-photo Tint correction uses green-vs-magenta balance. The WB estimator prefers likely neutral midtone pixels over whole-frame colour averages. Preset Temperature/Tint values are anchored to each photo's AsShot WB as bounded style offsets (`±300K`, `±5 Tint`) instead of copied as absolute WB across the shoot.
 - **Foundation model:** CLI-only and hidden from the UI. Use `FOUNDATION_TRAINING.md` for the complete train, resume, retrain, promotion, and FiveK guidance. The foundation CLI supports RAW+XMP folders and prepared Lightroom-parameter splits, including catalog-derived FiveK splits.
 
 ## Important Paths

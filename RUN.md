@@ -248,6 +248,8 @@ boundary:
 
 - **Personal AI profile:** choose a folder containing RAW files and matching Lightroom `.xmp` sidecars. The backend resolves the hidden foundation checkpoint, builds the dataset, warm-starts training from that foundation, publishes a versioned checkpoint into `v1_learning/`, and streams progress through the normal job API. In the current frontend, the Profile screen tile for this flow is disabled and labelled "Coming soon".
 - **Lite profile:** choose a Lightroom preset and answer the six-question style survey. The backend derives a `mode_b_initial` checkpoint from the configured foundation checkpoint, the preset, and all six answers. The initial Lite run dynamically adjusts Exposure, Temperature, and Tint while preset look sliders stay fixed. Tint calibration is deliberately gentle: the strongest survey answer maps to 10 Lightroom tint units, and per-photo Tint correction uses green-vs-magenta balance.
+  Lite WB prefers likely neutral midtone pixels over whole-frame colour averages when estimating per-photo Temperature/Tint.
+  If the preset carries absolute Temperature/Tint values, initial Lite processing treats them as small AsShot-relative style offsets (`±300K`, `±5 Tint`) rather than copying those absolute WB values across the shoot.
 
 Profile deletion from the frontend asks for confirmation before removing the
 local checkpoint, sidecar, preset copy, and survey copy. Active profile
@@ -350,6 +352,8 @@ to fetch the real checkpoint contents. Do not push `data\training_workspace\`.
 ### Lite profile flow
 
 Preset-based profiles are Lite profiles. They do not train from photo labels. They start with the configured foundation checkpoint, read a Lightroom preset plus Lite survey answers, and create a new checkpoint/sidecar package that the UI can select. During initial Lite processing, `process_shoot_model.py` detects `profile_type: mode_b_initial`, uses the preset as the fixed style baseline, and computes per-photo Exposure, Temperature, and Tint corrections before writing XMPs. Preset look sliders such as Contrast, Shadows, Highlights, Whites, Blacks, Saturation, and Vibrance stay fixed from the preset. The foundation checkpoint provides the profile shell and future fine-tuning starting point.
+Preset Temperature/Tint values are anchored to each photo's AsShot WB as bounded style offsets (`±300K`, `±5 Tint`), so a preset made from one warm or magenta source image does not force that absolute WB onto every new photo.
+Per-photo WB uses likely neutral midtone pixels first, falling back to whole-frame colour only when there is no stable neutral sample.
 
 Create a survey JSON:
 
@@ -395,10 +399,11 @@ uv run python scripts\process_shoot_model.py `
 OpenCV Canny + Hough/LSD line detection on the extracted preview, then scores
 horizon, architecture, and mixed-axis evidence before writing Lightroom
 `CropAngle` metadata. It does not retrain or alter the selected profile
-checkpoint. Applied results write full-frame `CropTop=0`, `CropLeft=0`,
-`CropBottom=1`, `CropRight=1` bounds with the angle so Lightroom Classic
-activates the Crop Angle state without intentionally shrinking the crop
-rectangle. `sonna_predictions.json` records
+checkpoint. Applied results write centred same-scale crop bounds with the
+angle so Lightroom Classic activates the Crop Angle state while the pixel crop
+aspect stays exactly as shot. High-angle corrections are skipped as
+`crop_too_deep` when preserving the aspect would require a crop scale below
+`0.91`. `sonna_predictions.json` records
 `straightening_engine`, `scene_type`, `horizon_score`, `axis_score`,
 horizontal/vertical line counts, `line_count`, and `line_length_px` for each
 photo so a batch can be audited if Lightroom does not appear to show

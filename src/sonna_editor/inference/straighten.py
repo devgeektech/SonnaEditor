@@ -68,6 +68,7 @@ _MIN_LINE_COUNT = 1
 _MIN_LINE_LENGTH_PX = 24.0
 _HOUGH_THRESHOLD = 18
 _MAX_LINE_GAP = 16
+_MIN_ASPECT_LOCKED_CROP_SCALE = 0.91
 _AXIS_CANDIDATE_TOLERANCE_DEGREES = 7.0
 _AXIS_SUPPORT_TOLERANCE_DEGREES = 2.8
 _HORIZON_BAND_TOP = 0.16
@@ -453,6 +454,22 @@ def estimate_straighten_angle(image: Image.Image) -> StraightenResult:
             horizontal_line_count=horizontal_count,
             vertical_line_count=vertical_count,
         )
+    crop_scale = _aspect_locked_crop_scale(angle, image.width, image.height)
+    if crop_scale < _MIN_ASPECT_LOCKED_CROP_SCALE:
+        return StraightenResult(
+            angle,
+            confidence,
+            False,
+            "crop_too_deep",
+            edge_count,
+            line_count,
+            total_line_length,
+            scene_type=scene_type,
+            horizon_score=round(horizon_score, 4),
+            axis_score=round(axis_score, 4),
+            horizontal_line_count=horizontal_count,
+            vertical_line_count=vertical_count,
+        )
     min_confidence = (
         _MIN_HORIZON_CONFIDENCE
         if scene_type == "horizon"
@@ -499,9 +516,9 @@ def crop_angle_attributes(
     """Return Lightroom CRS crop attributes for an applied straighten result.
 
     Lightroom needs explicit crop bounds for `CropAngle` to activate reliably
-    from a generated sidecar. Keep those bounds at the full-frame unit square
-    so the sidecar rotates the crop angle without shrinking the visible crop
-    rectangle.
+    from a generated sidecar. The crop bounds are centred and shrink by the
+    same normalized amount on both axes, so the pixel crop ratio remains exactly
+    the same as the original shot ratio.
     """
     if not result.applied:
         return {}
@@ -526,8 +543,26 @@ def _straighten_crop_bounds(
     angle_degrees: float,
     image_size: tuple[int, int] | None,
 ) -> tuple[float, float, float, float]:
-    _ = angle_degrees, image_size
-    return 0.0, 0.0, 1.0, 1.0
+    if image_size is None:
+        return 0.0, 0.0, 1.0, 1.0
+    width, height = image_size
+    scale = _aspect_locked_crop_scale(angle_degrees, width, height)
+    inset = (1.0 - scale) * 0.5
+    return inset, inset, 1.0 - inset, 1.0 - inset
+
+
+def _aspect_locked_crop_scale(angle_degrees: float, width: int, height: int) -> float:
+    """Return the largest centred crop scale preserving the source aspect."""
+    if width <= 0 or height <= 0:
+        return 1.0
+    theta = abs(radians(angle_degrees))
+    c = abs(cos(theta))
+    s = abs(sin(theta))
+    width_ratio = float(width) / float(height)
+    height_ratio = float(height) / float(width)
+    scale_from_width = 1.0 / (c + height_ratio * s)
+    scale_from_height = 1.0 / (width_ratio * s + c)
+    return max(0.0, min(1.0, scale_from_width, scale_from_height))
 
 
 def _format_crop_bound(value: float) -> str:

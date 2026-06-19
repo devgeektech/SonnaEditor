@@ -190,6 +190,8 @@ _MODE_B_ADJUSTMENT_OPTIONS: dict[str, bool] = {
     "auto_shadow_recovery": False,
     "auto_highlight_recovery": False,
 }
+_MODE_B_MAX_PRESET_TEMP_STYLE_DELTA = 300.0
+_MODE_B_MAX_PRESET_TINT_STYLE_DELTA = 5.0
 
 
 def _extract_one(raw_path: Path, target_size: int) -> tuple[Image.Image, dict]:
@@ -266,10 +268,7 @@ def _mode_b_adjusted_values_for_photo(
     # apply those deltas to the photo's AsShot WB rather than to 0.
     as_shot_wb = metadata.get("as_shot_wb")
     if as_shot_wb is not None:
-        if "Temperature" in delta and photo_preset.get("Temperature") is None:
-            photo_preset["Temperature"] = float(as_shot_wb[0])
-        if "Tint" in delta and photo_preset.get("Tint") is None:
-            photo_preset["Tint"] = float(as_shot_wb[1])
+        _anchor_mode_b_wb_to_as_shot(photo_preset, as_shot_wb)
     if as_shot_wb is None and "Temperature" in delta and photo_preset.get("Temperature") is None:
         photo_preset["Temperature"] = float(LR_DEFAULTS["Temperature"])
     if as_shot_wb is None and "Tint" in delta and photo_preset.get("Tint") is None:
@@ -277,6 +276,40 @@ def _mode_b_adjusted_values_for_photo(
 
     adjusted = apply_adjustment(photo_preset, delta)
     return {field: adjusted.get(field) for field in fields_for_version(slider_set_version)}
+
+
+def _anchor_mode_b_wb_to_as_shot(
+    photo_preset: dict[str, float | None],
+    as_shot_wb: tuple[float, float],
+) -> None:
+    """Use preset WB as bounded style offset, not as absolute shot WB.
+
+    Lightroom presets can accidentally carry the source photo's absolute
+    Temperature/Tint. Applying that absolute WB across a new shoot is a common
+    route to pink or over-warm output. Lite should start from the current
+    photo's AsShot WB, then allow only a small preset/survey style nudge.
+    """
+    preset_temperature = photo_preset.get("Temperature")
+    if preset_temperature is None:
+        photo_preset["Temperature"] = float(as_shot_wb[0])
+    else:
+        temp_style = float(preset_temperature) - float(LR_DEFAULTS["Temperature"])
+        temp_style = max(
+            -_MODE_B_MAX_PRESET_TEMP_STYLE_DELTA,
+            min(_MODE_B_MAX_PRESET_TEMP_STYLE_DELTA, temp_style),
+        )
+        photo_preset["Temperature"] = float(as_shot_wb[0]) + temp_style
+
+    preset_tint = photo_preset.get("Tint")
+    if preset_tint is None:
+        photo_preset["Tint"] = float(as_shot_wb[1])
+    else:
+        tint_style = float(preset_tint) - float(LR_DEFAULTS["Tint"])
+        tint_style = max(
+            -_MODE_B_MAX_PRESET_TINT_STYLE_DELTA,
+            min(_MODE_B_MAX_PRESET_TINT_STYLE_DELTA, tint_style),
+        )
+        photo_preset["Tint"] = float(as_shot_wb[1]) + tint_style
 
 
 def process_shoot_with_model(

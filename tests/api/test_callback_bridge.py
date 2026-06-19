@@ -479,6 +479,78 @@ def test_mode_b_initial_uses_per_photo_preset_adjuster(tmp_path: Path) -> None:
     )
 
 
+def test_mode_b_initial_anchors_absolute_preset_wb_to_as_shot(
+    tmp_path: Path,
+) -> None:
+    """Lite presets should not copy one photo's absolute WB across a shoot."""
+    from sonna_editor.inference import pipeline as pl
+    from sonna_editor.mode_b import survey as survey_mod
+
+    folder = tmp_path / "shoot"
+    folder.mkdir()
+    raw = folder / "neutral.cr3"
+    raw.write_bytes(b"x")
+
+    preset_path = tmp_path / "pinkish-preset.xmp"
+    preset_path.write_text(
+        '<x:xmpmeta xmlns:x="adobe:ns:meta/" '
+        'xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#" '
+        'xmlns:crs="http://ns.adobe.com/camera-raw-settings/1.0/">'
+        "<rdf:RDF><rdf:Description "
+        'crs:Temperature="6200" crs:Tint="14" crs:Exposure2012="0.2" />'
+        "</rdf:RDF></x:xmpmeta>",
+        encoding="utf-8",
+    )
+    survey_path = tmp_path / "survey.json"
+    survey_mod.write_survey(
+        survey_mod.build_survey_payload({k: 0 for k in survey_mod.QUESTION_ORDER}),
+        survey_path,
+    )
+    model_path = tmp_path / "model-v0.1.0.ckpt"
+    model_path.write_bytes(b"unused by mode_b_initial")
+    model_path.with_suffix(".json").write_text(
+        _json.dumps({
+            "profile_type": "mode_b_initial",
+            "profile_id": "lite-test",
+            "base_checkpoint": "base.ckpt",
+            "source_preset": str(preset_path),
+            "source_survey": str(survey_path),
+            "slider_set_version": "v1",
+            "resolution": 64,
+        }),
+        encoding="utf-8",
+    )
+
+    captured: dict[str, dict] = {}
+
+    def fake_write(xmp_path, settings, **_kw):
+        captured[Path(xmp_path).name] = dict(settings)
+
+    with patch.object(pl, "InferenceEngine", side_effect=AssertionError("Mode B should not load model engine")), \
+         patch.object(
+             pl,
+             "_extract_one",
+             lambda _path, _size: (
+                 Image.new("RGB", (64, 64), (128, 128, 128)),
+                 {"as_shot_wb": (4300.0, -4.0)},
+             ),
+         ), \
+         patch.object(pl, "write_xmp", fake_write):
+        result = pl.process_shoot_with_model(
+            input_dir=folder,
+            model_path=model_path,
+            output_dir=tmp_path / "out",
+            save_predictions=False,
+        )
+
+    assert result["processed"] == 1
+    written = captured["neutral.xmp"]
+    assert written["Temperature"] == pytest.approx(4600.0)
+    assert written["Tint"] == pytest.approx(1.0)
+    assert written["Temperature"] != pytest.approx(6200.0)
+    assert written["Tint"] != pytest.approx(14.0)
+
+
 def test_pipeline_auto_straighten_writes_crop_angle_and_sidecar(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -545,10 +617,9 @@ def test_pipeline_auto_straighten_writes_crop_angle_and_sidecar(
     assert attrs["LensProfileEnable"] == "1"
     assert attrs["AutoLateralCA"] == "1"
     assert attrs["HasCrop"] == "True"
-    assert attrs["CropTop"] == "0"
-    assert attrs["CropLeft"] == "0"
-    assert attrs["CropBottom"] == "1"
-    assert attrs["CropRight"] == "1"
+    crop_width = (float(attrs["CropRight"]) - float(attrs["CropLeft"])) * image.width
+    crop_height = (float(attrs["CropBottom"]) - float(attrs["CropTop"])) * image.height
+    assert crop_width / crop_height == pytest.approx(image.width / image.height, abs=1e-6)
     assert float(attrs["CropAngle"]) == pytest.approx(3.0, abs=0.5)
     assert attrs["CropConstrainToWarp"] == "0"
     assert attrs["CropConstrainToUnitSquare"] == "1"

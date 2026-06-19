@@ -13,6 +13,13 @@ from sonna_editor.inference.straighten import (
 )
 
 
+def _crop_aspect(attrs: dict[str, str], image_size: tuple[int, int]) -> float:
+    width, height = image_size
+    crop_width = (float(attrs["CropRight"]) - float(attrs["CropLeft"])) * width
+    crop_height = (float(attrs["CropBottom"]) - float(attrs["CropTop"])) * height
+    return crop_width / crop_height
+
+
 def _tilted_line_image(angle_degrees: float) -> Image.Image:
     image = Image.new("RGB", (400, 300), "white")
     draw = ImageDraw.Draw(image)
@@ -258,10 +265,16 @@ def test_crop_angle_attributes_only_for_applied_result() -> None:
 
     attrs = crop_angle_attributes(applied, image.size)
     assert attrs["HasCrop"] == "True"
-    assert attrs["CropTop"] == "0"
-    assert attrs["CropLeft"] == "0"
-    assert attrs["CropBottom"] == "1"
-    assert attrs["CropRight"] == "1"
+    assert float(attrs["CropTop"]) > 0.0
+    assert float(attrs["CropLeft"]) > 0.0
+    assert float(attrs["CropBottom"]) < 1.0
+    assert float(attrs["CropRight"]) < 1.0
+    assert float(attrs["CropTop"]) == pytest.approx(float(attrs["CropLeft"]))
+    assert float(attrs["CropBottom"]) == pytest.approx(float(attrs["CropRight"]))
+    assert _crop_aspect(attrs, image.size) == pytest.approx(
+        image.width / image.height,
+        abs=1e-6,
+    )
     assert attrs["CropAngle"].startswith("+")
     assert attrs["CropConstrainToWarp"] == "0"
     assert attrs["CropConstrainToUnitSquare"] == "1"
@@ -269,16 +282,27 @@ def test_crop_angle_attributes_only_for_applied_result() -> None:
     assert crop_angle_attributes(skipped, image.size) == {}
 
 
-def test_crop_angle_attributes_keep_full_frame_bounds() -> None:
+def test_crop_angle_attributes_preserve_original_aspect_ratio() -> None:
     image = _tilted_room_image(3.0)
     result = estimate_straighten_angle(image)
 
     attrs = crop_angle_attributes(result, image.size)
 
-    assert attrs["CropTop"] == "0"
-    assert attrs["CropLeft"] == "0"
-    assert attrs["CropBottom"] == "1"
-    assert attrs["CropRight"] == "1"
+    assert _crop_aspect(attrs, image.size) == pytest.approx(
+        image.width / image.height,
+        abs=1e-6,
+    )
+    assert float(attrs["CropRight"]) - float(attrs["CropLeft"]) == pytest.approx(
+        float(attrs["CropBottom"]) - float(attrs["CropTop"]),
+        abs=1e-6,
+    )
+
+
+def test_estimate_straighten_angle_skips_crop_that_would_be_too_deep() -> None:
+    result = estimate_straighten_angle(_tilted_line_image(6.0))
+
+    assert result.applied is False
+    assert result.reason == "crop_too_deep"
 
 
 def test_straighten_engine_version_is_recorded_for_diagnostics() -> None:
