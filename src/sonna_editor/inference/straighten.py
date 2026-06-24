@@ -75,6 +75,8 @@ _HORIZON_BAND_TOP = 0.16
 _HORIZON_BAND_BOTTOM = 0.82
 _CENTRE_HORIZON_BAND_TOP = 0.34
 _CENTRE_HORIZON_BAND_BOTTOM = 0.66
+_CENTRE_OBJECT_MARGIN_X = 0.18
+_CENTRE_OBJECT_MARGIN_Y = 0.16
 
 
 def _resize_for_analysis(image: Image.Image) -> Image.Image:
@@ -307,6 +309,26 @@ def _centre_band_observations(
     ]
 
 
+def _centre_object_observations(
+    observations: list[_LineObservation],
+    width: int,
+    height: int,
+) -> list[_LineObservation]:
+    """Return central line evidence for subject/object-oriented straightening."""
+    if width <= 0 or height <= 0:
+        return []
+    return [
+        item
+        for item in observations
+        if _CENTRE_OBJECT_MARGIN_X
+        <= item.mid_x / float(width)
+        <= 1.0 - _CENTRE_OBJECT_MARGIN_X
+        and _CENTRE_OBJECT_MARGIN_Y
+        <= item.mid_y / float(height)
+        <= 1.0 - _CENTRE_OBJECT_MARGIN_Y
+    ]
+
+
 def _horizontal_coverage_score(observations: list[_LineObservation], width: int) -> float:
     if width <= 0:
         return 0.0
@@ -330,10 +352,16 @@ def _scene_candidates(
     centre_horizontal = _centre_band_observations(horizontal, height)
     horizon_source = centre_horizontal or horizontal
     vertical = [item for item in observations if item.orientation == "vertical"]
+    centre_object = _centre_object_observations(observations, width, height)
+    centre_object_horizontal = [
+        item for item in centre_object if item.orientation == "horizontal"
+    ]
+    centre_object_vertical = [item for item in centre_object if item.orientation == "vertical"]
 
     axis_candidate = _candidate_from_observations(observations, image_shape)
     horizon_candidate = _candidate_from_observations(horizon_source, image_shape)
     vertical_candidate = _candidate_from_observations(vertical, image_shape)
+    centre_object_candidate = _candidate_from_observations(centre_object, image_shape)
 
     horizon_score = 0.0
     if horizon_candidate is not None:
@@ -350,8 +378,35 @@ def _scene_candidates(
         balance = min(1.0, min(horizon_candidate.total_weight, vertical_candidate.total_weight) / max(1.0, min(image_shape) * 0.35))
         axis_score = max(axis_score, axis_candidate.confidence * (0.75 + 0.25 * consistency) * (0.70 + 0.30 * balance))
 
+    centre_object_score = 0.0
+    if (
+        centre_object_candidate is not None
+        and centre_object_horizontal
+        and centre_object_vertical
+    ):
+        weight_score = min(
+            1.0,
+            centre_object_candidate.total_weight / max(1.0, min(image_shape) * 0.70),
+        )
+        centre_object_score = centre_object_candidate.confidence * (
+            0.82 + 0.18 * weight_score
+        )
+
     if horizon_candidate is not None and horizon_score >= max(axis_score * 1.05, _MIN_HORIZON_CONFIDENCE):
         return "horizon", horizon_candidate, horizon_score, axis_score, len(horizontal), len(vertical)
+    if centre_object_candidate is not None and centre_object_score >= max(
+        horizon_score * 1.02,
+        axis_score * 0.98,
+        _MIN_CONFIDENCE,
+    ):
+        return (
+            "centre_object",
+            centre_object_candidate,
+            horizon_score,
+            max(axis_score, centre_object_score),
+            len(horizontal),
+            len(vertical),
+        )
     if (
         axis_candidate is not None
         and horizon_candidate is not None
@@ -474,7 +529,7 @@ def estimate_straighten_angle(image: Image.Image) -> StraightenResult:
         _MIN_HORIZON_CONFIDENCE
         if scene_type == "horizon"
         else _MIN_CONFIDENCE
-        if scene_type == "architecture"
+        if scene_type in {"architecture", "centre_object"}
         else _MIN_MIXED_CONFIDENCE
     )
     if confidence < min_confidence:

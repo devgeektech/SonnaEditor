@@ -1,7 +1,7 @@
 # Session State - Sonna Editor
 
-**Saved:** 2026-06-19 local time
-**Current phase/task:** Lite preset WB pink-cast repair.
+**Saved:** 2026-06-22 local time
+**Current phase/task:** Auto straightening crop reference repair.
 
 ## Current Workspace
 
@@ -53,6 +53,85 @@ x86_64, while macOS resolves the matching public wheels.
 - A fresh scene-stats candidate was trained at `data/models/sonna-v2-scene-stats-run01/`, but it was rejected for frontend use. It briefly published as `v1_learning/model-v2.0.1.*`, then those frontend-visible copies were removed after collapse analysis showed worse prediction spread than v2.0.0.
 
 ## What Changed This Session
+
+- Ran an expanded straightening and Lite-profile validation pass, then patched
+  the one straightening failure mode it found:
+  - Focused regression suite passed after the patch:
+    `uv run pytest tests\test_straighten.py tests\test_adjuster.py tests\test_style_survey.py tests\test_checkpoint_builder.py tests\api\test_callback_bridge.py::test_mode_b_initial_anchors_absolute_preset_wb_to_as_shot tests\api\test_callback_bridge.py::test_mode_b_initial_uses_per_photo_preset_adjuster -q`
+    (`141 passed`).
+  - Ruff passed for touched/focused files:
+    `uv run ruff check src\sonna_editor\inference\straighten.py tests\test_straighten.py tests\test_adjuster.py tests\test_checkpoint_builder.py`.
+  - Synthetic stress validation covered 235 straightening cases and 1,400 Lite
+    cases across 20 Lite preset profiles, 14 synthetic scene-colour layouts,
+    and 5 AsShot WB baselines.
+  - Lite validation flagged 0 pink/green tint misbehaviors. Tint deltas stayed
+    within `[-10, +10]` Lightroom units relative to AsShot, with mean
+    `-0.499`. Raw WB deltas behaved directionally: warm/magenta scenes moved
+    tint non-positive, green/cyan scenes moved tint non-negative, and neutral
+    patch scenes stayed near 0.
+  - Straightening validation flagged 0 aspect-ratio failures. Max crop-aspect
+    error was `2.22e-16`; blank/texture false applies were 0.
+  - Initial straightening stress found centre-object failures where long
+    corner/background lines could overpower a tilted central subject/object.
+    `src\sonna_editor\inference\straighten.py` now builds a
+    `centre_object` candidate from central horizontal+vertical line evidence
+    and allows that coherent central evidence to beat comparable global
+    architecture/corner evidence.
+  - Added regression coverage in `tests\test_straighten.py` for a central
+    object tilted opposite to corner distractor lines.
+  - Final stress validation after the patch: 235 straightening cases,
+    112 applied / 123 skipped, `centre_preference_failures=0`,
+    `aspect_failures=0`, and `blank_or_texture_false_applies=0`.
+
+- Fixed two Process UI bugs:
+  - `saha-app\electron\main.js` now opens the Add folder picker as a modal
+    child of the Saha window and refocuses/restores the app after selection,
+    preventing the native file manager dialog from lingering in front of the
+    app after a folder is chosen.
+  - `saha-app\src\components\editor.jsx` now guards Add folder with a
+    temporary `Choosing folder...` state so repeated clicks or shortcut repeats
+    cannot open overlapping pickers.
+  - The processing progress bar no longer reaches `100%` from
+    `photos_prepared` alone. It caps at `99%` until `photos_processed` reaches
+    the folder total, while using the furthest of prepared/processed progress
+    so the bar does not visually restart when the app moves from preparation to
+    XMP writing.
+  - The processing Live log panel was removed entirely from the right column to
+    avoid double-loading visual noise after the progress bar.
+  - `saha-app\src\hooks\useJob.js` no longer accumulates per-photo Live log
+    rows in state; websocket photo events now only coalesce progress snapshot
+    fields for the visible progress UI.
+  - The completed-run `Process another folder` button now uses the shared
+    orange CTA styling, and the shared orange accent was brightened across dark
+    and light themes in both `tokens.js` and the boot CSS variables.
+  - The shell now places the theme toggle in the old top-right profile-button
+    slot using the same plain panel/line-border/sun-icon design as the login
+    page. The bottom-left rail control is now a direct Logout button instead of
+    a profile menu, since Logout was the only action in that menu, and it asks
+    for confirmation before logging out.
+  - In-app rail icons now use the same active-orange / inactive-muted colour
+    pattern as the login theme icon for a more consistent icon language.
+  - While processing, the centre `Processing in progress...` button now has an
+    orange pulse plus spinner animation, and the right-panel Cancel button uses
+    the orange CTA colour while it is active.
+  - Verification passed: `npm run build:vite` in `saha-app\`.
+
+- Repaired the Auto straighten processing crop reference:
+  - `src\sonna_editor\inference\pipeline.py` now uses extracted RAW/source
+    `width` and `height` metadata for Lightroom crop-bound math when available,
+    falling back to the resized preview dimensions only when source dimensions
+    are missing.
+  - `sonna_predictions.json` straightening diagnostics now include
+    `crop_reference_width` and `crop_reference_height` for each auto-straighten
+    photo, so future Lightroom crop issues can be audited from the run sidecar.
+  - Added regression coverage proving the pipeline uses source dimensions
+    rather than preview dimensions when calculating the centered same-scale
+    crop bounds.
+  - Verification passed after rerunning outside the Windows sandbox because
+    the sandbox hit the known `CreateProcessAsUserW failed: 1312` runner issue:
+    `uv run pytest tests\test_straighten.py tests\api\test_callback_bridge.py::test_pipeline_auto_straighten_writes_crop_angle_and_sidecar tests\api\test_callback_bridge.py::test_pipeline_auto_straighten_uses_source_dimensions_for_crop_math tests\api\test_process_route.py::test_process_auto_straighten_forwarded -q`
+    (`18 passed`) and
+    `uv run ruff check src\sonna_editor\inference\pipeline.py tests\api\test_callback_bridge.py`.
 
 - Repaired another Lite/Mode B pink-cast failure mode found when using a
   different preset:

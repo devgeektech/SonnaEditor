@@ -639,3 +639,100 @@ def test_pipeline_auto_straighten_writes_crop_angle_and_sidecar(
     assert sidecar["straightening"]["tilted.cr3"]["line_count"] > 0
     assert sidecar["straightening"]["tilted.cr3"]["horizontal_line_count"] > 0
     assert sidecar["straightening"]["tilted.cr3"]["line_length_px"] > 0
+    assert sidecar["straightening"]["tilted.cr3"]["crop_reference_width"] == image.width
+    assert sidecar["straightening"]["tilted.cr3"]["crop_reference_height"] == image.height
+
+
+def test_pipeline_auto_straighten_uses_source_dimensions_for_crop_math(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from PIL import Image, ImageDraw
+    import json as _json
+    import math
+    import torch
+
+    from sonna_editor import config
+    from sonna_editor.inference import pipeline as pl
+
+    folder = tmp_path / "shoot"
+    folder.mkdir()
+    raw = folder / "source_size.cr3"
+    raw.write_bytes(b"raw")
+    ckpt = tmp_path / "model-v1.0.1.ckpt"
+    ckpt.write_bytes(b"ckpt")
+
+    image = Image.new("RGB", (400, 300), "white")
+    draw = ImageDraw.Draw(image)
+    theta = math.radians(3.0)
+    dx = math.cos(theta) * 260
+    dy = math.sin(theta) * 260
+    draw.line((200 - dx, 150 - dy, 200 + dx, 150 + dy), fill="black", width=5)
+
+    class FakeModel:
+        _slider_set_version = "v1"
+
+    class FakeEngine:
+        _image_resolution = 384
+        _model = FakeModel()
+
+        def __init__(self, *_args, **_kwargs) -> None:
+            pass
+
+        def warmup(self) -> None:
+            pass
+
+        def predict(self, *_args, **_kwargs):
+            return torch.zeros((1, len(config.SLIDER_FIELDS)))
+
+    captured: dict[str, object] = {}
+
+    def fake_write(_path, settings, **kwargs):
+        captured["extra_attributes"] = dict(kwargs["extra_attributes"])
+
+    source_size = (6000, 4000)
+    monkeypatch.setattr(pl, "InferenceEngine", FakeEngine)
+    monkeypatch.setattr(
+        pl,
+        "_extract_one",
+        lambda _path, _size: (
+            image,
+            {
+                "width": source_size[0],
+                "height": source_size[1],
+                "as_shot_wb": None,
+            },
+        ),
+    )
+    monkeypatch.setattr(pl, "write_xmp", fake_write)
+
+    result = pl.process_shoot_with_model(
+        input_dir=folder,
+        model_path=ckpt,
+        output_dir=folder,
+        auto_straighten=True,
+        max_workers=1,
+        save_predictions=True,
+    )
+
+    assert result["processed"] == 1
+    attrs = captured["extra_attributes"]
+    angle = float(attrs["CropAngle"])
+    radians = math.radians(abs(angle))
+    c = abs(math.cos(radians))
+    s = abs(math.sin(radians))
+    width_ratio = source_size[0] / source_size[1]
+    height_ratio = source_size[1] / source_size[0]
+    expected_scale = min(
+        1.0,
+        1.0 / (c + height_ratio * s),
+        1.0 / (width_ratio * s + c),
+    )
+    actual_scale = float(attrs["CropRight"]) - float(attrs["CropLeft"])
+
+    assert actual_scale == pytest.approx(expected_scale, abs=1e-6)
+
+    sidecar = _json.loads((folder / "sonna_predictions.json").read_text())
+    straightening = sidecar["straightening"]["source_size.cr3"]
+    assert straightening["crop_reference_width"] == source_size[0]
+    assert straightening["crop_reference_height"] == source_size[1]

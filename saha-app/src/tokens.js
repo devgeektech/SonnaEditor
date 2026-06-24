@@ -25,9 +25,9 @@ export const THEMES = {
     fgFaint: '#5C574D',
 
     // Status / accent
-    ochre: '#D9864A',
-    ochreSoft: '#B66E3E',
-    ochreTint: 'rgba(217, 134, 74, 0.16)',
+    ochre: '#F0944F',
+    ochreSoft: '#D47A3E',
+    ochreTint: 'rgba(240, 148, 79, 0.18)',
     onAccent: '#1F130B',
     green: '#6E9B7E',
     amber: '#C49A5E',
@@ -48,9 +48,9 @@ export const THEMES = {
     fgDim: '#7A7067',
     fgFaint: '#A3988D',
 
-    ochre: '#C76F35',
-    ochreSoft: '#A65A2B',
-    ochreTint: 'rgba(199, 111, 53, 0.14)',
+    ochre: '#E17A36',
+    ochreSoft: '#C36127',
+    ochreTint: 'rgba(225, 122, 54, 0.16)',
     onAccent: '#FFFFFF',
     green: '#4F8464',
     amber: '#A9792C',

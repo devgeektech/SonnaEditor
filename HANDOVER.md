@@ -77,9 +77,14 @@ This checkout is a Windows development/training workspace at `C:\Users\vikas.DES
   The estimator now uses CLAHE-normalized OpenCV Canny edges plus probabilistic
   Hough lines, OpenCV line segments, and a broad Hough fallback for fragmented
   line evidence, then classifies the line evidence into horizon, architecture,
-  or mixed-axis candidates before choosing the Lightroom `CropAngle`.
+  centre-object, or mixed-axis candidates before choosing the Lightroom
+  `CropAngle`.
   Centre-band horizontal evidence is preferred when present so the visible
   centre/horizon line can win over off-centre distractor lines.
+  Coherent central horizontal+vertical object evidence can now win over
+  comparable global/corner architecture evidence, so small-angle straightening
+  follows the main central object rather than background frame lines when that
+  central object evidence is strong.
   Horizon-specific scoring can prefer a long horizon over conflicting vertical
   distractors, while high-texture frames are still skipped. On 2026-06-16 the
   prior estimator was validated read-only

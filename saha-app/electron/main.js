@@ -193,10 +193,18 @@ async function bootstrap() {
 
 // IPC: native folder picker for the renderer's Browse… button.
 ipcMain.handle('saha:pick-folder', async () => {
-  const result = await dialog.showOpenDialog({
+  const parentWindow = BrowserWindow.getFocusedWindow() || BrowserWindow.getAllWindows()[0] || null;
+  const options = {
     properties: ['openDirectory'],
     title: 'Choose a folder of RAW files',
-  });
+  };
+  const result = parentWindow
+    ? await dialog.showOpenDialog(parentWindow, options)
+    : await dialog.showOpenDialog(options);
+  if (parentWindow && !parentWindow.isDestroyed()) {
+    if (parentWindow.isMinimized()) parentWindow.restore();
+    parentWindow.focus();
+  }
   if (result.canceled || result.filePaths.length === 0) return null;
   return result.filePaths[0];
 });

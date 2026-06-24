@@ -110,8 +110,8 @@ This section tracks what each backend source file/folder does. Keep it updated w
 |---|---|
 | `src/sonna_editor/inference/__init__.py` | Package marker for inference code. |
 | `src/sonna_editor/inference/engine.py` | Checkpoint loading and batched prediction engine. Builds tensors from extracted previews/metadata plus scene stats, maps categorical metadata through the checkpoint registry, supports uncertainty sampling, and postprocesses outputs. |
-| `src/sonna_editor/inference/pipeline.py` | End-to-end shoot processing: scan RAW files using the central `config.SUPPORTED_RAW_EXTENSIONS` set, extract features, run inference, apply WB/skip semantics, optionally apply preview-based auto straightening, write XMP sidecars, write `sonna_predictions.json` including straightening engine/line diagnostics, and emit progress callbacks. Initial Lite/Mode B processing anchors preset Temperature/Tint to each photo's AsShot WB as bounded style offsets so absolute preset WB values do not create shoot-wide colour casts. |
-| `src/sonna_editor/inference/straighten.py` | Optional auto-straightening postprocess. Uses CLAHE-normalized OpenCV Canny edges plus probabilistic Hough lines, OpenCV line segments, and a broad Hough fallback for fragmented line evidence, then classifies evidence as horizon, architecture, or mixed-axis geometry before estimating small Lightroom `CropAngle` corrections. Centre-band horizontal evidence is preferred when present so the visible centre/horizon line is not overruled by off-centre distractor lines. It writes centred same-scale crop bounds plus Lightroom crop constraint flags only when selected per processing job and confidence passes the scene-specific thresholds, so the pixel crop ratio remains exactly the same as the original shot ratio. High-angle corrections are skipped as `crop_too_deep` when the required aspect-locked crop scale would fall below `0.91`. This is not a trained model output. |
+| `src/sonna_editor/inference/pipeline.py` | End-to-end shoot processing: scan RAW files using the central `config.SUPPORTED_RAW_EXTENSIONS` set, extract features, run inference, apply WB/skip semantics, optionally apply preview-based auto straightening, write XMP sidecars, write `sonna_predictions.json` including straightening engine/line diagnostics and crop reference dimensions, and emit progress callbacks. Auto-straighten crop-bound math uses extracted RAW/source dimensions when available, falling back to preview dimensions only when source dimensions are missing. Initial Lite/Mode B processing anchors preset Temperature/Tint to each photo's AsShot WB as bounded style offsets so absolute preset WB values do not create shoot-wide colour casts. |
+| `src/sonna_editor/inference/straighten.py` | Optional auto-straightening postprocess. Uses CLAHE-normalized OpenCV Canny edges plus probabilistic Hough lines, OpenCV line segments, and a broad Hough fallback for fragmented line evidence, then classifies evidence as horizon, centre-object, architecture, or mixed-axis geometry before estimating small Lightroom `CropAngle` corrections. Centre-band horizontal evidence is preferred when present so the visible centre/horizon line is not overruled by off-centre distractor lines. Coherent central horizontal+vertical object evidence can also win over comparable global/corner architecture evidence, so straightening follows the main central object rather than background frame lines when the central evidence is strong. It writes centred same-scale crop bounds plus Lightroom crop constraint flags only when selected per processing job and confidence passes the scene-specific thresholds, so the pixel crop ratio remains exactly the same as the original shot ratio. High-angle corrections are skipped as `crop_too_deep` when the required aspect-locked crop scale would fall below `0.91`. This is not a trained model output. |
 
 ### Fine-Tune Package
 
@@ -286,15 +286,38 @@ This section tracks what each backend source file/folder does. Keep it updated w
   mounted while other pages are visible, loaded folders survive tab switches.
   Folder checkboxes are unselected by default: with no boxes checked, processing
   is disabled; with boxes checked, processing runs those checked folders only.
+  The Add folder picker is parented to the Electron window, refocuses Saha
+  after a folder is chosen, and is guarded by a temporary choosing state so
+  repeated clicks cannot open overlapping native folder dialogs. The Process
+  progress bar uses `photos_prepared` only for early movement and caps at 99%
+  until `photos_processed` reaches the folder total. The old right-column Live
+  log has been removed, and completed runs use the shared orange CTA styling
+  for `Process another folder`. The bar is monotonic across preparation and
+  XMP-writing updates, using the furthest known progress so it does not appear
+  to load twice. During active processing, the centre processing button has a
+  subtle orange pulse/spinner and the Cancel button uses the orange CTA colour.
   Projects lists loaded/current folders and recent run rows by
   loaded time. Profile rows use a three-dot actions menu for profile deletion.
   The Profile screen currently shows Personal AI profile creation as a disabled
   "Coming soon" tile; Lite profile creation remains the active creation path.
-- `src/hooks/`: React hooks for jobs, profiles, captures, and recent folders
+- `src/hooks/`: React hooks for jobs, profiles, captures, and recent folders.
+  `useJob` now keeps coalesced progress snapshots only; it no longer accumulates
+  per-photo Live log rows because the Process UI does not render that panel.
 - `electron/`: Electron main/preload process wiring. The preload bridge exposes
   `window.saha.platform`; the shared titlebar uses it to add a macOS-only left
   inset so the Saha mark clears the native traffic-light controls when
-  `titleBarStyle: hiddenInset` is active.
+  `titleBarStyle: hiddenInset` is active. Folder-picking IPC opens
+  `showOpenDialog` against the focused Saha `BrowserWindow` when available and
+  restores focus after the dialog resolves. The theme toggle lives in the
+  top-right titlebar action slot and reuses the login page's plain
+  panel/line-border/sun-icon design. The bottom-left rail slot is a direct
+  Logout button rather than a profile menu, since Logout is the only available
+  action there, and it asks for confirmation before logging out. In-app rail
+  icons use active orange and inactive muted strokes, matching the login
+  theme-icon colour pattern.
+- Shared accent styling is defined in both `src/tokens.js` and
+  `src/index.html` boot CSS variables. Keep them aligned when changing the
+  orange CTA/accent colour so the first paint and React-applied theme match.
 - front-end interacts with Python backend via REST and websocket status updates
 
 ## Scripts
@@ -474,6 +497,14 @@ Lite checkpoints are marked with `profile_type: mode_b_initial` in the sidecar J
   the original shot aspect. High-angle corrections that would require an
   aspect-locked crop scale below `0.91` are skipped as `crop_too_deep` instead
   of over-cropping.
+- Auto straightening centre-object repair, 2026-06-22: expanded synthetic
+  validation found that long corner/background lines could overpower a tilted
+  central object in small-angle conflict cases. The estimator now builds a
+  `centre_object` candidate from central horizontal+vertical line evidence and
+  lets coherent central evidence win over comparable global architecture
+  evidence. Final stress validation covered 235 synthetic straightening cases
+  with 0 centre-preference failures, 0 aspect-ratio failures, and 0 blank or
+  texture false applies.
 - Lite WB/tint repair, 2026-06-18: `preset.adjuster` no longer derives Tint
   from red-vs-blue balance. Temperature remains red-vs-blue, while Tint now
   uses green-vs-magenta balance so warm/red frames do not get an extra magenta

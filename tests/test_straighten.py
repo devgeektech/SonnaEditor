@@ -156,6 +156,49 @@ def _centre_horizon_with_offcentre_distractors_image(
     return image
 
 
+def _central_object_with_corner_distractors_image(
+    object_angle_degrees: float,
+    distractor_angle_degrees: float,
+) -> Image.Image:
+    image = Image.new("RGB", (720, 480), (226, 224, 218))
+    draw = ImageDraw.Draw(image)
+    centre = (360.0, 240.0)
+    object_rect = [
+        (238.0, 134.0),
+        (482.0, 134.0),
+        (482.0, 355.0),
+        (238.0, 355.0),
+        (238.0, 134.0),
+    ]
+    for point_a, point_b in zip(object_rect, object_rect[1:]):
+        draw.line(
+            _rotate_points([point_a, point_b], object_angle_degrees, centre),
+            fill=(44, 44, 42),
+            width=5,
+        )
+    for y in (38.0, 442.0):
+        draw.line(
+            _rotate_points(
+                [(32.0, y), (688.0, y)],
+                distractor_angle_degrees,
+                centre,
+            ),
+            fill=(100, 100, 96),
+            width=2,
+        )
+    for x in (58.0, 662.0):
+        draw.line(
+            _rotate_points(
+                [(x, 30.0), (x, 450.0)],
+                distractor_angle_degrees,
+                centre,
+            ),
+            fill=(100, 100, 96),
+            width=2,
+        )
+    return image
+
+
 def _soft_portrait_like_image() -> Image.Image:
     image = Image.new("RGB", (420, 560), (212, 198, 184))
     draw = ImageDraw.Draw(image)
@@ -241,6 +284,19 @@ def test_estimate_straighten_angle_prefers_centre_horizon_over_offcentre_lines()
     assert result.applied is True
     assert result.scene_type == "horizon"
     assert result.angle_degrees == pytest.approx(3.0, abs=0.7)
+
+
+def test_estimate_straighten_angle_prefers_central_object_over_corner_lines() -> None:
+    result = estimate_straighten_angle(
+        _central_object_with_corner_distractors_image(
+            object_angle_degrees=-1.0,
+            distractor_angle_degrees=1.0,
+        )
+    )
+
+    assert result.applied is True
+    assert result.scene_type == "centre_object"
+    assert result.angle_degrees == pytest.approx(-1.0, abs=0.7)
 
 
 def test_estimate_straighten_angle_skips_soft_portrait_without_structure() -> None:

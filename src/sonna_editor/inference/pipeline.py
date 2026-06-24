@@ -194,6 +194,18 @@ _MODE_B_MAX_PRESET_TEMP_STYLE_DELTA = 300.0
 _MODE_B_MAX_PRESET_TINT_STYLE_DELTA = 5.0
 
 
+def _straighten_reference_size(
+    metadata: dict,
+    preview: Image.Image,
+) -> tuple[int, int]:
+    """Return the image dimensions to use for Lightroom crop math."""
+    width = metadata.get("width")
+    height = metadata.get("height")
+    if isinstance(width, int) and isinstance(height, int) and width > 0 and height > 0:
+        return width, height
+    return preview.size
+
+
 def _extract_one(raw_path: Path, target_size: int) -> tuple[Image.Image, dict]:
     preview = extract_preview(raw_path, target_size=target_size)
     meta = extract_metadata(raw_path)
@@ -576,8 +588,9 @@ def process_shoot_with_model(
         straightening_result = None
         if auto_straighten:
             straightening_result = estimate_straighten_angle(previews[i])
+            straighten_reference_size = _straighten_reference_size(metadatas[i], previews[i])
             extra_attributes.update(
-                crop_angle_attributes(straightening_result, previews[i].size)
+                crop_angle_attributes(straightening_result, straighten_reference_size)
             )
             straightening_by_file[raw_path.name] = {
                 "angle_degrees": straightening_result.angle_degrees,
@@ -592,6 +605,8 @@ def process_shoot_with_model(
                 "horizontal_line_count": straightening_result.horizontal_line_count,
                 "vertical_line_count": straightening_result.vertical_line_count,
                 "line_length_px": straightening_result.total_line_length,
+                "crop_reference_width": straighten_reference_size[0],
+                "crop_reference_height": straighten_reference_size[1],
             }
 
         if std_preds is not None:
