@@ -52,6 +52,15 @@ x86_64, while macOS resolves the matching public wheels.
 
 ## What Changed This Session
 
+- Verified the current `Persepective_rotate` branch on 200 local DNGs from
+  `Documents\fivek_dataset\fivek_dataset\raw_photos` without modifying the
+  originals. The smoke test extracted previews for all 200 with 0 errors; 142
+  images produced applied auto-straighten attributes and 58 were skipped by
+  detector gates (`angle_too_small`: 56, `edge_texture`: 2). The generated
+  sample XMP at `C:\tmp\sonna_perspective_rotate_smoke\sample_perspective_rotate.xmp`
+  writes top-level `crs:PerspectiveRotate="+0.7538"` and
+  `crs:PerspectiveScale="101.9901"` with no top-level crop attributes.
+
 - Repaired two issues from real processing feedback:
   - `Auto_Straighten` is the crop-angle comparison branch: it writes Lightroom
     `CropAngle` with full-frame crop bounds (`CropTop=0`, `CropLeft=0`,
