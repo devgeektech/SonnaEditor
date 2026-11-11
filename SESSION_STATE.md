@@ -6,7 +6,9 @@
 ## Current Workspace
 
 - Repo path: `C:\Users\vikas.DESKTOP-61LEE8B\Projects\SonnaEditor`
-- Branch: `Auto_Straighten`, tracking `origin/Auto_Straighten`.
+- Branch: `main`, tracking `origin/main`.
+- All active feature branches (`Auto_Straighten`, `catalog_processing`, and `denoise-feature`) have been integrated into `main`.
+- The `Persepective_rotate` branch and the perspective rotate experiment stash were permanently removed.
 - Worktree was clean before this documentation reconciliation. There were no
   uncommitted source changes to reverse-engineer; the docs were compared
   against the tracked branch code and the tracked foundation manifest.
