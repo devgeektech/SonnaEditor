@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Literal, Optional
+from typing import Any, Literal, Optional
 
 from pydantic import BaseModel, Field
 
@@ -91,11 +91,11 @@ class CapturesResponse(BaseModel):
     captures_count: int
     since: Optional[str] = None
     n_photos: int = 0
-    metadata_coverage: dict = Field(default_factory=dict)
-    per_field: dict = Field(default_factory=dict)
-    most_adjusted_fields: list = Field(default_factory=list)
-    correlations: list = Field(default_factory=list)
-    filtered_field_deltas: dict = Field(default_factory=dict)
+    metadata_coverage: dict[str, Any] = Field(default_factory=dict)
+    per_field: dict[str, Any] = Field(default_factory=dict)
+    most_adjusted_fields: list[Any] = Field(default_factory=list)
+    correlations: list[Any] = Field(default_factory=list)
+    filtered_field_deltas: dict[str, Any] = Field(default_factory=dict)
 
 
 # ── Process / Finetune jobs ────────────────────────────────────────────────

@@ -643,9 +643,11 @@ def _warm_start_model_from_checkpoint(
     arch_config = ckpt.get("arch_config", {}) or {}
     source_slider_set_version = arch_config.get("slider_set_version")
     if source_slider_set_version is None:
-        num_sliders = arch_config.get("num_sliders", model_cls._V1_OUTPUT_COUNT)
+        v1_count = getattr(model_cls, "_V1_OUTPUT_COUNT", 135)
+        v2_count = getattr(model_cls, "_V2_OUTPUT_COUNT", 147)
+        num_sliders = arch_config.get("num_sliders", v1_count)
         source_slider_set_version = (
-            "v2" if num_sliders >= model_cls._V2_OUTPUT_COUNT else "v1"
+            "v2" if num_sliders >= v2_count else "v1"
         )
     if source_slider_set_version != slider_set_version:
         raise ValueError(

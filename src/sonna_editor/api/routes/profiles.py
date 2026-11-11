@@ -14,7 +14,7 @@ import re
 import shutil
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Final, Optional
+from typing import Any, Final, Optional, cast
 
 from fastapi import APIRouter, HTTPException
 
@@ -61,11 +61,12 @@ def _checkpoint_id(version_label: str) -> str:
     return f"dp-event-{version_label}"
 
 
-def _profile_name(sidecar: dict) -> str:
+def _profile_name(sidecar: dict[str, Any]) -> str:
     # Modern sidecars (Mode B + any future schema) carry display_name
     # verbatim from the user's profile name. Legacy Mode A v1.x sidecars
     # predate the field and fall back to the "DP Event" lineage label.
-    return sidecar.get("display_name") or LEGACY_PROFILE_NAME_FALLBACK
+    name = sidecar.get("display_name")
+    return str(name) if name else LEGACY_PROFILE_NAME_FALLBACK
 
 
 def _read_active_id() -> Optional[str]:
@@ -89,12 +90,13 @@ def _clear_active_id() -> None:
         pass
 
 
-def _read_sidecar(ckpt_path: Path) -> dict:
+def _read_sidecar(ckpt_path: Path) -> dict[str, Any]:
     sidecar = ckpt_path.with_suffix(".json")
     if not sidecar.exists():
         return {}
     try:
-        return json.loads(sidecar.read_text())
+        data = json.loads(sidecar.read_text())
+        return cast(dict[str, Any], data) if isinstance(data, dict) else {}
     except (json.JSONDecodeError, OSError):
         return {}
 
@@ -298,7 +300,7 @@ def _train_personal_profile_sync(
     req: PersonalProfileRequest,
     name: str,
     input_dir: Path,
-) -> dict:
+) -> dict[str, Any]:
     """Build RAW+XMP dataset, train a Personal AI profile, and publish it."""
     from sonna_editor.data.dataset import build_dataset, save_split, split_dataset
     from sonna_editor.training.profile_runner import train_profile

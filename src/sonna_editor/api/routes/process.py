@@ -12,7 +12,7 @@ import asyncio
 import logging
 import time
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
 
@@ -204,7 +204,7 @@ async def stream_job(ws: WebSocket, job_id: str) -> None:
         await ws.close()
         return
 
-    queue: asyncio.Queue = asyncio.Queue(maxsize=jobs.SUBSCRIBER_QUEUE_MAXSIZE)
+    queue: asyncio.Queue[Any] = asyncio.Queue(maxsize=jobs.SUBSCRIBER_QUEUE_MAXSIZE)
     with record.lock:
         record.subscribers.append(queue)
         terminal_now = jobs.is_terminal(record.state)

@@ -94,7 +94,7 @@ class JobRecord:
     # runtime-only (excluded from snapshot)
     cancel_event: threading.Event = field(default_factory=threading.Event)
     lock: threading.Lock = field(default_factory=threading.Lock)
-    subscribers: list[asyncio.Queue] = field(default_factory=list)
+    subscribers: list[asyncio.Queue[Any]] = field(default_factory=list)
     loop: Optional[asyncio.AbstractEventLoop] = None
     _updates_since_persist: int = 0
 
@@ -107,7 +107,7 @@ class JobRecord:
 
         Caller is responsible for holding `self.lock` if cross-thread coherence matters.
         """
-        common = {
+        common: dict[str, Any] = {
             "job_id": self.job_id,
             "kind": self.kind,
             "state": self.state,

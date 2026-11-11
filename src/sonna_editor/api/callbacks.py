@@ -47,7 +47,7 @@ def _broadcast(record: jobs.JobRecord, message: dict[str, Any]) -> None:
         subscribers = list(record.subscribers)
 
     for queue in subscribers:
-        def _put(q: asyncio.Queue = queue, msg: dict[str, Any] = message) -> None:
+        def _put(q: asyncio.Queue[Any] = queue, msg: dict[str, Any] = message) -> None:
             try:
                 q.put_nowait(msg)
             except asyncio.QueueFull:

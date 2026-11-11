@@ -15,7 +15,7 @@ import logging
 import re
 import sqlite3
 from pathlib import Path
-from typing import Any
+from typing import Any, Mapping
 
 from sonna_editor.config import SLIDER_FIELDS
 from sonna_editor.data import xmp
@@ -377,7 +377,7 @@ def _extract_lua_table(blob: str, key: str) -> list[tuple[int, int]]:
     occurrence overwrite the earlier one.
     """
     pattern = key + r"\s*=\s*\{"
-    last: re.Match | None = None
+    last: re.Match[str] | None = None
     for cand in re.finditer(pattern, blob):
         last = cand
     if last is None:
@@ -421,7 +421,7 @@ def _parse_lua_blob(text: str) -> dict[str, str | float]:
 
 
 def _normalise_to_slider_fields(
-    raw: dict[str, Any],
+    raw: Mapping[str, Any],
 ) -> dict[str, float | str | None]:
     """Project an arbitrary parsed-settings dict onto SLIDER_FIELDS keys."""
     result: dict[str, float | str | None] = {f: None for f in SLIDER_FIELDS}
@@ -477,6 +477,7 @@ def get_develop_settings(
             f"Develop settings blob is empty for image_id={image_id}"
         )
 
+    raw: Mapping[str, Any]
     if (stripped.startswith("<?xpacket")
             or stripped.startswith("<x:xmpmeta")
             or stripped.startswith("<rdf:")):

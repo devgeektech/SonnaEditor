@@ -34,6 +34,16 @@
    - Bytecode compilation: `uv run python -m compileall -q src scripts tests` passed cleanly.
    - Vite frontend build: `npm run build:vite` passed in 510ms.
 
+6. [x] **Task 6: Resolve Terminal Typing Issues & IDE Problems**
+   - Fixed `asyncio.Queue[Any]` typing in `src/sonna_editor/api/callbacks.py:50`, `src/sonna_editor/api/jobs.py:97`, and `src/sonna_editor/api/routes/process.py:207`.
+   - Fixed dictionary invariance type error in `src/sonna_editor/api/jobs.py:110` (`common: dict[str, Any] = { ... }`).
+   - Fixed missing generic arguments in `src/sonna_editor/api/models.py`, `src/sonna_editor/api/routes/folders.py`, `src/sonna_editor/api/routes/profiles.py`, and `src/sonna_editor/data/catalog.py`.
+   - Fixed file handle shadowing bug in `src/sonna_editor/training/datamodule.py:187`.
+   - Fixed model metaclass attribute lookups in `src/sonna_editor/training/profile_runner.py:646-648`.
+   - Fixed binary extract type narrowing in `src/sonna_editor/data/xmp.py:503`.
+   - Added PEP 561 marker `src/sonna_editor/py.typed` and configured `ignore_missing_imports = true` for third-party libraries in `pyproject.toml`.
+   - Verified 0 issues across all 13 API modules via `uv run mypy`.
+
 ---
 
 ## Detailed Change Log

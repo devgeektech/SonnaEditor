@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any
 
 from fastapi import APIRouter, HTTPException
 
@@ -206,7 +207,7 @@ def record_recent_folder(folder_path: str, raw_count: int) -> None:
         "last_processed_at": now_iso,
     }
 
-    existing: list[dict] = []
+    existing: list[dict[str, Any]] = []
     if _RECENT_FOLDERS_FILE.exists():
         try:
             data = json.loads(_RECENT_FOLDERS_FILE.read_text())

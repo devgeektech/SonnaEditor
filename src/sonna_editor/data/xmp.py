@@ -4,7 +4,7 @@ import logging
 import re
 import uuid
 from pathlib import Path
-from typing import Mapping
+from typing import Any, Mapping
 
 import lxml.etree as etree
 
@@ -158,7 +158,7 @@ _XMP_PACKET_RE = re.compile(
 
 # ── As-Shot Temperature/Tint extraction from RAW WB metadata ───────────────
 
-def compute_as_shot_wb(cam_wb, rgb_xyz_matrix) -> tuple[float, float] | None:
+def compute_as_shot_wb(cam_wb: Any, rgb_xyz_matrix: Any) -> tuple[float, float] | None:
     """Pure-math version of As-Shot Temperature/Tint computation.
 
     Inputs come from a libraw/rawpy decode that the caller already performed:
@@ -497,12 +497,13 @@ def read_xmp(path: Path) -> dict[str, float | str | None]:
     suffix = path.suffix.lower()
 
     if suffix == ".xmp":
-        xml_bytes = path.read_bytes()
+        xml_bytes: bytes | None = path.read_bytes()
     else:
         # DNG or other RAW container — extract embedded XMP
         xml_bytes = _extract_xmp_bytes_from_binary(path)
-        if xml_bytes is None:
-            return {field: None for field in SLIDER_FIELDS}
+
+    if xml_bytes is None:
+        return {field: None for field in SLIDER_FIELDS}
 
     return _parse_xmp_bytes(xml_bytes)
 

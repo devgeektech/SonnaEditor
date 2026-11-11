@@ -184,9 +184,9 @@ class SonnaDataset(Dataset):
                     issues["all_zero_tone_truth"] = int(all_zero)
 
             if issues:
-                with log_path.open("a") as f:
-                    f.write(f"# {time.strftime('%Y-%m-%d %H:%M:%S')} "
-                            f"SonnaDataset startup scan ({len(self._df)} rows): {issues}\n")
+                with log_path.open("a") as log_file:
+                    log_file.write(f"# {time.strftime('%Y-%m-%d %H:%M:%S')} "
+                                   f"SonnaDataset startup scan ({len(self._df)} rows): {issues}\n")
         except Exception:
             # Never fail dataset init because of best-effort logging
             pass

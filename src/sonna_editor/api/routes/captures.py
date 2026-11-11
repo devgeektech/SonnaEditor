@@ -32,7 +32,8 @@ def _earliest_iso(captures: pd.DataFrame) -> Optional[str]:
         parsed = pd.to_datetime(times, utc=True, errors="coerce").dropna()
         if parsed.empty:
             return None
-        return parsed.min().isoformat().replace("+00:00", "Z")
+        val = parsed.min().isoformat()
+        return str(val).replace("+00:00", "Z")
     except (ValueError, TypeError):
         return None
 
