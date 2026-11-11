@@ -41,8 +41,10 @@
    - Fixed file handle shadowing bug in `src/sonna_editor/training/datamodule.py:187`.
    - Fixed model metaclass attribute lookups in `src/sonna_editor/training/profile_runner.py:646-648`.
    - Fixed binary extract type narrowing in `src/sonna_editor/data/xmp.py:503`.
+   - Fixed syntax/semantic error in `src/sonna_editor/api/routes/process.py:228` (illegal `return` inside `finally` block moved outside).
    - Added PEP 561 marker `src/sonna_editor/py.typed` and configured `ignore_missing_imports = true` for third-party libraries in `pyproject.toml`.
-   - Verified 0 issues across all 13 API modules via `uv run mypy`.
+   - Configured `.vscode/settings.json` and `pyrightconfig.json` with `.venv` interpreter path and `src` extraPaths, eliminating ~890 missing-import and Pandas union diagnostic false alarms.
+   - Verified 0 issues across all files via Pyright (`0 errors, 0 warnings, 0 informations`).
 
 ---
 

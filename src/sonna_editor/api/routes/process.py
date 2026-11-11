@@ -225,7 +225,7 @@ async def stream_job(ws: WebSocket, job_id: str) -> None:
                 if queue in record.subscribers:
                     record.subscribers.remove(queue)
             await ws.close()
-            return
+        return
 
     await ws.send_json({"type": "job_snapshot", **current_snap})
 
