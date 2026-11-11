@@ -79,7 +79,21 @@ Python 3.12 or newer. Direct Python dependencies are exact-pinned to reduce
 Mac setup drift and resolver conflicts.
 
 For Mac setup from a clean machine through frontend/CLI operation, see
-`MAC_SETUP.md`.
+`doc/MAC_SETUP.md`.
+
+## Documentation
+
+Comprehensive project documentation is maintained in the [`doc/`](doc/) directory:
+
+- [`doc/HANDOVER.md`](doc/HANDOVER.md): Master project handover, active architecture, decisions, and environment state.
+- [`doc/SESSION_STATE.md`](doc/SESSION_STATE.md): Session-by-session status and verified milestones.
+- [`doc/project_knowledge.md`](doc/project_knowledge.md): Source map, package responsibilities, and runtime notes.
+- [`doc/CLI_COMMANDS.md`](doc/CLI_COMMANDS.md): Runbook for data prep, personal AI, Lite profiles, and inference.
+- [`doc/FOUNDATION_TRAINING.md`](doc/FOUNDATION_TRAINING.md): Foundation dataset prep, training, and promotion runbook.
+- [`doc/RUN.md`](doc/RUN.md): Full operator manual and quick-start reference.
+- [`doc/SONNA_EDITOR_BUILD_SPEC.md`](doc/SONNA_EDITOR_BUILD_SPEC.md): Task-by-task build specification.
+- [`doc/MAC_SETUP.md`](doc/MAC_SETUP.md): Step-by-step setup and operation guide for macOS.
+- [`session.md`](session.md): Real-time change log tracking repository tasks and refactoring.
 
 Runtime working folders are now created automatically from the project root on
 backend or CLI startup, including `data/training_sources/`, `data/raw/`,
@@ -166,8 +180,8 @@ specific camera file, and optional DNG conversion depends on Adobe DNG
 Converter support.
 
 Preset + survey creates a Lite profile, but it is not supervised training from
-photos. See `CLI_COMMANDS.md` for operator commands and
-`FOUNDATION_TRAINING.md` for hidden foundation-model training.
+photos. See `doc/CLI_COMMANDS.md` for operator commands and
+`doc/FOUNDATION_TRAINING.md` for hidden foundation-model training.
 
 Local learning photos should be kept in separate child folders under
 `data/training_sources/`, for example `sonna_personal_001/raw_xmp/` for

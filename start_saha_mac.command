@@ -35,3 +35,4 @@ fi
 # 4. Launch Saha (syncs python environment and boots Electron)
 echo "[saha] Starting desktop application..."
 uv run python scripts/run_app.py "$@"
+

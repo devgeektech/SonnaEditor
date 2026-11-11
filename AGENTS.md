@@ -12,10 +12,10 @@ Not for sale. Not competing with Imagen. Internal tooling for cost savings, IP c
 
 For any non-trivial task, read these before proposing or executing changes:
 
-1. **HANDOVER.md** and **SESSION_STATE.md** - current project status, active risks, recent decisions, and next-step context
-2. **project_knowledge.md** - source map and behavior notes for the current codebase
-3. **SONNA_EDITOR_BUILD_SPEC.md** - task-by-task build spec with workflow guidance per task
-4. **CLI_COMMANDS.md**, **FOUNDATION_TRAINING.md**, and **RUN.md** when touching setup, runtime, training, inference, frontend startup, foundation training, or operator commands
+1. **doc/HANDOVER.md** and **doc/SESSION_STATE.md** (or **session.md**) - current project status, active risks, recent decisions, and next-step context
+2. **doc/project_knowledge.md** - source map and behavior notes for the current codebase
+3. **doc/SONNA_EDITOR_BUILD_SPEC.md** - task-by-task build spec with workflow guidance per task
+4. **doc/CLI_COMMANDS.md**, **doc/FOUNDATION_TRAINING.md**, and **doc/RUN.md** when touching setup, runtime, training, inference, frontend startup, foundation training, or operator commands
 
 If you have not read the relevant files in the current session and the user asks you to implement anything beyond a trivial fix, read them now before executing commands or editing files.
 
@@ -23,13 +23,13 @@ If you have not read the relevant files in the current session and the user asks
 
 After every non-trivial execution, update the Markdown file that owns the changed truth:
 
-- **SESSION_STATE.md**: always update after meaningful work so the next session starts from reality.
-- **HANDOVER.md**: update when status, architecture, model lineage, training recipe, known risks, or environment assumptions change.
-- **project_knowledge.md**: update when source files, source-map responsibilities, APIs, scripts, or behavior notes change.
-- **CLI_COMMANDS.md**: update when dataset, Personal AI, Lite, inference, diagnostics, or fine-tune commands change.
-- **FOUNDATION_TRAINING.md**: update when foundation dataset, training, resume, retrain, promotion, or foundation checkpoint assumptions change.
-- **RUN.md** and **README.md**: update when setup, runtime verification, backend/frontend startup, or user-facing quick-start behavior changes.
-- **SONNA_EDITOR_BUILD_SPEC.md**: update only when the planned build workflow itself changes. Do not rewrite historical task specs for minor implementation notes.
+- **session.md** and **doc/SESSION_STATE.md**: always update after meaningful work so the next session starts from reality.
+- **doc/HANDOVER.md**: update when status, architecture, model lineage, training recipe, known risks, or environment assumptions change.
+- **doc/project_knowledge.md**: update when source files, source-map responsibilities, APIs, scripts, or behavior notes change.
+- **doc/CLI_COMMANDS.md**: update when dataset, Personal AI, Lite, inference, diagnostics, or fine-tune commands change.
+- **doc/FOUNDATION_TRAINING.md**: update when foundation dataset, training, resume, retrain, promotion, or foundation checkpoint assumptions change.
+- **doc/RUN.md** and **README.md**: update when setup, runtime verification, backend/frontend startup, or user-facing quick-start behavior changes.
+- **doc/SONNA_EDITOR_BUILD_SPEC.md**: update only when the planned build workflow itself changes. Do not rewrite historical task specs for minor implementation notes.
 
 Do not modify generated diagnostic reports under `scripts/output/` unless the task is specifically to rerun or revise that report.
 
