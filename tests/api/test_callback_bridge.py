@@ -119,9 +119,11 @@ def test_pipeline_callback_and_cancel_kwargs_no_op_when_none() -> None:
     assert "on_photo_prepared" in sig.parameters
     assert "on_photo_complete" in sig.parameters
     assert "cancel_event" in sig.parameters
+    assert "raw_paths" in sig.parameters
     assert sig.parameters["on_photo_prepared"].default is None
     assert sig.parameters["on_photo_complete"].default is None
     assert sig.parameters["cancel_event"].default is None
+    assert sig.parameters["raw_paths"].default is None
 
 
 def test_pipeline_loop_calls_callback_and_honours_cancel(
@@ -732,3 +734,71 @@ def test_pipeline_auto_straighten_uses_source_dimensions_for_crop_bounds(
     straightening = sidecar["straightening"]["source_size.cr3"]
     assert straightening["crop_reference_width"] == source_size[0]
     assert straightening["crop_reference_height"] == source_size[1]
+
+
+def test_pipeline_explicit_raw_paths_write_lightroom_bridge(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from PIL import Image
+    import json as _json
+    import torch
+    from sonna_editor import config
+    from sonna_editor.inference import pipeline as pl
+
+    catalog_parent = tmp_path / "catalog"
+    catalog_parent.mkdir()
+    raw_dir = tmp_path / "raws" / "nested"
+    raw_dir.mkdir(parents=True)
+    raw = raw_dir / "catalog_photo.cr3"
+    raw.write_bytes(b"raw")
+    ignored = raw_dir / "notes.txt"
+    ignored.write_text("not raw")
+    ckpt = tmp_path / "model-v1.0.1.ckpt"
+    ckpt.write_bytes(b"ckpt")
+
+    class FakeModel:
+        _slider_set_version = "v1"
+
+    class FakeEngine:
+        _image_resolution = 64
+        _model = FakeModel()
+
+        def __init__(self, *_args, **_kwargs) -> None:
+            pass
+
+        def warmup(self) -> None:
+            pass
+
+        def predict(self, *_args, **_kwargs):
+            return torch.zeros((1, len(config.SLIDER_FIELDS)))
+
+    monkeypatch.setattr(pl, "InferenceEngine", FakeEngine)
+    monkeypatch.setattr(
+        pl,
+        "_extract_one",
+        lambda _path, _size: (
+            Image.new("RGB", (64, 64), (120, 120, 120)),
+            {"as_shot_wb": (5100.0, 1.0)},
+        ),
+    )
+    monkeypatch.setattr(pl, "write_xmp", lambda *_args, **_kwargs: None)
+
+    result = pl.process_shoot_with_model(
+        input_dir=catalog_parent,
+        model_path=ckpt,
+        raw_paths=[ignored, raw, raw],
+        max_workers=1,
+        save_predictions=True,
+    )
+
+    assert result["processed"] == 1
+    bridge_path = Path(result["lightroom_bridge_path"])
+    assert bridge_path == catalog_parent / "sonna_lightroom_edits.lua"
+    bridge_text = bridge_path.read_text()
+    assert "catalog_photo.cr3" in bridge_text
+    assert "LensProfileEnable" in bridge_text
+    assert "notes.txt" not in bridge_text
+
+    sidecar = _json.loads((catalog_parent / "sonna_predictions.json").read_text())
+    assert sidecar["lightroom_bridge_path"] == str(bridge_path)

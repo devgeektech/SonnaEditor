@@ -45,6 +45,7 @@ RECENT_FOLDERS_PATH = APP_STATE_DIR / "recent_folders.json"
 JOBS_DIR = APP_STATE_DIR / "jobs"
 PROFILE_TRAINING_RUNS_DIR = APP_STATE_DIR / "profile_training_runs"
 FINETUNE_RUNS_DIR = APP_STATE_DIR / "finetune_runs"
+LIGHTROOM_BRIDGE_DIR = APP_STATE_DIR / "lightroom_bridge"
 
 # Foundation/base model repository. This intentionally defaults under the
 # project root so the SonnaEditor checkout is the parent workspace for all
@@ -122,6 +123,7 @@ def ensure_runtime_directories() -> None:
         JOBS_DIR,
         PROFILE_TRAINING_RUNS_DIR,
         FINETUNE_RUNS_DIR,
+        LIGHTROOM_BRIDGE_DIR,
     ):
         path.mkdir(parents=True, exist_ok=True)
 

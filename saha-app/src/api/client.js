@@ -53,8 +53,8 @@ export const createLiteProfile = (req) =>
   request('/api/profiles/lite', { method: 'POST', body: JSON.stringify(req) });
 
 // ── Folders ────────────────────────────────────────────────
-export const scanFolder = (folder_path) =>
-  request('/api/folders/scan', { method: 'POST', body: JSON.stringify({ folder_path }) });
+export const scanFolder = (folder_path, source_type = 'folder') =>
+  request('/api/folders/scan', { method: 'POST', body: JSON.stringify({ folder_path, source_type }) });
 export const listRecentFolders = () => request('/api/folders/recent');
 
 // ── Process / jobs ─────────────────────────────────────────

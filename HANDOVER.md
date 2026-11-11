@@ -4,7 +4,7 @@
 **Owner:** Darshil (Founder/Director, Sonna Studios)
 **Platforms:** macOS, Windows, and Linux
 **Reference hardware:** M1 Pro MacBook Pro, 32GB RAM
-**Status:** Auto Straighten branch active; tracked foundation checkpoint available; Phase 8 (team distribution) deferred
+**Status:** Auto Straighten & Catalog Processing active on main; tracked foundation checkpoint available; Phase 8 (team distribution) deferred
 **Last updated:** 2026-07-01
 
 ---
@@ -37,6 +37,13 @@ This checkout is a Windows development/training workspace at `C:\Users\vikas.DES
   neutral full-frame bounds are not Lightroom's manual-angle shape.
 - **Dataset timestamp handling:** RAW+XMP dataset shoot bucketing now normalizes timezone-aware capture timestamps to naive UTC before computing 12-hour shoot IDs, preventing Mac builds from failing on offset-aware ISO timestamps with `can't subtract offset-naive and offset-aware datetimes`.
 - **Production profile UX boundary:** the frontend currently exposes Lite profile creation from preset plus the six-question survey. Personal AI profile creation from RAW+XMP remains implemented behind the API/wizard code path but the Profile screen tile is disabled and labelled "Coming soon". Foundation model training is CLI-only with `scripts/train_foundation_model.py`.
+- **Catalog processing source:** the Process UI can now add a Lightroom
+  `.lrcat` catalog as a separate source type beside RAW folders. Catalog
+  processing opens the `.lrcat` read-only to discover accessible RAW paths,
+  then routes those files through the same Mode A/Mode B inference pipeline.
+  The app writes XMP sidecars next to RAWs and emits
+  `sonna_lightroom_edits.lua` for `lightroom\SahaBridge.lrplugin`; it does not
+  direct-write the catalog SQLite database.
 - **Foundation/Lite boundary:** Lite profile creation no longer depends on the currently active Personal AI profile. It resolves the active foundation checkpoint from `SONNA_FOUNDATION_CHECKPOINT`, `SONNA_FOUNDATION_REPO/foundation_manifest.json`, or `SONNA_FOUNDATION_REPO/foundation.ckpt`; the default foundation folder is now the repo-local child folder `SonnaEditorFoundation\` unless overridden. The parent repo tracks this folder, with checkpoint binaries routed through Git LFS. The foundation CLI supports real Lightroom-label training from RAW+XMP folders or trusted catalog splits. The promoted foundation checkpoint is cumulative through native `SonnaEditor` slider-regression warm starts.
 - **Foundation versioning:** every foundation run warm-starts from the active foundation checkpoint by default, writes a new versioned checkpoint, and promotes that new checkpoint as active. The manifest is now schema-v2 with `active_version`, `versions[]`, checkpoint SHA256, foundation type, capabilities, and training-source tags. Older foundation checkpoints are never overwritten; use `scripts\rollback_foundation.py` to activate a previous version. If the active checkpoint is removed, foundation resolution still falls back to the newest remaining checkpoint under `SonnaEditorFoundation\checkpoints\`.
 - **Lite low-light exposure and WB tint:** the preset/Lite exposure adjuster now gives low-light frames a stronger positive exposure lift when mean/median luminance are dark and highlights are not near clipping, matching the desired Imagen-like behavior more closely. Lite WB keeps Temperature on red-vs-blue balance and Tint on green-vs-magenta balance so warm/red frames are not pushed further pink, and it now prefers likely neutral midtone pixels over whole-frame colour averages when estimating per-photo WB. Initial Lite/Mode B processing also anchors preset Temperature/Tint to each photo's AsShot WB as bounded style offsets (`±300K`, `±5 Tint`) instead of copying absolute WB from the preset source image. The Lite survey's strongest Tint calibration now maps to 10 Lightroom tint units rather than 20.

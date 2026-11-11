@@ -1,7 +1,7 @@
 # Session State - Sonna Editor
 
 **Saved:** 2026-07-01 local time
-**Current phase/task:** Auto-straighten event-backdrop guard and Lightroom crop repair.
+**Current phase/task:** Auto-straighten event-backdrop guard, Lightroom crop repair, and catalog processing integration on main.
 
 ## Current Workspace
 
@@ -388,6 +388,44 @@ x86_64, while macOS resolves the matching public wheels.
     `uv run pytest tests\test_straighten.py tests\test_adjuster.py tests\test_style_survey.py tests\test_checkpoint_builder.py tests\test_xmp.py::TestExtraAttributes::test_write_xmp_with_crop_angle_attributes tests\api\test_callback_bridge.py::test_pipeline_auto_straighten_writes_crop_angle_and_sidecar tests\api\test_callback_bridge.py::test_mode_b_initial_uses_per_photo_preset_adjuster -q`
     (`137 passed`) and
     `uv run ruff check src\sonna_editor\inference\straighten.py src\sonna_editor\inference\pipeline.py src\sonna_editor\preset\adjuster.py src\sonna_editor\mode_b\survey.py tests\test_straighten.py tests\test_adjuster.py tests\test_style_survey.py tests\test_checkpoint_builder.py tests\test_xmp.py tests\api\test_callback_bridge.py`.
+- Polished the Process queue/status UI after catalog-processing feedback:
+  - Adding a Lightroom catalog now sets a visible queue-level loading state and
+    spinner while the `.lrcat` scan is running, instead of leaving the queue
+    panel looking idle after the file picker closes.
+  - Expanded queued-source rows now render only the first 50 discovered files
+    plus a remaining-count summary, so large catalogs do not make the queue
+    panel render thousands of filenames.
+  - The right Status sidebar no longer shows a per-file Last edit ticker while
+    the job is running. It now shows a stable Output summary with XMP sidecars
+    written and previews prepared.
+  - The main processing percent now follows completed XMP writes, not the
+    earlier preview-prepared count, so it does not show 100% while the app is
+    still writing files one by one.
+  - Verification: `npm run build:vite` passed in `saha-app\`.
+
+- Added catalog processing as a separate source path beside the existing RAW
+  folder processing flow:
+  - `/api/folders/scan` now accepts `source_type="catalog"` and can scan a
+    Lightroom `.lrcat` read-only to discover accessible RAW files referenced by
+    the catalog. Folder scans remain the default and unchanged for old callers.
+  - `/api/process` now accepts `source_type="catalog"` and forwards the catalog
+    RAW path list into the same inference pipeline used by Mode A and Mode B.
+    Catalog jobs write XMPs next to the referenced RAW files and do not write to
+    the `.lrcat` SQLite database.
+  - `process_shoot_with_model()` accepts optional explicit `raw_paths`, still
+    scans `input_dir` when omitted, and writes `sonna_lightroom_edits.lua`
+    beside `sonna_predictions.json` as the Lightroom bridge package.
+  - The Electron Process view now has separate Add folder and Add catalog
+    buttons, stores each queue row's `sourceType`, and sends that source type
+    when dispatching jobs.
+  - Added `lightroom\SahaBridge.lrplugin`, a minimal Lightroom Classic plugin
+    scaffold that imports the generated bridge package and applies develop
+    settings through Lightroom's plugin API. This is the intended route for an
+    already-open catalog to update without unsafe direct catalog writes.
+  - Verification passed: `uv run pytest tests\api\test_folders.py
+    tests\api\test_process_route.py tests\api\test_callback_bridge.py -q`
+    (`42 passed`), ruff on touched Python files/tests, and
+    `npm run build:vite` in `saha-app\`.
 
 - Fixed the macOS titlebar overlap where the Saha mark could sit behind the
   native traffic-light window controls:

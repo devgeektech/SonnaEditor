@@ -145,6 +145,9 @@ function FolderRow({
   onRemove,
 }) {
   const folderName = folderBasename(folder.folderPath);
+  const sourceLabel = folder.sourceType === 'catalog' ? 'catalog' : 'folder';
+  const visibleFiles = folder.fileList.slice(0, 50);
+  const hiddenFileCount = Math.max(0, folder.fileList.length - visibleFiles.length);
 
   return (
     <div style={{ padding: '4px 12px' }}>
@@ -191,7 +194,7 @@ function FolderRow({
             whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
           }}>{folderName}</div>
           <div style={{ ...Tnum, fontSize: 10.5, color: SONNA.fgFaint, marginTop: 2 }}>
-            {folder.fileCount} RAW
+            {folder.fileCount} RAW · {sourceLabel}
           </div>
         </div>
         <button
@@ -214,7 +217,7 @@ function FolderRow({
       </div>
       {expanded && (
         <div style={{ padding: '4px 0 6px 28px' }}>
-          {folder.fileList.map((f, j) => (
+          {visibleFiles.map((f, j) => (
             <div key={`${f.name}-${j}`} style={{
               display: 'flex', justifyContent: 'space-between', alignItems: 'center',
               padding: '3px 8px',
@@ -228,6 +231,14 @@ function FolderRow({
               </span>
             </div>
           ))}
+          {hiddenFileCount > 0 && (
+            <div style={{
+              padding: '6px 8px 2px',
+              ...Tnum, fontSize: 10.5, color: SONNA.fgFaint,
+            }}>
+              +{hiddenFileCount.toLocaleString()} more
+            </div>
+          )}
           {folder.fileList.length === 0 && (
             <div style={{ padding: '6px 8px', fontSize: 11, color: SONNA.fgFaint }}>
               No files listed
@@ -244,13 +255,16 @@ function LeftFolderQueue({
   expandedSet,
   locked,
   picking,
+  isAddingCatalog,
   onAddFolder,
+  onAddCatalog,
   onRemove,
   onSelect,
   onToggleExpand,
 }) {
   const totalRaws = queue.reduce((sum, f) => sum + (f.fileCount || 0), 0);
-  const addDisabled = locked || picking;
+  const catalogCount = queue.filter((f) => f.sourceType === 'catalog').length;
+  const controlsLocked = locked || picking || isAddingCatalog;
 
   return (
     <div style={{
@@ -264,36 +278,68 @@ function LeftFolderQueue({
           display: 'flex', alignItems: 'baseline', justifyContent: 'space-between',
         }}>
           <div style={Tlabel}>Queue</div>
-          {(locked || picking) && (
+          {controlsLocked && (
             <span style={{ fontSize: 10, color: SONNA.fgFaint, fontStyle: 'italic' }}>
-              {locked ? 'Locked while processing' : 'Choosing folder'}
+              {isAddingCatalog ? 'Loading catalog' : picking ? 'Choosing folder' : 'Locked while processing'}
             </span>
           )}
         </div>
-        <button
-          onClick={onAddFolder}
-          disabled={addDisabled}
-          style={{
-            marginTop: 12,
-            width: '100%', height: 36,
-            background: SONNA.bgLifted,
-            border: `1px solid ${SONNA.line}`,
-            borderRadius: 3,
-            color: addDisabled ? SONNA.fgFaint : SONNA.fg,
-            fontFamily: F, fontSize: 12, fontWeight: 500,
-            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10,
-            cursor: addDisabled ? 'not-allowed' : 'pointer',
-            opacity: addDisabled ? 0.5 : 1,
-          }}
-        >
-          <svg width="11" height="11" viewBox="0 0 11 11" fill="none">
-            <path d="M5.5 1.5v8M1.5 5.5h8"
-              stroke={addDisabled ? SONNA.fgFaint : SONNA.fgMute}
-              strokeWidth="1.3" strokeLinecap="round" />
-          </svg>
-          <span>{picking ? 'Choosing folder…' : 'Add folder'}</span>
-          <span style={{ ...Tnum, fontSize: 10, color: SONNA.fgFaint, marginLeft: 4 }}>⌘O</span>
-        </button>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginTop: 12 }}>
+          <button
+            onClick={onAddFolder}
+            disabled={controlsLocked}
+            style={{
+              height: 36,
+              background: SONNA.bgLifted,
+              border: `1px solid ${SONNA.line}`,
+              borderRadius: 3,
+              color: controlsLocked ? SONNA.fgFaint : SONNA.fg,
+              fontFamily: F, fontSize: 12, fontWeight: 500,
+              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+              cursor: controlsLocked ? 'not-allowed' : 'pointer',
+              opacity: controlsLocked ? 0.5 : 1,
+            }}
+          >
+            <svg width="11" height="11" viewBox="0 0 11 11" fill="none">
+              <path d="M5.5 1.5v8M1.5 5.5h8"
+                stroke={controlsLocked ? SONNA.fgFaint : SONNA.fgMute}
+                strokeWidth="1.3" strokeLinecap="round" />
+            </svg>
+            <span>{picking ? 'Choosing…' : 'Add folder'}</span>
+          </button>
+          <button
+            onClick={onAddCatalog}
+            disabled={controlsLocked}
+            style={{
+              height: 36,
+              background: SONNA.bgLifted,
+              border: `1px solid ${SONNA.line}`,
+              borderRadius: 3,
+              color: controlsLocked ? SONNA.fgFaint : SONNA.fg,
+              fontFamily: F, fontSize: 12, fontWeight: 500,
+              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+              cursor: controlsLocked ? 'not-allowed' : 'pointer',
+              opacity: controlsLocked ? 0.5 : 1,
+            }}
+          >
+            {isAddingCatalog ? (
+              <div title="Loading catalog" style={{
+                width: 12, height: 12,
+                borderRadius: '50%',
+                border: `1.5px solid ${SONNA.ochre}`,
+                borderTopColor: 'transparent',
+                animation: 'saha-spin 0.8s linear infinite',
+              }} />
+            ) : (
+              <svg width="11" height="11" viewBox="0 0 11 11" fill="none">
+                <path d="M2 2.2h7v6.6H2zM3.4 4h4.2M3.4 5.5h4.2"
+                  stroke={controlsLocked ? SONNA.fgFaint : SONNA.fgMute}
+                  strokeWidth="1.1" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            )}
+            <span>{isAddingCatalog ? 'Loading…' : 'Add catalog'}</span>
+          </button>
+        </div>
       </div>
 
       <div style={{ flex: 1, minHeight: 0, overflow: 'auto', padding: '8px 0' }}>
@@ -302,7 +348,20 @@ function LeftFolderQueue({
             padding: '40px 24px', textAlign: 'center',
             fontSize: 12, color: SONNA.fgFaint, lineHeight: 1.5,
           }}>
-            No folders queued.<br />Press Add folder to start.
+            {isAddingCatalog ? (
+              <>
+                <div style={{
+                  width: 22, height: 22, margin: '0 auto 14px',
+                  borderRadius: '50%',
+                  border: `2px solid ${SONNA.ochre}`,
+                  borderTopColor: 'transparent',
+                  animation: 'saha-spin 0.8s linear infinite',
+                }} />
+                Loading catalog...
+              </>
+            ) : (
+              <>No sources queued.<br />Add a folder or catalog to start.</>
+            )}
           </div>
         ) : (
           queue.map((folder, i) => (
@@ -330,7 +389,8 @@ function LeftFolderQueue({
           <span style={{ ...Tnum, fontSize: 12, color: SONNA.fg }}>
             {totalRaws}
             <span style={{ color: SONNA.fgDim, fontSize: 11, marginLeft: 6 }}>
-              RAW · {queue.length} {queue.length === 1 ? 'folder' : 'folders'}
+              RAW · {queue.length} {queue.length === 1 ? 'source' : 'sources'}
+              {catalogCount > 0 ? ` · ${catalogCount} catalog` : ''}
             </span>
           </span>
         </div>
@@ -978,8 +1038,8 @@ export function Editor({
   onLogout,
   onProjectsChange,
 }) {
-  // Multi-folder queue. Items shape:
-  //   { folderPath, fileCount, fileList, status }
+  // Multi-source queue. Items shape:
+  //   { folderPath, sourceType, fileCount, fileList, status }
   // status ∈ "queued" | "processing" | "complete" | "failed" | "cancelled".
   // The dispatcher useEffect below drives sequential per-folder processing
   // through a backend that still serves one folder at a time.
@@ -1015,6 +1075,7 @@ export function Editor({
   }, [activeProfile?.id]);
   const [autoStraighten, setAutoStraighten] = useState(false);
   const [error, setError] = useState(null);
+  const [isAddingCatalog, setIsAddingCatalog] = useState(false);
 
   // useRecentFolders is retained for RightEmpty's "Last run" tile only — the
   // left-panel Recent folders section was removed in 2a. Full hook removal is
@@ -1096,13 +1157,14 @@ export function Editor({
       if (runResults.length > 0 && !hasQueuedFolders) {
         clearRunState();
       }
-      const result = await scanFolder(path);
+      const result = await scanFolder(path, 'folder');
       if (!result.is_valid) {
         setError({ source: 'scan', message: result.error || 'Could not scan folder' });
         return;
       }
       setQueue((q) => [...q, {
         folderPath: result.folder_path,
+        sourceType: result.source_type || 'folder',
         fileCount: result.raw_count,
         fileList: result.files || [],
         // Count of existing .xmp sidecars that match RAW basenames in this
@@ -1123,11 +1185,50 @@ export function Editor({
     }
   }, [isPickingFolder, runResults.length, hasQueuedFolders, clearRunState]);
 
+  const handleAddCatalog = useCallback(async () => {
+    if (!window.saha?.pickFile) {
+      setError({ source: 'pick', message: 'Catalog picker unavailable (run via Electron)' });
+      return;
+    }
+    const path = await window.saha.pickFile({
+      title: 'Choose a Lightroom catalog',
+      filters: [{ name: 'Lightroom catalog', extensions: ['lrcat'] }],
+    });
+    if (!path) return;
+    setError(null);
+    if (runResults.length > 0 && !hasQueuedFolders) {
+      clearRunState();
+    }
+    setIsAddingCatalog(true);
+    try {
+      const result = await scanFolder(path, 'catalog');
+      if (!result.is_valid) {
+        setError({ source: 'scan', message: result.error || 'Could not scan catalog' });
+        return;
+      }
+      setQueue((q) => [...q, {
+        folderPath: result.folder_path,
+        sourceType: result.source_type || 'catalog',
+        fileCount: result.raw_count,
+        fileList: result.files || [],
+        xmpConflictCount: result.xmp_conflict_count || 0,
+        status: 'queued',
+        selected: false,
+        loadedAt: Date.now(),
+      }]);
+    } catch (e) {
+      setError({ source: 'scan', message: e.message });
+    } finally {
+      setIsAddingCatalog(false);
+    }
+  }, [runResults.length, hasQueuedFolders, clearRunState]);
+
   useEffect(() => {
     if (typeof onProjectsChange !== 'function') return;
     onProjectsChange({
       queue: queue.map((f) => ({
         folderPath: f.folderPath,
+        sourceType: f.sourceType || 'folder',
         fileCount: f.fileCount,
         status: f.status,
         selected: !!f.selected,
@@ -1357,6 +1458,7 @@ export function Editor({
     // removed in P0 so there's no surface to react to flagged photos.
     job.start({
       folder_path: targetFolder.folderPath,
+      source_type: targetFolder.sourceType || 'folder',
       profile_id: activeProfile.id,
       flag_low_confidence: false,
       skip_fields: Array.from(skipFields),
@@ -1465,7 +1567,9 @@ export function Editor({
           expandedSet={expandedSet}
           locked={isQueueRunning}
           picking={isPickingFolder}
+          isAddingCatalog={isAddingCatalog}
           onAddFolder={handleAddFolder}
+          onAddCatalog={handleAddCatalog}
           onRemove={handleRemove}
           onSelect={handleSelectFolder}
           onToggleExpand={handleToggleExpand}

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Optional
+from typing import Literal, Optional
 
 from pydantic import BaseModel, Field
 
@@ -52,6 +52,7 @@ class Profile(BaseModel):
 
 class FolderScanRequest(BaseModel):
     folder_path: str
+    source_type: Literal["folder", "catalog"] = "folder"
 
 
 class RawFileEntry(BaseModel):
@@ -61,6 +62,7 @@ class RawFileEntry(BaseModel):
 
 class FolderScanResponse(BaseModel):
     folder_path: str
+    source_type: Literal["folder", "catalog"] = "folder"
     raw_count: int
     files: list[RawFileEntry]
     is_valid: bool
@@ -100,6 +102,7 @@ class CapturesResponse(BaseModel):
 
 class ProcessRequest(BaseModel):
     folder_path: str
+    source_type: Literal["folder", "catalog"] = "folder"
     profile_id: str
     confidence_threshold: float = 0.65
     write_xmp_in_place: bool = True

@@ -34,28 +34,50 @@ def _resolve_profile_path(profile_id: str) -> Optional[Path]:
     return None
 
 
-def _validate_folder(folder_path_str: str) -> tuple[Path, list[Path]]:
-    """Return (folder, raws). Raise HTTPException with the matching status."""
-    folder = Path(folder_path_str)
-    if not folder.is_absolute():
+def _validate_process_source(req: ProcessRequest) -> tuple[Path, list[Path], str]:
+    """Return (source_path, raws, source_type). Raise HTTPException on invalid input."""
+    source_path = Path(req.folder_path)
+    if not source_path.is_absolute():
         raise HTTPException(status_code=400, detail="Path must be absolute")
-    if not folder.exists():
+
+    if req.source_type == "catalog" or source_path.suffix.lower() == ".lrcat":
+        if not source_path.exists():
+            raise HTTPException(status_code=400, detail="Catalog does not exist")
+        if not source_path.is_file() or source_path.suffix.lower() != ".lrcat":
+            raise HTTPException(
+                status_code=400,
+                detail="Path is not a Lightroom catalog (.lrcat)",
+            )
+        try:
+            raws = folders_route.raw_paths_from_catalog(source_path)
+        except Exception as exc:  # noqa: BLE001
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        if not raws:
+            raise HTTPException(
+                status_code=400,
+                detail="No available RAW files found in this catalog",
+            )
+        return source_path, raws, "catalog"
+
+    if not source_path.exists():
         raise HTTPException(status_code=400, detail="Folder does not exist")
-    if not folder.is_dir():
+    if not source_path.is_dir():
         raise HTTPException(status_code=400, detail="Path is not a folder")
     raws = sorted(
-        p for p in folder.iterdir()
+        p for p in source_path.iterdir()
         if p.is_file() and p.suffix.lower() in config.SUPPORTED_RAW_EXTENSIONS
     )
     if not raws:
         raise HTTPException(status_code=400,
                             detail="No RAW files found in this folder")
-    return folder, raws
+    return source_path, raws, "folder"
 
 
 async def _run_process_job(
     record: jobs.JobRecord,
-    folder: Path,
+    source_path: Path,
+    source_type: str,
+    raw_paths: list[Path],
     model_path: Path,
     flag_low_confidence: bool,
     write_xmp_in_place: bool,
@@ -69,14 +91,16 @@ async def _run_process_job(
     prepared_cb = callbacks.make_photo_prepared_callback(record, started_at)
     photo_cb = callbacks.make_photo_callback(record, started_at)
 
-    output_dir = None if write_xmp_in_place else folder
+    input_dir = source_path if source_type == "folder" else source_path.parent
+    output_dir = None if write_xmp_in_place or source_type == "catalog" else source_path
 
     try:
         result = await asyncio.to_thread(
             inference_pipeline.process_shoot_with_model,
-            input_dir=folder,
+            input_dir=input_dir,
             model_path=model_path,
             output_dir=output_dir,
+            raw_paths=raw_paths if source_type == "catalog" else None,
             uncertainty=flag_low_confidence,
             preserve_wb=preserve_wb,
             extra_skip_fields=skip_fields,
@@ -105,7 +129,7 @@ async def _run_process_job(
 
 @router.post("/process", response_model=JobAck)
 async def start_process(req: ProcessRequest) -> JobAck:
-    folder, raws = _validate_folder(req.folder_path)
+    source_path, raws, source_type = _validate_process_source(req)
 
     model_path = _resolve_profile_path(req.profile_id)
     if model_path is None:
@@ -113,18 +137,20 @@ async def start_process(req: ProcessRequest) -> JobAck:
 
     record = jobs.create(
         kind="process",
-        folder_path=str(folder),
+        folder_path=str(source_path),
         profile_id=req.profile_id,
         photos_total=len(raws),
         uncertainty_enabled=req.flag_low_confidence,
     )
     record.loop = asyncio.get_running_loop()
 
-    folders_route.record_recent_folder(str(folder), raw_count=len(raws))
+    folders_route.record_recent_folder(str(source_path), raw_count=len(raws))
 
     asyncio.create_task(_run_process_job(
         record=record,
-        folder=folder,
+        source_path=source_path,
+        source_type=source_type,
+        raw_paths=raws,
         model_path=model_path,
         flag_low_confidence=req.flag_low_confidence,
         write_xmp_in_place=req.write_xmp_in_place,
