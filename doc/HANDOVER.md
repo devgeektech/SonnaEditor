@@ -4,17 +4,19 @@
 **Owner:** Darshil (Founder/Director, Sonna Studios)
 **Platforms:** macOS, Windows, and Linux
 **Reference hardware:** M1 Pro MacBook Pro, 32GB RAM
-**Status:** Auto Straighten & Catalog Processing active on main; tracked foundation checkpoint available; Phase 8 (team distribution) deferred
-**Last updated:** 2026-07-01
+**Status:** Auto Straighten, Catalog Processing, and ISO Denoise integrated on main; documentation consolidated in doc/; Mac launcher added; Phase 8 (team distribution) deferred
+**Last updated:** 2026-11-11
 
 ---
 
-## Current workspace state (2026-07-01)
+## Current workspace state (2026-11-11)
 
 This checkout is a Windows development/training workspace at `C:\Users\vikas.DESKTOP-61LEE8B\Projects\SonnaEditor`.
 
-- **Branch context:** this checkout is on `Auto_Straighten`, tracking `origin/Auto_Straighten`. The worktree was clean when the docs were reconciled against source. Treat this branch as the current context for auto-straighten behavior, Lite WB/tint repair, UI selection semantics, and the tracked foundation checkpoint below.
-- **Environment:** Python 3.11.15 via uv 0.11.17. `pyproject.toml` / `uv.lock` require Python `3.11.*`. PyTorch is installed as `2.11.0+cu128`; `sonna_editor.runtime.preferred_torch_device()` returns `cuda` on the local NVIDIA GeForce RTX 3050. `scripts/verify_environment.py` passes 11/11 checks.
+- **Branch context:** this checkout is on `main`, tracking `origin/main`. Feature branches `Auto_Straighten`, `catalog_processing`, and `denoise-feature` have been merged into `main`. The obsolete `Persepective_rotate` branch and its stash were permanently removed.
+- **Documentation structure:** all markdown docs have been moved into `doc/`, with `README.md` and `session.md` at root. `session.md` provides active session roadmap and task logging.
+- **Mac distribution:** double-clickable `start_saha_mac.command` added at repo root with executable permissions (`100755`), automatic Apple Silicon MPS GPU acceleration setup, and one-click Electron startup. DMG packaging scripts configured in `saha-app/package.json`.
+- **Environment:** Python 3.11.15 via uv 0.11.17. `pyproject.toml` / `uv.lock` require Python `3.11.*`. PyTorch is installed as `2.11.0+cu128`; `sonna_editor.runtime.preferred_torch_device()` returns `cuda` on the local NVIDIA GeForce RTX 3050. `scripts/verify_environment.py` passes 11/11 checks. Full test suite passes 788/788 tests with 0 failures and 0 warnings.
 - **Dependency pins and CUDA packaging:** direct runtime/dev dependencies are exact-pinned in `pyproject.toml` from the current uv environment to reduce Mac resolver drift. `opencv-python-headless==4.13.0.92` is now a runtime dependency for auto straightening. `torch==2.11.0` and `torchvision==0.26.0` remain routed to the PyTorch CUDA 12.8 wheel index on Windows/Linux x86_64, while macOS resolves the matching public PyTorch wheels.
 - **Local dataset/checkpoints:** generated Personal AI training/profile caches remain cleared for a fresh data reset. The duplicate generated dataset folder `v1_learning\dataset` was removed, and `v1_learning\` is reserved for frontend-visible profile checkpoint/sidecar/preset/survey files only. This branch does include a tracked hidden foundation checkpoint: `SonnaEditorFoundation\foundation_manifest.json` has `active_version: foundation-sonna-raw-xmp-004-visual`, pointing at `SonnaEditorFoundation\checkpoints\foundation-sonna-raw-xmp-004-visual.ckpt` with sidecar `.json`.
 - **Tracked foundation checkpoint state:** `uv run python scripts\rollback_foundation.py --list` reports one active foundation version, `foundation-sonna-raw-xmp-004-visual`. Its sidecar records `profile_type: mode_a_trained`, `slider_set_version: v2`, `arch_version: 3`, `resolution: 512`, `train_rows: 5021`, and `val_loss: 0.02533668652176857`. Do not treat this branch as an empty-foundation reset.
