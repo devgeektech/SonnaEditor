@@ -118,7 +118,7 @@ def _validate_head_slices(
         f"{slider_set_version} head slices total {total_head_outputs} "
         f"!= output count {expected_count}"
     )
-    for i, (_, start, end) in enumerate(slices):
+    for i, (_, start, _) in enumerate(slices):
         if i == 0:
             assert start == 0, "first head must start at 0"
             continue

@@ -12,10 +12,11 @@
    - Updated `AGENTS.md` and root `README.md` to reference `doc/`.
    - Created `session.md` to track changes continuously.
 
-2. [ ] **Task 2: Eliminate Stale Code, Dead Variables & Empty Folders**
-   - Remove unused legacy placeholder package `src/sonna_editor/ui/`.
-   - Remove empty directory `src/sonna_editor/Notes/`.
-   - Clean up unused variables in `scripts/finetune_profile.py` and `src/sonna_editor/mode_b/checkpoint_builder.py`.
+2. [x] **Task 2: Eliminate Stale Code, Dead Variables & Empty Folders**
+   - Removed unused legacy placeholder package `src/sonna_editor/ui/` (`widgets`, `windows`, `workers`, `__init__.py`).
+   - Removed empty directory `src/sonna_editor/Notes/`.
+   - Cleaned up unused variables in `scripts/finetune_profile.py` (`v_str`) and `src/sonna_editor/mode_b/checkpoint_builder.py` (`end`).
+   - Updated `doc/project_knowledge.md` to remove references to the deleted legacy UI package.
 
 3. [ ] **Task 3: Resolve Errors & Warnings**
    - Fix PyTorch scalar conversion warning in `tests/test_losses.py` by detaching tensor before scalar cast.

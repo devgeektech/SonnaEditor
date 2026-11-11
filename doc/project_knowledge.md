@@ -161,10 +161,6 @@ This section tracks what each backend source file/folder does. Keep it updated w
 | Path | Purpose |
 |---|---|
 | `src/sonna_editor/profiles/__init__.py` | Placeholder package for future profile-domain code; active profile operations currently live in API routes and checkpoint helpers. |
-| `src/sonna_editor/ui/__init__.py` | Legacy/placeholder UI package. The active app UI is Electron + React under `saha-app/`. |
-| `src/sonna_editor/ui/widgets/__init__.py` | Placeholder for old Python widget code. |
-| `src/sonna_editor/ui/windows/__init__.py` | Placeholder for old Python window code. |
-| `src/sonna_editor/ui/workers/__init__.py` | Placeholder for old Python UI worker code. |
 
 ## Key Python Behavior Notes
 

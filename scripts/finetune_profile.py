@@ -82,7 +82,7 @@ def _print_delta_analysis(result: dict) -> None:
     _print_rule()
     print(f"{'Field':<28}  {'n':>5}  {'mean_delta':>12}  {'abs_mean':>10}  {'std':>8}")
     _print_rule("-", 70)
-    for field, v_str in result.get("most_adjusted_fields", []):
+    for field, _ in result.get("most_adjusted_fields", []):
         stats = result["per_field"].get(field, {})
         n = stats.get("n_with_delta", 0)
         mean_d = stats.get("mean_delta", 0.0)
