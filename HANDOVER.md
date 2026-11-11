@@ -129,6 +129,15 @@ This checkout is a Windows development/training workspace at `C:\Users\vikas.DES
   from Saha vs `+5.94` manual correction); the estimator now keeps the OpenCV
   residual sign for Lightroom `CropAngle` instead of negating it. No model
   retraining is required.
+- **Opt-in ISO-gated denoise:** the Process UI now has a `Denoise` checkbox
+  plus editable `ISO >` threshold defaulting to 1200. `/api/process` accepts
+  `denoise_enabled` / `denoise_iso_threshold`, and
+  `scripts\process_shoot_model.py` exposes `--denoise` /
+  `--denoise-iso-threshold`. When enabled, `inference/pipeline.py` applies
+  Lightroom-native detail noise sliders only when extracted ISO is greater
+  than the threshold. It does not run external AI denoise, create enhanced
+  DNGs, train, or change checkpoints. `sonna_predictions.json` records the
+  threshold, settings, and per-photo applied/skipped audit data.
 - **Verified this pass:** full backend verification for the auto-straighten
   branch passed with `uv run ruff check .` and `uv run pytest -q`
   (`771 passed, 45 skipped, 1 existing PyTorch scalar-conversion warning`).

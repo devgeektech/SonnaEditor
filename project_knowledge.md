@@ -114,7 +114,7 @@ This section tracks what each backend source file/folder does. Keep it updated w
 |---|---|
 | `src/sonna_editor/inference/__init__.py` | Package marker for inference code. |
 | `src/sonna_editor/inference/engine.py` | Checkpoint loading and batched prediction engine. Builds tensors from extracted previews/metadata plus scene stats, maps categorical metadata through the checkpoint registry, supports uncertainty sampling, and postprocesses outputs. |
-| `src/sonna_editor/inference/pipeline.py` | End-to-end shoot processing: scan RAW files using the central `config.SUPPORTED_RAW_EXTENSIONS` set or process an explicit RAW path list from a catalog source, extract features, run Mode A inference or Mode B Lite preset adjustment, apply WB/skip semantics, optionally apply preview-based auto straightening, write XMP sidecars, write `sonna_predictions.json` including straightening engine/line diagnostics, crop-reference dimensions, and `lightroom_bridge_path`, emit `sonna_lightroom_edits.lua` for the Lightroom bridge plugin, and emit progress callbacks. Auto-straighten crop-bound math uses extracted RAW/source dimensions when available, falling back to preview dimensions only when source dimensions are missing. Initial Lite/Mode B processing anchors preset Temperature/Tint to each photo's AsShot WB as bounded style offsets so absolute preset WB values do not create shoot-wide colour casts. |
+| `src/sonna_editor/inference/pipeline.py` | End-to-end shoot processing: scan RAW files using the central `config.SUPPORTED_RAW_EXTENSIONS` set or process an explicit RAW path list from a catalog source, extract features, run Mode A inference or Mode B Lite preset adjustment, apply WB/skip semantics, optionally apply preview-based auto straightening and ISO-gated Lightroom denoise, write XMP sidecars, write `sonna_predictions.json` including straightening engine/line diagnostics, crop-reference dimensions, denoise diagnostics, and `lightroom_bridge_path`, emit `sonna_lightroom_edits.lua` for the Lightroom bridge plugin, and emit progress callbacks. Auto-straighten crop-bound math uses extracted RAW/source dimensions when available, falling back to preview dimensions only when source dimensions are missing. Initial Lite/Mode B processing anchors preset Temperature/Tint to each photo's AsShot WB as bounded style offsets so absolute preset WB values do not create shoot-wide colour casts. |
 | `src/sonna_editor/inference/straighten.py` | Optional auto-straightening postprocess. Uses CLAHE-normalized OpenCV Canny edges plus probabilistic Hough lines, OpenCV line segments, and a broad Hough fallback for fragmented line evidence, then classifies evidence as horizon, centre-object, architecture, or mixed-axis geometry before estimating Lightroom `CropAngle` corrections up to the small-rotation clamp. Centre-band horizontal evidence is preferred when present so the visible centre/horizon line is not overruled by off-centre distractor lines. Coherent central horizontal+vertical object evidence can also win over comparable global/corner architecture evidence, so straightening follows the main central object rather than background frame lines when the central evidence is strong. Large horizon corrections above 3 degrees are skipped as `ambiguous_event_geometry` when vertical evidence is comparable to horizontal evidence, preventing event backdrops/signage from forcing aggressive auto-straightening. When selected per processing job and confidence passes the scene-specific thresholds, it writes Lightroom-style crop-angle metadata: calculated `CropTop`, `CropLeft`, `CropBottom`, `CropRight` bounds, `CropAngle`, `CropConstrainToWarp=0`, `CropConstrainToUnitSquare=1`, `HasCrop=True`, and `AlreadyApplied=False`. This is based on the user-provided Lightroom before/after sidecars `Documents\Example\0H5A5927 - org.xmp` and `Documents\Example\0H5A5927.xmp`. This is not a trained model output. |
 
 ### Fine-Tune Package
@@ -558,6 +558,16 @@ Lite checkpoints are marked with `profile_type: mode_b_initial` in the sidecar J
   signal in photos dominated by warm venue light, coloured clothing, decor, or
   branded backgrounds. It falls back to whole-frame RGB only when there is no
   stable neutral sample.
+- ISO-gated denoise, 2026-06-19: the Process UI exposes a `Denoise` checkbox
+  and editable `ISO >` threshold, defaulting to 1200. `/api/process`,
+  `scripts/process_shoot_model.py`, and `inference/pipeline.py` share the same
+  behavior. When enabled, photos with extracted ISO greater than the threshold
+  get Lightroom-native detail noise sliders written into the output XMP:
+  `LuminanceSmoothing=35`, `LuminanceNoiseReductionDetail=50`,
+  `LuminanceNoiseReductionContrast=0`, `ColorNoiseReduction=25`,
+  `ColorNoiseReductionDetail=50`, and
+  `ColorNoiseReductionSmoothness=50`. `sonna_predictions.json` records the
+  threshold, settings, and per-photo applied/skipped audit data.
 
 ## Important behavior notes
 
@@ -592,6 +602,11 @@ Lite checkpoints are marked with `profile_type: mode_b_initial` in the sidecar J
   the straightening engine, chosen scene type, horizon/axis scores, and
   per-photo line support for diagnostics. It does not use or update model
   checkpoints and it does not train on crop labels.
+- Denoise is an opt-in inference postprocess, shared by Personal AI and Lite
+  processing. It uses extracted RAW ISO metadata as a gate, applies only when
+  ISO is greater than the selected threshold, and writes Lightroom noise
+  reduction sliders directly into XMP. It does not run external AI denoise,
+  create enhanced DNGs, train, or change checkpoints.
 - Process dispatch behavior: with no selected queued folders, the UI does not
   dispatch a process job. With one or more selected queued folders, it processes
   only those selected folders. This matters for per-run options like Auto

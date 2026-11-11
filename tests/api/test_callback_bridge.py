@@ -120,10 +120,14 @@ def test_pipeline_callback_and_cancel_kwargs_no_op_when_none() -> None:
     assert "on_photo_complete" in sig.parameters
     assert "cancel_event" in sig.parameters
     assert "raw_paths" in sig.parameters
+    assert "denoise_enabled" in sig.parameters
+    assert "denoise_iso_threshold" in sig.parameters
     assert sig.parameters["on_photo_prepared"].default is None
     assert sig.parameters["on_photo_complete"].default is None
     assert sig.parameters["cancel_event"].default is None
     assert sig.parameters["raw_paths"].default is None
+    assert sig.parameters["denoise_enabled"].default is False
+    assert sig.parameters["denoise_iso_threshold"].default == 1200
 
 
 def test_pipeline_loop_calls_callback_and_honours_cancel(
@@ -802,3 +806,74 @@ def test_pipeline_explicit_raw_paths_write_lightroom_bridge(
 
     sidecar = _json.loads((catalog_parent / "sonna_predictions.json").read_text())
     assert sidecar["lightroom_bridge_path"] == str(bridge_path)
+
+
+def test_pipeline_denoise_applies_only_above_iso_threshold(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from PIL import Image
+    import json as _json
+    import torch
+    from sonna_editor import config
+    from sonna_editor.inference import pipeline as pl
+
+    folder = tmp_path / "shoot"
+    folder.mkdir()
+    (folder / "low.cr3").write_bytes(b"raw")
+    (folder / "high.cr3").write_bytes(b"raw")
+    ckpt = tmp_path / "model-v1.0.1.ckpt"
+    ckpt.write_bytes(b"ckpt")
+
+    class FakeModel:
+        _slider_set_version = "v1"
+
+    class FakeEngine:
+        _image_resolution = 384
+        _model = FakeModel()
+
+        def __init__(self, *_args, **_kwargs) -> None:
+            pass
+
+        def warmup(self) -> None:
+            pass
+
+        def predict(self, *_args, **_kwargs):
+            return torch.zeros((2, len(config.SLIDER_FIELDS)))
+
+    captured: dict[str, dict[str, float | None]] = {}
+
+    def fake_extract(path: Path, _size: int):
+        iso = 1600 if path.name == "high.cr3" else 800
+        return Image.new("RGB", (64, 64), "gray"), {"iso": iso, "as_shot_wb": None}
+
+    def fake_write(xmp_path, settings, **_kwargs):
+        captured[Path(xmp_path).name] = dict(settings)
+
+    monkeypatch.setattr(pl, "InferenceEngine", FakeEngine)
+    monkeypatch.setattr(pl, "_extract_one", fake_extract)
+    monkeypatch.setattr(pl, "write_xmp", fake_write)
+
+    result = pl.process_shoot_with_model(
+        input_dir=folder,
+        model_path=ckpt,
+        output_dir=folder,
+        denoise_enabled=True,
+        denoise_iso_threshold=1200,
+        max_workers=1,
+        save_predictions=True,
+    )
+
+    assert result["processed"] == 2
+    assert captured["high.xmp"]["LuminanceSmoothing"] == pytest.approx(35.0)
+    assert captured["high.xmp"]["ColorNoiseReduction"] == pytest.approx(25.0)
+    assert captured["low.xmp"]["LuminanceSmoothing"] == pytest.approx(0.0)
+    assert captured["low.xmp"]["ColorNoiseReduction"] == pytest.approx(0.0)
+
+    sidecar = _json.loads((folder / "sonna_predictions.json").read_text())
+    assert sidecar["denoise_enabled"] is True
+    assert sidecar["denoise_iso_threshold"] == 1200
+    assert sidecar["denoise"]["high.cr3"]["applied"] is True
+    assert sidecar["denoise"]["high.cr3"]["iso"] == 1600
+    assert sidecar["denoise"]["low.cr3"]["applied"] is False
+    assert sidecar["photos"]["high.cr3"]["LuminanceSmoothing"] == pytest.approx(35.0)
