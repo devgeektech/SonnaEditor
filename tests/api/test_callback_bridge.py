@@ -479,6 +479,78 @@ def test_mode_b_initial_uses_per_photo_preset_adjuster(tmp_path: Path) -> None:
     )
 
 
+def test_mode_b_initial_anchors_absolute_preset_wb_to_as_shot(
+    tmp_path: Path,
+) -> None:
+    """Lite presets should not copy one photo's absolute WB across a shoot."""
+    from sonna_editor.inference import pipeline as pl
+    from sonna_editor.mode_b import survey as survey_mod
+
+    folder = tmp_path / "shoot"
+    folder.mkdir()
+    raw = folder / "neutral.cr3"
+    raw.write_bytes(b"x")
+
+    preset_path = tmp_path / "pinkish-preset.xmp"
+    preset_path.write_text(
+        '<x:xmpmeta xmlns:x="adobe:ns:meta/" '
+        'xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#" '
+        'xmlns:crs="http://ns.adobe.com/camera-raw-settings/1.0/">'
+        "<rdf:RDF><rdf:Description "
+        'crs:Temperature="6200" crs:Tint="14" crs:Exposure2012="0.2" />'
+        "</rdf:RDF></x:xmpmeta>",
+        encoding="utf-8",
+    )
+    survey_path = tmp_path / "survey.json"
+    survey_mod.write_survey(
+        survey_mod.build_survey_payload({k: 0 for k in survey_mod.QUESTION_ORDER}),
+        survey_path,
+    )
+    model_path = tmp_path / "model-v0.1.0.ckpt"
+    model_path.write_bytes(b"unused by mode_b_initial")
+    model_path.with_suffix(".json").write_text(
+        _json.dumps({
+            "profile_type": "mode_b_initial",
+            "profile_id": "lite-test",
+            "base_checkpoint": "base.ckpt",
+            "source_preset": str(preset_path),
+            "source_survey": str(survey_path),
+            "slider_set_version": "v1",
+            "resolution": 64,
+        }),
+        encoding="utf-8",
+    )
+
+    captured: dict[str, dict] = {}
+
+    def fake_write(xmp_path, settings, **_kw):
+        captured[Path(xmp_path).name] = dict(settings)
+
+    with patch.object(pl, "InferenceEngine", side_effect=AssertionError("Mode B should not load model engine")), \
+         patch.object(
+             pl,
+             "_extract_one",
+             lambda _path, _size: (
+                 Image.new("RGB", (64, 64), (128, 128, 128)),
+                 {"as_shot_wb": (4300.0, -4.0)},
+             ),
+         ), \
+         patch.object(pl, "write_xmp", fake_write):
+        result = pl.process_shoot_with_model(
+            input_dir=folder,
+            model_path=model_path,
+            output_dir=tmp_path / "out",
+            save_predictions=False,
+        )
+
+    assert result["processed"] == 1
+    written = captured["neutral.xmp"]
+    assert written["Temperature"] == pytest.approx(4600.0)
+    assert written["Tint"] == pytest.approx(1.0)
+    assert written["Temperature"] != pytest.approx(6200.0)
+    assert written["Tint"] != pytest.approx(14.0)
+
+
 def test_pipeline_auto_straighten_writes_crop_angle_and_sidecar(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -545,15 +617,118 @@ def test_pipeline_auto_straighten_writes_crop_angle_and_sidecar(
     assert attrs["LensProfileEnable"] == "1"
     assert attrs["AutoLateralCA"] == "1"
     assert attrs["HasCrop"] == "True"
-    assert attrs["CropTop"] == "0"
-    assert attrs["CropLeft"] == "0"
-    assert attrs["CropBottom"] == "1"
-    assert attrs["CropRight"] == "1"
+    assert 0.0 < float(attrs["CropTop"]) < 0.5
+    assert 0.0 < float(attrs["CropLeft"]) < 0.5
+    assert float(attrs["CropBottom"]) == pytest.approx(1.0 - float(attrs["CropTop"]))
+    assert float(attrs["CropRight"]) == pytest.approx(1.0 - float(attrs["CropLeft"]))
     assert float(attrs["CropAngle"]) == pytest.approx(3.0, abs=0.5)
+    assert attrs["CropConstrainToWarp"] == "0"
+    assert attrs["CropConstrainToUnitSquare"] == "1"
+    assert attrs["AlreadyApplied"] == "False"
 
     sidecar = _json.loads((folder / "sonna_predictions.json").read_text())
     assert sidecar["auto_straighten"] is True
     assert sidecar["straightening_engine"].startswith("opencv-")
     assert sidecar["straightening"]["tilted.cr3"]["applied"] is True
+    assert sidecar["straightening"]["tilted.cr3"]["scene_type"] in {
+        "horizon",
+        "architecture",
+        "mixed_axis",
+    }
+    assert "horizon_score" in sidecar["straightening"]["tilted.cr3"]
+    assert "axis_score" in sidecar["straightening"]["tilted.cr3"]
     assert sidecar["straightening"]["tilted.cr3"]["line_count"] > 0
+    assert sidecar["straightening"]["tilted.cr3"]["horizontal_line_count"] > 0
     assert sidecar["straightening"]["tilted.cr3"]["line_length_px"] > 0
+    assert sidecar["straightening"]["tilted.cr3"]["crop_reference_width"] == image.width
+    assert sidecar["straightening"]["tilted.cr3"]["crop_reference_height"] == image.height
+
+
+def test_pipeline_auto_straighten_uses_source_dimensions_for_crop_bounds(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from PIL import Image, ImageDraw
+    import json as _json
+    import math
+    import torch
+
+    from sonna_editor import config
+    from sonna_editor.inference import pipeline as pl
+
+    folder = tmp_path / "shoot"
+    folder.mkdir()
+    raw = folder / "source_size.cr3"
+    raw.write_bytes(b"raw")
+    ckpt = tmp_path / "model-v1.0.1.ckpt"
+    ckpt.write_bytes(b"ckpt")
+
+    image = Image.new("RGB", (400, 300), "white")
+    draw = ImageDraw.Draw(image)
+    theta = math.radians(3.0)
+    dx = math.cos(theta) * 260
+    dy = math.sin(theta) * 260
+    draw.line((200 - dx, 150 - dy, 200 + dx, 150 + dy), fill="black", width=5)
+
+    class FakeModel:
+        _slider_set_version = "v1"
+
+    class FakeEngine:
+        _image_resolution = 384
+        _model = FakeModel()
+
+        def __init__(self, *_args, **_kwargs) -> None:
+            pass
+
+        def warmup(self) -> None:
+            pass
+
+        def predict(self, *_args, **_kwargs):
+            return torch.zeros((1, len(config.SLIDER_FIELDS)))
+
+    captured: dict[str, object] = {}
+
+    def fake_write(_path, settings, **kwargs):
+        captured["extra_attributes"] = dict(kwargs["extra_attributes"])
+
+    source_size = (6000, 4000)
+    monkeypatch.setattr(pl, "InferenceEngine", FakeEngine)
+    monkeypatch.setattr(
+        pl,
+        "_extract_one",
+        lambda _path, _size: (
+            image,
+            {
+                "width": source_size[0],
+                "height": source_size[1],
+                "as_shot_wb": None,
+            },
+        ),
+    )
+    monkeypatch.setattr(pl, "write_xmp", fake_write)
+
+    result = pl.process_shoot_with_model(
+        input_dir=folder,
+        model_path=ckpt,
+        output_dir=folder,
+        auto_straighten=True,
+        max_workers=1,
+        save_predictions=True,
+    )
+
+    assert result["processed"] == 1
+    attrs = captured["extra_attributes"]
+    assert attrs["HasCrop"] == "True"
+    assert float(attrs["CropAngle"]) == pytest.approx(3.0, abs=0.5)
+    assert 0.0 < float(attrs["CropTop"]) < 0.5
+    assert 0.0 < float(attrs["CropLeft"]) < 0.5
+    assert float(attrs["CropBottom"]) == pytest.approx(1.0 - float(attrs["CropTop"]))
+    assert float(attrs["CropRight"]) == pytest.approx(1.0 - float(attrs["CropLeft"]))
+    assert attrs["CropConstrainToWarp"] == "0"
+    assert attrs["CropConstrainToUnitSquare"] == "1"
+    assert attrs["AlreadyApplied"] == "False"
+
+    sidecar = _json.loads((folder / "sonna_predictions.json").read_text())
+    straightening = sidecar["straightening"]["source_size.cr3"]
+    assert straightening["crop_reference_width"] == source_size[0]
+    assert straightening["crop_reference_height"] == source_size[1]

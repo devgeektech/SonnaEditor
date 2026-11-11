@@ -1,23 +1,23 @@
 # Session State - Sonna Editor
 
-**Saved:** 2026-06-16 local time
-**Current phase/task:** Frontend macOS titlebar polish.
+**Saved:** 2026-07-01 local time
+**Current phase/task:** Auto-straighten event-backdrop guard and Lightroom crop repair.
 
 ## Current Workspace
 
 - Repo path: `C:\Users\vikas.DESKTOP-61LEE8B\Projects\SonnaEditor`
-- Branch: `main`, tracking `origin/main`
-- Recent committed history in this checkout: `aac360a feat: Enhance dataset building and training scripts` on top of four earlier commits.
-- Current worktree includes the launcher/docs updates plus unrelated existing
-  code/test modifications under `scripts\train_foundation_model.py`,
-  `src\sonna_editor\data\dataset.py`, `src\sonna_editor\foundation.py`,
-  `src\sonna_editor\training\profile_runner.py`, and focused tests. The
-  launcher/docs pass did not revert or normalize those code changes.
+- Branch: `Auto_Straighten`, tracking `origin/Auto_Straighten`.
+- Worktree was clean before this documentation reconciliation. There were no
+  uncommitted source changes to reverse-engineer; the docs were compared
+  against the tracked branch code and the tracked foundation manifest.
 - Training/profile caches were intentionally cleared for a fresh dataset reset.
 - Cleared repo-local generated artifacts: `data\training_workspace\sonna_personal_001_dataset`, `data\models`, `data\parquet`, `data\captures`, `data\thumbnails`, `data\audits`, `data\dbg`, `data\raw\sonna_training`, `.pytest_cache`, `.ruff_cache`.
 - Cleared frontend active-profile pointer: `.saha\active_profile.txt`.
-- `v1_learning\` currently has no trained profile checkpoint and no generated dataset folder; there is no frontend-visible profile until a fresh Personal AI/Lite profile is trained or intentionally published.
-- Previous foundation checkpoints were cleared from `SonnaEditorFoundation\checkpoints\`, and `foundation_manifest.json` is reset to an empty schema-v2 manifest. The next successful foundation training run will promote the new checkpoint and make it the default base for Mode A and Mode B.
+- `v1_learning\` currently contains a frontend-visible Lite profile package:
+  `model-v0.1.0.ckpt`, `model-v0.1.0.json`, `model-v0.1.0-preset.xmp`,
+  and `model-v0.1.0-survey.json`. Generated dataset folders do not belong in
+  `v1_learning\`.
+- Hidden foundation state is not empty on this branch. `SonnaEditorFoundation\foundation_manifest.json` has `active_version: foundation-sonna-raw-xmp-004-visual`, pointing at `SonnaEditorFoundation\checkpoints\foundation-sonna-raw-xmp-004-visual.ckpt` plus its `.json` sidecar. `uv run python scripts\rollback_foundation.py --list` reports this as the active foundation version.
 
 ## Environment
 
@@ -46,11 +46,348 @@ x86_64, while macOS resolves the matching public wheels.
 - The previous split was imbalanced for Exposure2012: train mean ~0.212 while val/test were ~0.480/~0.504. The regenerated split reduces that gap: train mean ~0.264, val ~0.379, test ~0.318.
 - Temperature labels in the current dataset mostly cool relative to AsShot WB, so a warmer model output points to training flow/initialisation/split issues rather than warmer target labels.
 - Tint labels are consistently positive/magenta relative to AsShot, so some magenta tendency is present in the labels.
-- No `v1_learning/model-v*.ckpt` profile is present after the reset.
+- `v1_learning/model-v0.1.0.ckpt` is present as a Lite initial profile package.
+  Its prediction sidecar identifies `profile_type=mode_b_initial` and uses
+  `foundation-sonna-raw-xmp-004-visual` as the base checkpoint.
+- The tracked hidden foundation checkpoint is present and active:
+  `foundation-sonna-raw-xmp-004-visual`. Its sidecar records
+  `profile_type=mode_a_trained`, `slider_set_version=v2`, `arch_version=3`,
+  `resolution=512`, `train_rows=5021`, and
+  `val_loss=0.02533668652176857`.
 - Lite profile creation now uses the configured foundation checkpoint as its base; the builder preserves the foundation checkpoint's native slider set and writes a profile sidecar that lets initial Mode B processing use preset+survey style plus adaptive per-photo Exposure/WB correction.
 - A fresh scene-stats candidate was trained at `data/models/sonna-v2-scene-stats-run01/`, but it was rejected for frontend use. It briefly published as `v1_learning/model-v2.0.1.*`, then those frontend-visible copies were removed after collapse analysis showed worse prediction spread than v2.0.0.
 
 ## What Changed This Session
+
+- Ran a 100-image real-RAW auto-straighten verification from ordinary
+  `Documents\` folders, excluding DNG/catalog/FiveK sources:
+  - Test folder:
+    `C:\Users\vikas.DESKTOP-61LEE8B\Documents\Test_results\raw_100_straighten_20260630_175511`.
+  - Selected 100 random non-DNG RAW files from:
+    `Documents\Raw+Xmp`, `Documents\Testing_Sonna`,
+    `Documents\Test_Sonna - Copy`, `Documents\Test_Sonna - Copy2`,
+    `Documents\Test_Imagen`, and `Documents\Straight_test`.
+  - Created a flat `selected_raws\` test set using hardlinks where possible
+    and saved source mapping to `selected_manifest.json`.
+  - Processed with `uv run python scripts\process_shoot_model.py --auto-straighten`
+    using `v1_learning\model-v0.1.0.ckpt`; result was 100 processed, 0 failed.
+  - `sonna_predictions.json` contained 100 straightening entries:
+    75 applied and 25 skipped as `angle_too_small`.
+  - First generated XMP verification: 75/100 XMPs contained `crs:CropAngle`;
+    0/100 contained `CropTop`, `CropLeft`, `CropBottom`, or `CropRight`.
+    A Lightroom screenshot then proved Lightroom Classic ignores this
+    angle-only crop block, showing Angle `0.00` for `019_0H5A9024.CR3`
+    despite `crs:CropAngle="+4.1849"` in the sidecar.
+  - The generated XMPs were copied next to the selected RAW hardlinks so
+    Lightroom can test the folder directly:
+    `...\raw_100_straighten_20260630_175511\selected_raws`.
+  - A neutral-bound rerun was tried, but the user correctly flagged it as a
+    likely return to the same crop/aspect problem. Do not treat that
+    `saha_output_fixed\` folder as the final contract.
+  - User then supplied a before/after Lightroom pair:
+    `C:\Users\vikas.DESKTOP-61LEE8B\Documents\Example\0H5A5927 - org.xmp`
+    is unedited and `...\0H5A5927.xmp` has only crop angle edited manually.
+    The unedited file has full-frame crop defaults: `CropTop=0`,
+    `CropLeft=0`, `CropBottom=1`, `CropRight=1`, `CropAngle=0`,
+    `CropConstrainToWarp=0`, and `CropConstrainToUnitSquare=1`, with no
+    `HasCrop` / `AlreadyApplied`.
+  - The edited file changes the crop block to calculated bounds:
+    `CropTop=0.048114`, `CropLeft=0.013364`, `CropBottom=0.951886`,
+    `CropRight=0.986634`, `CropAngle=-1.93`, keeps
+    `CropConstrainToWarp=0` and `CropConstrainToUnitSquare=1`, and adds
+    `HasCrop=True` plus `AlreadyApplied=False`.
+  - Reran the same 100-RAW test folder to
+    `...\raw_100_straighten_20260630_175511\saha_output_lightroom_sample`
+    with the final Lightroom-sample crop contract, then copied those XMPs
+    beside the RAWs in `selected_raws\`.
+  - Final refreshed verification: 100 XMPs beside the RAWs; 75/100 contain
+    `crs:CropAngle`. For `019_0H5A9024.xmp`, the refreshed sidecar contains
+    `crs:HasCrop="True"`, `crs:CropTop="0.098755"`,
+    `crs:CropLeft="0.02736"`, `crs:CropBottom="0.901245"`,
+    `crs:CropRight="0.97264"`, `crs:CropAngle="+4.1849"`,
+    `crs:CropConstrainToWarp="0"`,
+    `crs:CropConstrainToUnitSquare="1"`, and
+    `crs:AlreadyApplied="False"`.
+  - Reports saved:
+    `straightening_summary.md` and `straightening_analysis.csv`.
+  - If Lightroom appears to show no straightening for this run, the likely
+    issue is Lightroom not reading the sidecars or using cached catalog crop
+    state. Import/read metadata from the `selected_raws\` folder, where the
+    matching XMPs now sit beside the RAWs.
+
+- Repaired auto-straighten output to match the Lightroom-written manual
+  angle-only XMP sample:
+  - User screenshots showed the explicit crop bounds made Lightroom show
+    Aspect `Custom` and over-cropped the image. Desired behavior is Aspect
+    `As Shot` with only the Angle slider moved slightly.
+  - `src\sonna_editor\inference\straighten.py` now returns calculated
+    Lightroom-style crop bounds plus `CropAngle`, `CropConstrainToWarp=0`,
+    `CropConstrainToUnitSquare=1`, `HasCrop=True`, and
+    `AlreadyApplied=False` for applied straightening.
+  - Regression coverage now asserts the sample contract for `5472x3648`,
+    `CropAngle=-1.93`: `CropTop=0.048114`, `CropLeft=0.013364`,
+    `CropBottom=0.951886`, and `CropRight=0.986634` within tiny
+    last-decimal tolerance because Lightroom appears to save the displayed
+    angle rounded.
+  - Removed the unused crop-bound math helpers and the diagnostic
+    `rotated_content_scale()` helper.
+  - `src\sonna_editor\inference\pipeline.py` passes source RAW dimensions
+    into the Lightroom-style crop-bound math when available, falling back to
+    preview dimensions only when source dimensions are missing, and records
+    `crop_reference_width` / `crop_reference_height` in
+    `sonna_predictions.json`.
+  - Updated tests to assert the new contract: applied auto-straightening writes
+    Lightroom-style calculated crop bounds and the same crop flags Lightroom
+    wrote in the user's sample.
+  - Verification passed after rerunning outside the Windows sandbox runner:
+    `uv run pytest tests\test_straighten.py tests\api\test_callback_bridge.py::test_pipeline_auto_straighten_writes_crop_angle_and_sidecar tests\api\test_callback_bridge.py::test_pipeline_auto_straighten_uses_source_dimensions_for_crop_bounds tests\test_xmp.py::TestExtraAttributes::test_write_xmp_with_crop_angle_attributes -q`
+    (`19 passed`) and
+    `uv run ruff check src\sonna_editor\inference\straighten.py src\sonna_editor\inference\pipeline.py tests\test_straighten.py tests\api\test_callback_bridge.py tests\test_xmp.py`.
+
+- Added a conservative event-backdrop guard for auto-straighten after the
+  `0H5A8969.CR3` Lightroom screenshot:
+  - The previous 100-RAW diagnostic showed this image was applied at
+    `+4.1065` degrees with `confidence=0.7322`, `scene=horizon`, `lines=118`,
+    `H=61`, and `V=57`. That means the estimator was treating mixed
+    Panerai backdrop/signage geometry as a clean horizon, even though the photo
+    was visually acceptable.
+  - `src\sonna_editor\inference\straighten.py` now skips large horizon
+    corrections above `3.0` degrees when vertical evidence is comparable to
+    horizontal evidence (`V >= H * 0.75`), returning
+    `reason=ambiguous_event_geometry`.
+  - `STRAIGHTEN_ENGINE_VERSION` is now `opencv-scene-horizon-lines-v4`.
+  - Direct verification on
+    `C:\Users\vikas.DESKTOP-61LEE8B\Documents\Raw+Xmp\0H5A8969.CR3` now
+    returns the same angle/confidence/line diagnostics but
+    `applied=False` and `reason=ambiguous_event_geometry`.
+  - Added regression coverage for a large ambiguous event-backdrop style
+    correction.
+  - Verification passed:
+    `uv run pytest tests\test_straighten.py tests\api\test_callback_bridge.py::test_pipeline_auto_straighten_writes_crop_angle_and_sidecar tests\api\test_callback_bridge.py::test_pipeline_auto_straighten_uses_source_dimensions_for_crop_bounds tests\test_xmp.py::TestExtraAttributes::test_write_xmp_with_crop_angle_attributes -q`
+    (`20 passed`) and
+    `uv run ruff check src\sonna_editor\inference\straighten.py src\sonna_editor\inference\pipeline.py tests\test_straighten.py tests\api\test_callback_bridge.py tests\test_xmp.py`.
+
+- Ran a 50-random-DNG processing smoke test from the local FiveK source:
+  - Source folder:
+    `C:\Users\vikas.DESKTOP-61LEE8B\Downloads\fivek_dataset\fivek_dataset\raw_photos`.
+  - Output folder:
+    `C:\Users\vikas.DESKTOP-61LEE8B\Documents\Test_results\dng_50_random_20260630_115315`.
+  - The selected DNG copies were saved under `selected_dngs\`; source/copy
+    mapping was saved to `selected_manifest.json`.
+  - Processing command used `v1_learning\model-v0.1.0.ckpt` and wrote XMPs to
+    `saha_output\`.
+  - Result: 50 processed, 0 failed, 50 XMP sidecars written, and
+    `saha_output\sonna_predictions.json` saved with `profile_type:
+    mode_b_initial`, `slider_set_version: v2`, and `auto_straighten: false`.
+  - One informational warning appeared for `a0787-kme_306.dng`: AsShot WB
+    extraction failed, so the Pre-Saha snapshot used the fallback `5500/0`.
+    The file still processed successfully.
+  - A human-readable run report was saved as `processing_summary.md`.
+
+- Updated `Auto_Straighten` after clarifying the desired behavior: apply
+  straightening to all images where the detector decides it is needed, while
+  keeping the crop aspect as-shot and preserving as much centred frame as
+  possible for the detected angle.
+  - Removed the crop-depth skip gate from
+    `src\sonna_editor\inference\straighten.py`; valid corrections are no
+    longer skipped only because the required crop is deep.
+  - The same 300-DNG real-image smoke test processed 300/300 with 0 errors,
+    applied 223, skipped 77 (`angle_too_small`: 73, `edge_texture`: 4), and
+    wrote `CropAngle` plus centred same-scale crop bounds for every applied
+    image.
+  - Written crop bounds preserved source/as-shot aspect exactly
+    (`max_aspect_delta_abs=2.22e-16`). The largest correction was clamped to
+    `5.0` degrees; max crop area loss was `22.63%` because high-angle
+    straightening necessarily crops more to avoid empty corners.
+  - Reports were written under
+    `C:\tmp\sonna_auto_straighten_crop_smoke\`, including
+    `auto_straighten_300_report_apply_all_needed.json` and
+    `sample_auto_straighten_apply_all_needed.xmp`.
+  - A separate proof run on the next 400 local DNGs
+    (`all_dngs[300:700]` under
+    `Documents\fivek_dataset\fivek_dataset\raw_photos`) processed 400/400 with
+    0 errors. It applied 283, skipped 117 (`angle_too_small`: 108,
+    `edge_texture`: 7, `weak_axis_support`: 1, `low_confidence`: 1), wrote
+    `CropAngle` for every applied image, wrote no top-level
+    `PerspectiveRotate`/`PerspectiveScale`, and preserved aspect for every
+    written crop (`max_aspect_delta_abs=2.22e-16`). The report is
+    `C:\tmp\sonna_auto_straighten_crop_smoke\auto_straighten_400_report_apply_all_needed_second_set.json`.
+
+- Ran an expanded straightening and Lite-profile validation pass, then patched
+  the one straightening failure mode it found:
+  - Focused regression suite passed after the patch:
+    `uv run pytest tests\test_straighten.py tests\test_adjuster.py tests\test_style_survey.py tests\test_checkpoint_builder.py tests\api\test_callback_bridge.py::test_mode_b_initial_anchors_absolute_preset_wb_to_as_shot tests\api\test_callback_bridge.py::test_mode_b_initial_uses_per_photo_preset_adjuster -q`
+    (`141 passed`).
+  - Ruff passed for touched/focused files:
+    `uv run ruff check src\sonna_editor\inference\straighten.py tests\test_straighten.py tests\test_adjuster.py tests\test_checkpoint_builder.py`.
+  - Synthetic stress validation covered 235 straightening cases and 1,400 Lite
+    cases across 20 Lite preset profiles, 14 synthetic scene-colour layouts,
+    and 5 AsShot WB baselines.
+  - Lite validation flagged 0 pink/green tint misbehaviors. Tint deltas stayed
+    within `[-10, +10]` Lightroom units relative to AsShot, with mean
+    `-0.499`. Raw WB deltas behaved directionally: warm/magenta scenes moved
+    tint non-positive, green/cyan scenes moved tint non-negative, and neutral
+    patch scenes stayed near 0.
+  - Straightening validation flagged 0 aspect-ratio failures. Max crop-aspect
+    error was `2.22e-16`; blank/texture false applies were 0.
+  - Initial straightening stress found centre-object failures where long
+    corner/background lines could overpower a tilted central subject/object.
+    `src\sonna_editor\inference\straighten.py` now builds a
+    `centre_object` candidate from central horizontal+vertical line evidence
+    and allows that coherent central evidence to beat comparable global
+    architecture/corner evidence.
+  - Added regression coverage in `tests\test_straighten.py` for a central
+    object tilted opposite to corner distractor lines.
+  - Final stress validation after the patch: 235 straightening cases,
+    112 applied / 123 skipped, `centre_preference_failures=0`,
+    `aspect_failures=0`, and `blank_or_texture_false_applies=0`.
+
+- Fixed two Process UI bugs:
+  - `saha-app\electron\main.js` now opens the Add folder picker as a modal
+    child of the Saha window and refocuses/restores the app after selection,
+    preventing the native file manager dialog from lingering in front of the
+    app after a folder is chosen.
+  - `saha-app\src\components\editor.jsx` now guards Add folder with a
+    temporary `Choosing folder...` state so repeated clicks or shortcut repeats
+    cannot open overlapping pickers.
+  - The processing progress bar no longer reaches `100%` from
+    `photos_prepared` alone. It caps at `99%` until `photos_processed` reaches
+    the folder total, while using the furthest of prepared/processed progress
+    so the bar does not visually restart when the app moves from preparation to
+    XMP writing.
+  - The processing Live log panel was removed entirely from the right column to
+    avoid double-loading visual noise after the progress bar.
+  - `saha-app\src\hooks\useJob.js` no longer accumulates per-photo Live log
+    rows in state; websocket photo events now only coalesce progress snapshot
+    fields for the visible progress UI.
+  - The completed-run `Process another folder` button now uses the shared
+    orange CTA styling, and the shared orange accent was brightened across dark
+    and light themes in both `tokens.js` and the boot CSS variables.
+  - The shell now places the theme toggle in the old top-right profile-button
+    slot using the same plain panel/line-border/sun-icon design as the login
+    page. The bottom-left rail control is now a direct Logout button instead of
+    a profile menu, since Logout was the only action in that menu, and it asks
+    for confirmation before logging out.
+  - In-app rail icons now use the same active-orange / inactive-muted colour
+    pattern as the login theme icon for a more consistent icon language.
+  - While processing, the centre `Processing in progress...` button now has an
+    orange pulse plus spinner animation, and the right-panel Cancel button uses
+    the orange CTA colour while it is active.
+  - Verification passed: `npm run build:vite` in `saha-app\`.
+
+- Repaired the Auto straighten processing crop reference:
+  - `src\sonna_editor\inference\pipeline.py` now uses extracted RAW/source
+    `width` and `height` metadata for Lightroom crop-bound math when available,
+    falling back to the resized preview dimensions only when source dimensions
+    are missing.
+  - `sonna_predictions.json` straightening diagnostics now include
+    `crop_reference_width` and `crop_reference_height` for each auto-straighten
+    photo, so future Lightroom crop issues can be audited from the run sidecar.
+  - Added regression coverage proving the pipeline uses source dimensions
+    rather than preview dimensions when calculating the centered same-scale
+    crop bounds.
+  - Verification passed after rerunning outside the Windows sandbox because
+    the sandbox hit the known `CreateProcessAsUserW failed: 1312` runner issue:
+    `uv run pytest tests\test_straighten.py tests\api\test_callback_bridge.py::test_pipeline_auto_straighten_writes_crop_angle_and_sidecar tests\api\test_callback_bridge.py::test_pipeline_auto_straighten_uses_source_dimensions_for_crop_math tests\api\test_process_route.py::test_process_auto_straighten_forwarded -q`
+    (`18 passed`) and
+    `uv run ruff check src\sonna_editor\inference\pipeline.py tests\api\test_callback_bridge.py`.
+
+- Repaired another Lite/Mode B pink-cast failure mode found when using a
+  different preset:
+  - `src\sonna_editor\inference\pipeline.py` now anchors Mode B preset
+    `Temperature` and `Tint` to each photo's AsShot WB whenever AsShot metadata
+    is available. Preset WB values are treated as a bounded style offset from
+    Lightroom defaults, not as absolute WB values copied from the preset source
+    image.
+  - The bounded Mode B WB style offset is currently capped at `±300K` for
+    Temperature and `±5` Lightroom Tint units. This keeps a warm or magenta
+    preset from painting the whole shoot pink while still allowing a gentle
+    preset/survey colour preference.
+  - Added regression coverage for a preset carrying `Temperature=6200` and
+    `Tint=14` on a photo with AsShot WB `(4300, -4)`. The Lite output now writes
+    about `4600K / +1` rather than copying `6200 / +14`.
+  - Verification passed after rerunning outside the Windows sandbox because
+    the sandbox hit the known `CreateProcessAsUserW failed: 1312` runner issue:
+    `uv run pytest tests\api\test_callback_bridge.py::test_mode_b_initial_anchors_absolute_preset_wb_to_as_shot tests\api\test_callback_bridge.py::test_mode_b_initial_uses_per_photo_preset_adjuster tests\test_adjuster.py -q`
+    (`39 passed`) and
+    `uv run ruff check src\sonna_editor\inference\pipeline.py tests\api\test_callback_bridge.py tests\test_adjuster.py`.
+- Improved Lite WB intelligence while keeping Lite's dynamic-slider boundary:
+  - `src\sonna_editor\preset\adjuster.py` now estimates WB from likely neutral
+    midtone pixels first instead of whole-frame RGB means. This lets neutral
+    shirts, walls, tables, or grey/white details guide Temperature/Tint even
+    when the frame is dominated by warm venue light, red clothing, coloured
+    decor, or a branded background.
+  - If no stable neutral sample exists, the adjuster falls back to the older
+    whole-frame estimate.
+  - Added regression coverage proving a mostly warm/red frame with a neutral
+    patch leaves Temperature/Tint essentially unchanged rather than chasing the
+    dominant warm colour.
+  - Verification passed after rerunning outside the Windows sandbox:
+    `uv run pytest tests\test_adjuster.py tests\api\test_callback_bridge.py::test_mode_b_initial_anchors_absolute_preset_wb_to_as_shot tests\api\test_callback_bridge.py::test_mode_b_initial_uses_per_photo_preset_adjuster -q`
+    (`41 passed`) and
+    `uv run ruff check src\sonna_editor\preset\adjuster.py src\sonna_editor\inference\pipeline.py tests\test_adjuster.py tests\api\test_callback_bridge.py`.
+
+- Repaired Auto straighten crop aspect preservation after user feedback that
+  Lightroom was over-cropping and changing the crop aspect:
+  - `src\sonna_editor\inference\straighten.py` now computes centred crop bounds
+    from the rotate-then-inscribe math instead of writing full-frame crop
+    bounds. `CropTop/CropLeft/CropBottom/CropRight` shrink by the same
+    normalized amount, so
+    `(CropRight-CropLeft)*image_width / ((CropBottom-CropTop)*image_height)`
+    stays equal to the original shot aspect ratio.
+  - Current behavior no longer skips valid high-angle corrections only because
+    the required crop is deep; crop bounds remain centred and same-scale so
+    the written crop aspect stays as-shot.
+  - Updated regression tests so they assert mathematical aspect preservation
+    rather than full-frame `0/1` bounds, and added coverage for the high-angle
+    crop-depth skip.
+  - Verification passed after rerunning outside the Windows sandbox because
+    the sandbox hit the known `CreateProcessAsUserW failed: 1312` runner issue:
+    `uv run pytest tests\test_straighten.py tests\api\test_callback_bridge.py::test_pipeline_auto_straighten_writes_crop_angle_and_sidecar tests\test_xmp.py::TestExtraAttributes::test_write_xmp_with_crop_angle_attributes -q`
+    (`17 passed`) and
+    `uv run ruff check src\sonna_editor\inference\straighten.py tests\test_straighten.py tests\api\test_callback_bridge.py`.
+
+- Reconciled the Markdown context files against the actual `Auto_Straighten`
+  branch code and tracked foundation manifest:
+  - Corrected branch context from stale `main` notes to
+    `Auto_Straighten`.
+  - Corrected hidden foundation state from stale empty/FiveK rollback notes to
+    active `foundation-sonna-raw-xmp-004-visual`.
+  - Reconfirmed current UI/code boundaries: Personal AI backend route exists
+    but the Profile screen tile is disabled as "Coming soon"; Lite profile
+    creation remains available; active/last profile deletion is allowed with
+    automatic active promotion or pointer clearing.
+  - Reconfirmed auto-straighten current behavior from source:
+    `opencv-scene-horizon-lines-v4`, centre-band horizon preference,
+    Lightroom-style calculated crop bounds, conservative event-backdrop guard,
+    `CropConstrainToWarp=0`, `CropConstrainToUnitSquare=1`, and
+    `AlreadyApplied=False`.
+  - No generated diagnostic reports under `scripts/output/` were modified.
+
+- Repaired two issues from real processing feedback:
+  - Auto-straighten crop metadata now writes Lightroom `CropAngle` with
+    explicit centred same-scale crop bounds that preserve the original shot
+    aspect ratio. Applied crop metadata also includes `CropConstrainToWarp=0`,
+    `CropConstrainToUnitSquare=1`, and `AlreadyApplied=False`, matching the
+    Lightroom/Imagen sidecar shape more closely.
+  - Auto-straighten angle selection now prefers horizontal line evidence near
+    the centre of the preview when present, so the centre/horizon line is not
+    overruled by off-centre architectural/background lines with a different
+    tilt.
+  - Lite/Mode B WB tint adjustment now uses green-vs-magenta balance for
+    `Tint` instead of red-vs-blue balance, so warm/red frames are no longer
+    pushed further magenta by the grey-world correction. The Lite survey's
+    maximum `Tint` calibration offset was reduced from 20 to 10 Lightroom tint
+    units to avoid large pink shifts on Sony/Canon RAWs.
+  - Read-only diagnostics on local Sony `.ARW` samples in
+    `OneDrive\Pictures\Test_cat` showed AsShot tint extraction around `+8` for
+    A7 IV samples and `-8.3` for one A7 III sample, so the observed `+20-27`
+    pink output is more consistent with survey/preset/heuristic stacking than
+    with the RAW AsShot baseline alone.
+  - Verification passed:
+    `uv run pytest tests\test_straighten.py tests\test_adjuster.py tests\test_style_survey.py tests\test_checkpoint_builder.py tests\test_xmp.py::TestExtraAttributes::test_write_xmp_with_crop_angle_attributes tests\api\test_callback_bridge.py::test_pipeline_auto_straighten_writes_crop_angle_and_sidecar tests\api\test_callback_bridge.py::test_mode_b_initial_uses_per_photo_preset_adjuster -q`
+    (`137 passed`) and
+    `uv run ruff check src\sonna_editor\inference\straighten.py src\sonna_editor\inference\pipeline.py src\sonna_editor\preset\adjuster.py src\sonna_editor\mode_b\survey.py tests\test_straighten.py tests\test_adjuster.py tests\test_style_survey.py tests\test_checkpoint_builder.py tests\test_xmp.py tests\api\test_callback_bridge.py`.
 
 - Fixed the macOS titlebar overlap where the Saha mark could sit behind the
   native traffic-light window controls:
@@ -95,9 +432,10 @@ x86_64, while macOS resolves the matching public wheels.
     that folder applied straightening to 310 files and skipped 190 as
     `angle_too_small`; there were no preview extraction errors.
   - `sonna_predictions.json` now records `straightening_engine:
-    opencv-clahe-canny-lines-v2` plus per-photo `line_count` and
-    `line_length_px`, so future 300+ image runs can be audited immediately if
-    Lightroom appears not to show crop-angle changes.
+    opencv-scene-horizon-lines-v4` plus per-photo `scene_type`,
+    `horizon_score`, `axis_score`, horizontal/vertical line counts,
+    `line_count`, and `line_length_px`, so future 300+ image runs can be
+    audited immediately if Lightroom appears not to show crop-angle changes.
   - Follow-up validation against user-supplied `0H5A6295_.xmp` showed the Mac
     run did write `crs:HasCrop="True"` / `crs:CropAngle="+5"`, while Lightroom
     Classic still displayed Angle `0.00`. The XMP lacked full-frame crop bounds,
@@ -108,6 +446,13 @@ x86_64, while macOS resolves the matching public wheels.
     manual correct direction `+5.94`). The OpenCV residual-to-Lightroom mapping
     was reversed; `estimate_straighten_angle()` now keeps the residual sign for
     Lightroom `CropAngle` instead of negating it.
+  - The estimator is now scene-aware and horizon-aware. Detected OpenCV line
+    evidence keeps orientation, length, and position, then scores horizon,
+    architecture, and mixed-axis candidates separately. Horizon-specific
+    handling can choose a long horizon over conflicting vertical distractors,
+    while architecture frames still rely on consistent horizontal plus vertical
+    support. Added regression coverage for horizon-over-vertical-distractor
+    selection and soft portrait/detail skip behavior.
   - Added `opencv-python-headless==4.13.0.92` to `pyproject.toml` / `uv.lock`.
   - Added regression coverage for room-like tilted geometry, random texture
     skip behavior, full-frame crop bounds, and direct XMP serialization of
@@ -121,6 +466,12 @@ x86_64, while macOS resolves the matching public wheels.
     `crs:HasCrop="True"`, full-frame crop bounds, `crs:CropAngle`, and the
     new diagnostics. A synthetic +3 degree tilt smoke check now writes
     `CropAngle="+2.9508"`, confirming the corrected Lightroom sign direction.
+  - Verification after the scene-aware pass: focused straightening suite passed
+    (`15 passed`), Ruff passed for touched files, and `py_compile` passed for
+    `src\sonna_editor\inference\straighten.py` plus
+    `src\sonna_editor\inference\pipeline.py`. Full backend verification also
+    passed: `uv run ruff check .` and `uv run pytest -q` (`771 passed, 45
+    skipped, 1 existing PyTorch scalar-conversion warning`).
 
 - Removed the login page "What's new" card and the compatibility/version strip
   underneath it.
@@ -253,8 +604,9 @@ x86_64, while macOS resolves the matching public wheels.
     corrections from RAW previews using OpenCV Canny/Hough/LSD line geometry,
     with conservative thresholds for minimum edge count, confidence, and angle
     size.
-  - `process_shoot_with_model()` writes `crs:HasCrop="True"`, full-frame crop
-    bounds, and `crs:CropAngle="..."` through
+  - `process_shoot_with_model()` writes `crs:HasCrop="True"`, centred
+    aspect-locked `crs:CropTop`, `crs:CropLeft`, `crs:CropBottom`,
+    `crs:CropRight` bounds, and `crs:CropAngle="..."` through
     `write_xmp(extra_attributes=...)` only when `auto_straighten` is enabled
     and the estimator result is applied.
   - `sonna_predictions.json` records `auto_straighten`,
@@ -495,13 +847,15 @@ x86_64, while macOS resolves the matching public wheels.
   from the same prepared splits with `--tone-presence-retry`. It does not
   require rebuilding the dataset unless the new baseline, collapse, or diversity
   diagnostics show weak label coverage.
-- Removed the currently tracked foundation checkpoint artifacts from the parent
-  repo so the Mac RAW+XMP foundation run can replace them:
+- Historical cleanup, now superseded by the active
+  `foundation-sonna-raw-xmp-004-visual` checkpoint: removed the then-tracked
+  foundation checkpoint artifacts from the parent repo so a Mac RAW+XMP
+  foundation run could replace them:
   `SonnaEditorFoundation\checkpoints\foundation-fivek-catalog-expert-c-001.*`
   and `SonnaEditorFoundation\checkpoints\foundation-sonna-raw-xmp-001.*` are
   deleted in the worktree, and `SonnaEditorFoundation\foundation_manifest.json`
-  is reset to an empty schema-v2 manifest. Until the Mac checkpoint is added and
-  pushed, the parent repo has no active hidden foundation checkpoint.
+  was reset to an empty schema-v2 manifest. That no-active-foundation state is
+  no longer current in this branch.
 - Removed all remaining local `.ckpt` files under the repo, including generated
   foundation-run checkpoints under `data\training_workspace\foundation_runs\`
   and the stale frontend-visible `v1_learning\model-v0.2.0.ckpt`. Removed the
@@ -556,7 +910,10 @@ x86_64, while macOS resolves the matching public wheels.
 - Diagnosed the pasted training diagnostics for the two foundation runs:
   - `foundation-fivek-catalog-expert-c-001` trained on the full FiveK Expert C split (`3769/536/695` train/val/test rows in the current local `splits_v2_stratified_fiveK` folder). Collapse audit on 200 validation photos found `0` collapsed sliders, but Saturation/Vibrance and Temperature still need visual review before treating it as production-quality Mode A output.
   - `foundation-sonna-raw-xmp-001` trained on only `132/27/30` train/val/test rows from `data\training_workspace\sonna_foundation_001_dataset\splits_v2_stratified` while starting with `stage:7` trainable (`16.2M` trainable params). It overfit (`test_loss / best_val_loss = 1.616x`) and failed key visual sliders: Exposure, Shadows, Highlights, Whites, Blacks, Vibrance, and Saturation. Collapse audit on its 27-row val split found collapsed `Highlights2012` and `Shadows2012`.
-- Rolled the active foundation manifest back from the bad Sonna continuation to `foundation-fivek-catalog-expert-c-001`. New Lite/Personal AI runs now resolve the FiveK checkpoint unless an environment override is set.
+- Historical rollback, now superseded: rolled the active foundation manifest
+  back from the bad Sonna continuation to `foundation-fivek-catalog-expert-c-001`.
+  The current branch's active hidden foundation is
+  `foundation-sonna-raw-xmp-004-visual` unless an environment override is set.
 - Added foundation promotion guardrails in `scripts\train_foundation_model.py`:
   - foundation runs now refuse to train/promote from fewer than `75` train rows unless `--allow-small-foundation-dataset` is explicitly passed
   - small foundation splits below `500` train rows now automatically use `--backbone-unfreeze-strategy custom --backbone-trainable-layers none` unless explicit backbone flags are supplied, avoiding the 16.2M-trainable-parameter path that overfit the 132-row Sonna continuation
@@ -585,7 +942,9 @@ x86_64, while macOS resolves the matching public wheels.
 - Foundation promotion now auto-allocates `foundation-vN` when no explicit version stem is supplied, still refuses to overwrite existing checkpoints, and keeps older versions available for rollback.
 - Added `scripts\rollback_foundation.py` with `--list` and explicit version activation so bad foundation runs can be rolled back by changing the manifest pointer instead of deleting checkpoint files.
 - Fixed legacy foundation manifest listing so the active checkpoint is included even when the manifest predates schema-v2 `versions[]`. The current active checkpoint `foundation-sonna-raw-xmp-003.ckpt` now resolves and appears in `scripts\rollback_foundation.py --list` alongside `foundation-sonna-raw-xmp-001`.
-- Cleared previous local trained profile/checkpoint artifacts before the new FiveK foundation run:
+- Historical clean start, now superseded by the tracked
+  `foundation-sonna-raw-xmp-004-visual` checkpoint: cleared previous local
+  trained profile/checkpoint artifacts before the new foundation work:
   - removed `v1_learning\model-v0.1.0.*`
   - removed `SonnaEditorFoundation\checkpoints\foundation-sonna-raw-xmp-001.*`
   - removed `SonnaEditorFoundation\checkpoints\foundation-sonna-raw-xmp-003.*`
@@ -818,12 +1177,28 @@ x86_64, while macOS resolves the matching public wheels.
 - Training on tiny splits now logs once that it adjusted `log_every_n_steps` instead of letting Lightning warn. This is expected for the current 132-row train split, which has 9 batches at batch size 16.
 - `Profile.profile_type` is already implemented in backend profile responses and frontend profile classification. `None` means a legacy trained profile; `"mode_b_initial"` means a Lite preset-derived profile.
 - Mode B/Lite checkpoints now inherit the configured foundation checkpoint's native slider set and field count. Before fine-tuning, the UI/CLI processing path treats `mode_b_initial` as an Imagen-aligned Lite profile: preset look fixed, per-photo Exposure/WB corrections only. After fine-tuning, the same profile can move back to normal model inference.
+- Lite per-photo WB correction keeps Temperature on the red-blue axis and now
+  computes Tint from green-vs-magenta balance. The estimator prefers likely
+  neutral midtone pixels over whole-frame colour averages, falling back to the
+  whole frame only when no stable neutral sample exists. For Mode B processing,
+  preset Temperature/Tint values are anchored to each photo's AsShot WB as
+  bounded style offsets (`±300K`, `±5 Tint`) rather than copied as absolute WB
+  from the preset source photo. The Lite style survey still stores all six
+  answers, but the maximum Tint offset is now 10 units rather than 20 to keep
+  calibration from creating strong pink casts.
 - Auto straightening is opt-in and runs after preview extraction during
   processing. It uses CLAHE-normalized OpenCV Canny edges plus Hough/LSD line
-  geometry to estimate small Lightroom `CropAngle` rotations, writes crop
-  metadata only when confidence is high, and records skipped/applied diagnostics
-  in `sonna_predictions.json`. It is independent of training and checkpoint
-  versioning.
+  geometry, then classifies the evidence into horizon, architecture, or
+  centre-object, or mixed-axis candidates before estimating small Lightroom
+  `CropAngle` rotations. It writes crop metadata only when scene-specific
+  confidence is high, using Lightroom-style calculated crop bounds plus
+  `CropAngle`, `CropConstrainToWarp=0`, `CropConstrainToUnitSquare=1`,
+  `HasCrop=True`, and `AlreadyApplied=False`. Large horizon corrections above
+  3 degrees are skipped as `ambiguous_event_geometry` when vertical evidence is
+  comparable to horizontal evidence. Skipped/applied diagnostics are recorded
+  in `sonna_predictions.json`.
+  Centre-band horizontal evidence is preferred when present.
+  It is independent of training and checkpoint versioning.
 - The Process UI requires explicit row selection. With no checked queued rows,
   Process Selected is disabled and no job is dispatched; with checked rows, it
   runs only the selected queued folders. Auto straighten follows the same
@@ -833,7 +1208,13 @@ x86_64, while macOS resolves the matching public wheels.
 
 For immediate FiveK foundation training, build the Expert C catalog dataset with `scripts\build_dataset_from_catalog.py --collection-name "C" --include-unedited-looking`, audit it, then train from prepared splits with `scripts\train_foundation_model.py --splits-dir ...`. Do not mix all 60,000 FiveK virtual-copy rows in one unconditioned model.
 
-Add the fresh RAW+XMP dataset, start the backend/Electron app, and create a Personal AI profile from the frontend. Use Lite profile creation from the frontend after a foundation checkpoint is configured in `SONNA_FOUNDATION_CHECKPOINT`, `SONNA_FOUNDATION_REPO/foundation_manifest.json`, or `SONNA_FOUNDATION_REPO/foundation.ckpt`.
+Add the fresh RAW+XMP dataset, then train a Personal AI profile through the
+CLI/backend path when that flow is ready for operator use. The backend route
+exists, but the current Profile screen tile is disabled and labelled "Coming
+soon". Lite profile creation is available from the frontend and resolves the
+active tracked foundation checkpoint,
+`foundation-sonna-raw-xmp-004-visual`, unless `SONNA_FOUNDATION_CHECKPOINT` or
+`SONNA_FOUNDATION_REPO` overrides it.
 
 For current foundation model work, use `scripts\train_foundation_model.py --raw-xmp-dir ...` or `--splits-dir ...` so the checkpoint is promoted to `SonnaEditorFoundation\` and stays out of the frontend profile list. It will warm-start from the active foundation checkpoint unless `--no-warm-start` is supplied. For MIT-Adobe FiveK, use catalog-derived splits from `build_dataset_from_catalog.py`.
 

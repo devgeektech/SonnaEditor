@@ -15,7 +15,7 @@ import numpy as np
 from PIL import Image
 
 
-STRAIGHTEN_ENGINE_VERSION = "opencv-clahe-canny-lines-v2"
+STRAIGHTEN_ENGINE_VERSION = "opencv-scene-horizon-lines-v4"
 
 
 @dataclass(frozen=True)
@@ -29,12 +29,39 @@ class StraightenResult:
     edge_count: int
     line_count: int = 0
     total_line_length: float = 0.0
+    scene_type: str = "unknown"
+    horizon_score: float = 0.0
+    axis_score: float = 0.0
+    horizontal_line_count: int = 0
+    vertical_line_count: int = 0
+
+
+@dataclass(frozen=True)
+class _LineObservation:
+    residual: float
+    orientation: str
+    weight: float
+    length: float
+    mid_x: float
+    mid_y: float
+
+
+@dataclass(frozen=True)
+class _AngleCandidate:
+    angle: float
+    confidence: float
+    support: float
+    concentration: float
+    line_count: int
+    total_weight: float
 
 
 _MAX_WORKING_EDGE = 640
 _MIN_APPLY_ANGLE = 0.08
 _MAX_APPLY_ANGLE = 5.0
 _MIN_CONFIDENCE = 0.28
+_MIN_HORIZON_CONFIDENCE = 0.22
+_MIN_MIXED_CONFIDENCE = 0.34
 _MIN_EDGE_COUNT = 120
 _MAX_EDGE_DENSITY = 0.32
 _MIN_LINE_COUNT = 1
@@ -43,6 +70,14 @@ _HOUGH_THRESHOLD = 18
 _MAX_LINE_GAP = 16
 _AXIS_CANDIDATE_TOLERANCE_DEGREES = 7.0
 _AXIS_SUPPORT_TOLERANCE_DEGREES = 2.8
+_HORIZON_BAND_TOP = 0.16
+_HORIZON_BAND_BOTTOM = 0.82
+_CENTRE_HORIZON_BAND_TOP = 0.34
+_CENTRE_HORIZON_BAND_BOTTOM = 0.66
+_CENTRE_OBJECT_MARGIN_X = 0.18
+_CENTRE_OBJECT_MARGIN_Y = 0.16
+_LARGE_AMBIGUOUS_HORIZON_ANGLE = 3.0
+_MIXED_VERTICAL_TO_HORIZONTAL_RATIO = 0.75
 
 
 def _resize_for_analysis(image: Image.Image) -> Image.Image:
@@ -110,14 +145,18 @@ def _opencv_edges(image_u8: np.ndarray) -> np.ndarray:
     return cv2.Canny(image_u8, 16, 64, apertureSize=3, L2gradient=True)
 
 
-def _segment_residuals(
+def _orientation_from_tangent(tangent_angle_degrees: float) -> str:
+    folded = ((tangent_angle_degrees + 90.0) % 180.0) - 90.0
+    return "horizontal" if abs(folded) <= 45.0 else "vertical"
+
+
+def _segment_observations(
     segments: np.ndarray,
     min_line_length: float,
     *,
     weight_scale: float = 1.0,
-) -> tuple[list[float], list[float]]:
-    residuals: list[float] = []
-    weights: list[float] = []
+) -> list[_LineObservation]:
+    observations: list[_LineObservation] = []
     for segment in segments.reshape(-1, 4):
         x1, y1, x2, y2 = (float(v) for v in segment)
         dx = x2 - x1
@@ -129,12 +168,20 @@ def _segment_residuals(
         residual = float(_axis_residual_degrees(np.asarray([angle], dtype=np.float64))[0])
         if abs(residual) > _AXIS_CANDIDATE_TOLERANCE_DEGREES:
             continue
-        residuals.append(residual)
-        weights.append(length * weight_scale)
-    return residuals, weights
+        observations.append(
+            _LineObservation(
+                residual=residual,
+                orientation=_orientation_from_tangent(angle),
+                weight=length * weight_scale,
+                length=length,
+                mid_x=(x1 + x2) * 0.5,
+                mid_y=(y1 + y2) * 0.5,
+            )
+        )
+    return observations
 
 
-def _hough_line_residuals(edges: np.ndarray) -> tuple[list[float], list[float]]:
+def _hough_line_observations(edges: np.ndarray) -> list[_LineObservation]:
     min_line_length = max(_MIN_LINE_LENGTH_PX, min(edges.shape) * 0.10)
     lines = cv2.HoughLinesP(
         edges,
@@ -145,55 +192,233 @@ def _hough_line_residuals(edges: np.ndarray) -> tuple[list[float], list[float]]:
         maxLineGap=_MAX_LINE_GAP,
     )
     if lines is None:
-        return [], []
-    return _segment_residuals(lines[:, 0, :], min_line_length, weight_scale=1.15)
+        return []
+    return _segment_observations(lines[:, 0, :], min_line_length, weight_scale=1.15)
 
 
-def _lsd_line_residuals(image_u8: np.ndarray) -> tuple[list[float], list[float]]:
+def _lsd_line_observations(image_u8: np.ndarray) -> list[_LineObservation]:
     detector = cv2.createLineSegmentDetector(cv2.LSD_REFINE_STD)
     lines = detector.detect(image_u8)[0]
     if lines is None:
-        return [], []
+        return []
     min_line_length = max(_MIN_LINE_LENGTH_PX, min(image_u8.shape) * 0.06)
-    return _segment_residuals(lines[:, 0, :], min_line_length, weight_scale=1.0)
+    return _segment_observations(lines[:, 0, :], min_line_length, weight_scale=1.0)
 
 
-def _standard_hough_line_residuals(edges: np.ndarray) -> tuple[list[float], list[float]]:
+def _standard_hough_line_observations(edges: np.ndarray) -> list[_LineObservation]:
     """Detect broad axis-aligned line evidence when segments are fragmented."""
     min_edge = min(edges.shape)
     threshold = max(36, min(120, int(min_edge * 0.14)))
     lines = cv2.HoughLines(edges, rho=1, theta=np.pi / 180.0, threshold=threshold)
     if lines is None:
-        return [], []
+        return []
 
-    residuals: list[float] = []
-    weights: list[float] = []
+    observations: list[_LineObservation] = []
     base_weight = max(_MIN_LINE_LENGTH_PX, min_edge * 0.22)
     for rho_theta in lines[:80, 0, :]:
-        _rho, theta = (float(v) for v in rho_theta)
+        rho, theta = (float(v) for v in rho_theta)
         tangent_angle = degrees(theta) - 90.0
         residual = float(
             _axis_residual_degrees(np.asarray([tangent_angle], dtype=np.float64))[0]
         )
         if abs(residual) > _AXIS_CANDIDATE_TOLERANCE_DEGREES:
             continue
-        residuals.append(residual)
         # HoughLines does not expose vote counts in this binding, so keep the
         # fallback lighter than explicit segment detections.
-        weights.append(base_weight * 0.55)
-    return residuals, weights
+        observations.append(
+            _LineObservation(
+                residual=residual,
+                orientation=_orientation_from_tangent(tangent_angle),
+                weight=base_weight * 0.55,
+                length=base_weight,
+                mid_x=edges.shape[1] * 0.5,
+                # The normal-form rho is only a rough position estimate here,
+                # but it is still useful enough for horizon band scoring.
+                mid_y=max(0.0, min(float(edges.shape[0] - 1), abs(rho))),
+            )
+        )
+    return observations
 
 
-def _opencv_line_residuals(image_u8: np.ndarray, edges: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
-    hough_residuals, hough_weights = _hough_line_residuals(edges)
-    lsd_residuals, lsd_weights = _lsd_line_residuals(image_u8)
-    residuals = hough_residuals + lsd_residuals
-    weights = hough_weights + lsd_weights
-    if len(residuals) < 2:
-        broad_residuals, broad_weights = _standard_hough_line_residuals(edges)
-        residuals.extend(broad_residuals)
-        weights.extend(broad_weights)
-    return np.asarray(residuals, dtype=np.float64), np.asarray(weights, dtype=np.float64)
+def _opencv_line_observations(image_u8: np.ndarray, edges: np.ndarray) -> list[_LineObservation]:
+    observations = _hough_line_observations(edges) + _lsd_line_observations(image_u8)
+    if len(observations) < 2:
+        observations.extend(_standard_hough_line_observations(edges))
+    return observations
+
+
+def _candidate_from_observations(
+    observations: list[_LineObservation],
+    image_shape: tuple[int, int],
+) -> _AngleCandidate | None:
+    if not observations:
+        return None
+    residual = np.asarray([item.residual for item in observations], dtype=np.float64)
+    weights = np.asarray([item.weight for item in observations], dtype=np.float64)
+    if residual.size < _MIN_LINE_COUNT or weights.size < _MIN_LINE_COUNT:
+        return None
+
+    median_residual = _weighted_median(residual, weights)
+    support = _axis_support(
+        residual,
+        weights,
+        median_residual,
+        tolerance_degrees=_AXIS_SUPPORT_TOLERANCE_DEGREES,
+    )
+    concentration = _axis_concentration(residual, weights)
+    min_side = float(min(image_shape))
+    line_count_score = min(1.0, residual.size / 4.0)
+    line_length_score = min(1.0, float(weights.sum()) / (min_side * 1.2))
+    confidence = concentration * max(support, 0.0) * max(line_count_score, line_length_score)
+    angle = max(-_MAX_APPLY_ANGLE, min(_MAX_APPLY_ANGLE, float(median_residual)))
+    return _AngleCandidate(
+        angle=angle,
+        confidence=confidence,
+        support=support,
+        concentration=concentration,
+        line_count=int(residual.size),
+        total_weight=float(weights.sum()),
+    )
+
+
+def _position_band_score(observations: list[_LineObservation], height: int) -> float:
+    if not observations or height <= 0:
+        return 0.0
+    total = sum(item.weight for item in observations)
+    if total <= 0:
+        return 0.0
+    score = 0.0
+    for item in observations:
+        y_ratio = item.mid_y / float(height)
+        if _HORIZON_BAND_TOP <= y_ratio <= _HORIZON_BAND_BOTTOM:
+            score += item.weight
+    return score / total
+
+
+def _centre_band_observations(
+    observations: list[_LineObservation],
+    height: int,
+) -> list[_LineObservation]:
+    if height <= 0:
+        return []
+    return [
+        item
+        for item in observations
+        if _CENTRE_HORIZON_BAND_TOP
+        <= item.mid_y / float(height)
+        <= _CENTRE_HORIZON_BAND_BOTTOM
+    ]
+
+
+def _centre_object_observations(
+    observations: list[_LineObservation],
+    width: int,
+    height: int,
+) -> list[_LineObservation]:
+    """Return central line evidence for subject/object-oriented straightening."""
+    if width <= 0 or height <= 0:
+        return []
+    return [
+        item
+        for item in observations
+        if _CENTRE_OBJECT_MARGIN_X
+        <= item.mid_x / float(width)
+        <= 1.0 - _CENTRE_OBJECT_MARGIN_X
+        and _CENTRE_OBJECT_MARGIN_Y
+        <= item.mid_y / float(height)
+        <= 1.0 - _CENTRE_OBJECT_MARGIN_Y
+    ]
+
+
+def _horizontal_coverage_score(observations: list[_LineObservation], width: int) -> float:
+    if width <= 0:
+        return 0.0
+    horizontal_length = sum(item.length for item in observations)
+    return min(1.0, horizontal_length / float(width))
+
+
+def _angle_consistency(first: _AngleCandidate | None, second: _AngleCandidate | None) -> float:
+    if first is None or second is None:
+        return 0.0
+    distance = abs(float(_axis_distance_degrees(np.asarray([first.angle]), second.angle)[0]))
+    return max(0.0, 1.0 - distance / 4.0)
+
+
+def _scene_candidates(
+    observations: list[_LineObservation],
+    image_shape: tuple[int, int],
+) -> tuple[str, _AngleCandidate | None, float, float, int, int]:
+    height, width = image_shape
+    horizontal = [item for item in observations if item.orientation == "horizontal"]
+    centre_horizontal = _centre_band_observations(horizontal, height)
+    horizon_source = centre_horizontal or horizontal
+    vertical = [item for item in observations if item.orientation == "vertical"]
+    centre_object = _centre_object_observations(observations, width, height)
+    centre_object_horizontal = [
+        item for item in centre_object if item.orientation == "horizontal"
+    ]
+    centre_object_vertical = [item for item in centre_object if item.orientation == "vertical"]
+
+    axis_candidate = _candidate_from_observations(observations, image_shape)
+    horizon_candidate = _candidate_from_observations(horizon_source, image_shape)
+    vertical_candidate = _candidate_from_observations(vertical, image_shape)
+    centre_object_candidate = _candidate_from_observations(centre_object, image_shape)
+
+    horizon_score = 0.0
+    if horizon_candidate is not None:
+        band_score = _position_band_score(horizon_source, height)
+        coverage_score = _horizontal_coverage_score(horizon_source, width)
+        centre_bonus = 0.12 if centre_horizontal else 0.0
+        horizon_score = horizon_candidate.confidence * (
+            0.55 + 0.30 * band_score + 0.15 * coverage_score + centre_bonus
+        )
+
+    axis_score = axis_candidate.confidence if axis_candidate is not None else 0.0
+    if axis_candidate is not None and horizon_candidate is not None and vertical_candidate is not None:
+        consistency = _angle_consistency(horizon_candidate, vertical_candidate)
+        balance = min(1.0, min(horizon_candidate.total_weight, vertical_candidate.total_weight) / max(1.0, min(image_shape) * 0.35))
+        axis_score = max(axis_score, axis_candidate.confidence * (0.75 + 0.25 * consistency) * (0.70 + 0.30 * balance))
+
+    centre_object_score = 0.0
+    if (
+        centre_object_candidate is not None
+        and centre_object_horizontal
+        and centre_object_vertical
+    ):
+        weight_score = min(
+            1.0,
+            centre_object_candidate.total_weight / max(1.0, min(image_shape) * 0.70),
+        )
+        centre_object_score = centre_object_candidate.confidence * (
+            0.82 + 0.18 * weight_score
+        )
+
+    if horizon_candidate is not None and horizon_score >= max(axis_score * 1.05, _MIN_HORIZON_CONFIDENCE):
+        return "horizon", horizon_candidate, horizon_score, axis_score, len(horizontal), len(vertical)
+    if centre_object_candidate is not None and centre_object_score >= max(
+        horizon_score * 1.02,
+        axis_score * 0.98,
+        _MIN_CONFIDENCE,
+    ):
+        return (
+            "centre_object",
+            centre_object_candidate,
+            horizon_score,
+            max(axis_score, centre_object_score),
+            len(horizontal),
+            len(vertical),
+        )
+    if (
+        axis_candidate is not None
+        and horizon_candidate is not None
+        and vertical_candidate is not None
+        and axis_score >= max(horizon_score * 0.92, _MIN_CONFIDENCE)
+        and _angle_consistency(horizon_candidate, vertical_candidate) >= 0.35
+    ):
+        return "architecture", axis_candidate, horizon_score, axis_score, len(horizontal), len(vertical)
+    if axis_candidate is not None:
+        return "mixed_axis", axis_candidate, horizon_score, axis_score, len(horizontal), len(vertical)
+    return "unclassified", None, horizon_score, axis_score, len(horizontal), len(vertical)
 
 
 def estimate_straighten_angle(image: Image.Image) -> StraightenResult:
@@ -206,25 +431,32 @@ def estimate_straighten_angle(image: Image.Image) -> StraightenResult:
     """
     gray = np.asarray(_resize_for_analysis(image), dtype=np.float32) / 255.0
     if gray.ndim != 2 or min(gray.shape) < 32:
-        return StraightenResult(0.0, 0.0, False, "image_too_small", 0)
+        return StraightenResult(0.0, 0.0, False, "image_too_small", 0, scene_type="invalid")
 
     if not np.isfinite(gray).all():
-        return StraightenResult(0.0, 0.0, False, "invalid_image", 0)
+        return StraightenResult(0.0, 0.0, False, "invalid_image", 0, scene_type="invalid")
 
     image_u8 = _analysis_image(gray)
     edges = _opencv_edges(image_u8)
     edge_count = int(np.count_nonzero(edges))
     if edge_count == 0:
-        return StraightenResult(0.0, 0.0, False, "no_edges", 0)
+        return StraightenResult(0.0, 0.0, False, "no_edges", 0, scene_type="blank")
     if edge_count < _MIN_EDGE_COUNT:
-        return StraightenResult(0.0, 0.0, False, "too_few_edges", edge_count)
+        return StraightenResult(
+            0.0, 0.0, False, "too_few_edges", edge_count, scene_type="detail"
+        )
     if edge_count / float(edges.size) > _MAX_EDGE_DENSITY:
-        return StraightenResult(0.0, 0.0, False, "edge_texture", edge_count)
+        return StraightenResult(
+            0.0, 0.0, False, "edge_texture", edge_count, scene_type="texture"
+        )
 
-    residual, weights = _opencv_line_residuals(image_u8, edges)
-    line_count = int(residual.size)
-    total_line_length = round(float(weights.sum()), 2)
-    if residual.size < _MIN_LINE_COUNT or weights.size < _MIN_LINE_COUNT:
+    observations = _opencv_line_observations(image_u8, edges)
+    line_count = len(observations)
+    total_line_length = round(float(sum(item.weight for item in observations)), 2)
+    scene_type, candidate, horizon_score, axis_score, horizontal_count, vertical_count = (
+        _scene_candidates(observations, gray.shape)
+    )
+    if candidate is None:
         return StraightenResult(
             0.0,
             0.0,
@@ -233,23 +465,18 @@ def estimate_straighten_angle(image: Image.Image) -> StraightenResult:
             edge_count,
             line_count,
             total_line_length,
+            scene_type=scene_type,
+            horizon_score=round(horizon_score, 4),
+            axis_score=round(axis_score, 4),
+            horizontal_line_count=horizontal_count,
+            vertical_line_count=vertical_count,
         )
 
-    median_residual = _weighted_median(residual, weights)
-    support = _axis_support(
-        residual,
-        weights,
-        median_residual,
-        tolerance_degrees=_AXIS_SUPPORT_TOLERANCE_DEGREES,
-    )
-    concentration = _axis_concentration(residual, weights)
-    line_count_score = min(1.0, residual.size / 4.0)
-    line_length_score = min(1.0, float(weights.sum()) / (min(gray.shape) * 1.2))
-    confidence = concentration * max(support, 0.0) * max(line_count_score, line_length_score)
+    confidence = candidate.confidence
     # Lightroom's CropAngle sign is the visible correction direction. OpenCV
     # line residuals already describe that direction for Lightroom's crop
     # slider, so keep the sign instead of negating it.
-    angle = float(median_residual)
+    angle = float(candidate.angle)
     angle = max(-_MAX_APPLY_ANGLE, min(_MAX_APPLY_ANGLE, angle))
 
     abs_angle = abs(angle)
@@ -262,8 +489,13 @@ def estimate_straighten_angle(image: Image.Image) -> StraightenResult:
             edge_count,
             line_count,
             total_line_length,
+            scene_type=scene_type,
+            horizon_score=round(horizon_score, 4),
+            axis_score=round(axis_score, 4),
+            horizontal_line_count=horizontal_count,
+            vertical_line_count=vertical_count,
         )
-    if support < 0.25:
+    if candidate.support < 0.25:
         return StraightenResult(
             angle,
             confidence,
@@ -272,8 +504,20 @@ def estimate_straighten_angle(image: Image.Image) -> StraightenResult:
             edge_count,
             line_count,
             total_line_length,
+            scene_type=scene_type,
+            horizon_score=round(horizon_score, 4),
+            axis_score=round(axis_score, 4),
+            horizontal_line_count=horizontal_count,
+            vertical_line_count=vertical_count,
         )
-    if confidence < _MIN_CONFIDENCE:
+    min_confidence = (
+        _MIN_HORIZON_CONFIDENCE
+        if scene_type == "horizon"
+        else _MIN_CONFIDENCE
+        if scene_type in {"architecture", "centre_object"}
+        else _MIN_MIXED_CONFIDENCE
+    )
+    if confidence < min_confidence:
         return StraightenResult(
             angle,
             confidence,
@@ -282,6 +526,30 @@ def estimate_straighten_angle(image: Image.Image) -> StraightenResult:
             edge_count,
             line_count,
             total_line_length,
+            scene_type=scene_type,
+            horizon_score=round(horizon_score, 4),
+            axis_score=round(axis_score, 4),
+            horizontal_line_count=horizontal_count,
+            vertical_line_count=vertical_count,
+        )
+    if (
+        scene_type == "horizon"
+        and abs_angle > _LARGE_AMBIGUOUS_HORIZON_ANGLE
+        and vertical_count >= horizontal_count * _MIXED_VERTICAL_TO_HORIZONTAL_RATIO
+    ):
+        return StraightenResult(
+            angle,
+            confidence,
+            False,
+            "ambiguous_event_geometry",
+            edge_count,
+            line_count,
+            total_line_length,
+            scene_type=scene_type,
+            horizon_score=round(horizon_score, 4),
+            axis_score=round(axis_score, 4),
+            horizontal_line_count=horizontal_count,
+            vertical_line_count=vertical_count,
         )
 
     return StraightenResult(
@@ -292,21 +560,90 @@ def estimate_straighten_angle(image: Image.Image) -> StraightenResult:
         edge_count,
         line_count,
         total_line_length,
+        scene_type=scene_type,
+        horizon_score=round(horizon_score, 4),
+        axis_score=round(axis_score, 4),
+        horizontal_line_count=horizontal_count,
+        vertical_line_count=vertical_count,
     )
 
 
-def crop_angle_attributes(result: StraightenResult) -> dict[str, str]:
-    """Return Lightroom CRS attributes for an applied straighten result."""
+def crop_angle_attributes(
+    result: StraightenResult,
+    image_size: tuple[int, int] | None = None,
+) -> dict[str, str]:
+    """Return Lightroom CRS crop attributes for an applied straighten result.
+
+    Lightroom Classic writes a complete crop block even when the user only
+    moves the Angle slider. Angle-only XMP is ignored; neutral full-frame bounds
+    activate inconsistently. These bounds match Lightroom's own angle-only
+    sidecar shape for the source aspect, without reviving the old same-inset
+    crop math that changed the visible aspect too aggressively.
+    """
     if not result.applied:
         return {}
+    top, left, bottom, right = _lightroom_angle_crop_bounds(
+        result.angle_degrees,
+        image_size,
+    )
     return {
-        "HasCrop": "True",
-        "CropTop": "0",
-        "CropLeft": "0",
-        "CropBottom": "1",
-        "CropRight": "1",
+        "CropTop": _format_crop_bound(top),
+        "CropLeft": _format_crop_bound(left),
+        "CropBottom": _format_crop_bound(bottom),
+        "CropRight": _format_crop_bound(right),
         "CropAngle": _format_lightroom_angle(result.angle_degrees),
+        "CropConstrainToWarp": "0",
+        "CropConstrainToUnitSquare": "1",
+        "HasCrop": "True",
+        "AlreadyApplied": "False",
     }
+
+
+def _lightroom_angle_crop_bounds(
+    angle_degrees: float,
+    image_size: tuple[int, int] | None,
+) -> tuple[float, float, float, float]:
+    """Approximate Lightroom's generated crop bounds for an angle-only edit."""
+    if image_size is None:
+        return 0.0, 0.0, 1.0, 1.0
+    width, height = image_size
+    if width <= 0 or height <= 0:
+        return 0.0, 0.0, 1.0, 1.0
+
+    theta = abs(radians(angle_degrees))
+    if theta == 0:
+        return 0.0, 0.0, 1.0, 1.0
+
+    aspect = float(width) / float(height)
+    c = abs(cos(theta))
+    s = abs(sin(theta))
+
+    if aspect >= 1.0:
+        horizontal_scale = (aspect * c + s) / (aspect * (aspect * s + c))
+        vertical_inset = (aspect * s) / (c + aspect * s)
+        left = (1.0 - horizontal_scale) * 0.5
+        top = vertical_inset
+    else:
+        portrait_aspect = 1.0 / aspect
+        vertical_scale = (portrait_aspect * c + s) / (
+            portrait_aspect * (portrait_aspect * s + c)
+        )
+        horizontal_inset = (portrait_aspect * s) / (c + portrait_aspect * s)
+        left = horizontal_inset
+        top = (1.0 - vertical_scale) * 0.5
+
+    top = max(0.0, min(0.49, top))
+    left = max(0.0, min(0.49, left))
+    return top, left, 1.0 - top, 1.0 - left
+
+
+def _format_crop_bound(value: float) -> str:
+    value = max(0.0, min(1.0, value))
+    if value == 0.0:
+        return "0"
+    if value == 1.0:
+        return "1"
+    return f"{value:.6f}".rstrip("0").rstrip(".")
 
 
 def _format_lightroom_angle(angle: float) -> str:
@@ -314,19 +651,3 @@ def _format_lightroom_angle(angle: float) -> str:
         return f"+{int(angle)}" if angle > 0 else str(int(angle))
     text = f"{angle:+.4f}".rstrip("0").rstrip(".")
     return text if text != "-0" else "0"
-
-
-def rotated_content_scale(angle_degrees: float, width: int, height: int) -> float:
-    """Return the minimal scale needed to hide empty corners after rotation.
-
-    This is diagnostic only for now. Lightroom owns the actual crop rendering,
-    but the value is useful in tests and future UI reporting.
-    """
-    if width <= 0 or height <= 0:
-        return 1.0
-    theta = abs(radians(angle_degrees))
-    c = abs(cos(theta))
-    s = abs(sin(theta))
-    new_w = width * c + height * s
-    new_h = width * s + height * c
-    return max(new_w / width, new_h / height)

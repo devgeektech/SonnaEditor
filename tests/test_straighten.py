@@ -7,9 +7,9 @@ from PIL import Image, ImageDraw
 
 from sonna_editor.inference.straighten import (
     STRAIGHTEN_ENGINE_VERSION,
+    StraightenResult,
     crop_angle_attributes,
     estimate_straighten_angle,
-    rotated_content_scale,
 )
 
 
@@ -100,6 +100,108 @@ def _fragmented_horizon_image(angle_degrees: float) -> Image.Image:
     return image
 
 
+def _horizon_with_opposing_verticals_image(
+    horizon_angle_degrees: float,
+    vertical_angle_degrees: float,
+) -> Image.Image:
+    image = Image.new("RGB", (720, 480), (166, 194, 226))
+    draw = ImageDraw.Draw(image)
+    draw.rectangle((0, 235, 720, 480), fill=(92, 130, 86))
+    centre = (360.0, 240.0)
+    horizon = [(40.0, 230.0), (680.0, 230.0)]
+    draw.line(
+        _rotate_points(horizon, horizon_angle_degrees, centre),
+        fill=(40, 68, 48),
+        width=4,
+    )
+
+    vertical_centre = (360.0, 240.0)
+    for x in (120.0, 170.0, 220.0, 500.0, 555.0, 610.0):
+        line = [(x, 70.0), (x, 430.0)]
+        draw.line(
+            _rotate_points(line, vertical_angle_degrees, vertical_centre),
+            fill=(76, 76, 76),
+            width=3,
+        )
+    return image
+
+
+def _centre_horizon_with_offcentre_distractors_image(
+    centre_angle_degrees: float,
+    distractor_angle_degrees: float,
+) -> Image.Image:
+    image = Image.new("RGB", (720, 480), (226, 224, 218))
+    draw = ImageDraw.Draw(image)
+    centre = (360.0, 240.0)
+    central_horizon = [(60.0, 240.0), (660.0, 240.0)]
+    draw.line(
+        _rotate_points(central_horizon, centre_angle_degrees, centre),
+        fill=(45, 45, 44),
+        width=5,
+    )
+    for y in (86.0, 112.0, 372.0, 398.0):
+        line = [(80.0, y), (640.0, y)]
+        draw.line(
+            _rotate_points(line, distractor_angle_degrees, centre),
+            fill=(92, 92, 88),
+            width=3,
+        )
+    return image
+
+
+def _central_object_with_corner_distractors_image(
+    object_angle_degrees: float,
+    distractor_angle_degrees: float,
+) -> Image.Image:
+    image = Image.new("RGB", (720, 480), (226, 224, 218))
+    draw = ImageDraw.Draw(image)
+    centre = (360.0, 240.0)
+    object_rect = [
+        (238.0, 134.0),
+        (482.0, 134.0),
+        (482.0, 355.0),
+        (238.0, 355.0),
+        (238.0, 134.0),
+    ]
+    for point_a, point_b in zip(object_rect, object_rect[1:]):
+        draw.line(
+            _rotate_points([point_a, point_b], object_angle_degrees, centre),
+            fill=(44, 44, 42),
+            width=5,
+        )
+    for y in (38.0, 442.0):
+        draw.line(
+            _rotate_points(
+                [(32.0, y), (688.0, y)],
+                distractor_angle_degrees,
+                centre,
+            ),
+            fill=(100, 100, 96),
+            width=2,
+        )
+    for x in (58.0, 662.0):
+        draw.line(
+            _rotate_points(
+                [(x, 30.0), (x, 450.0)],
+                distractor_angle_degrees,
+                centre,
+            ),
+            fill=(100, 100, 96),
+            width=2,
+        )
+    return image
+
+
+def _soft_portrait_like_image() -> Image.Image:
+    image = Image.new("RGB", (420, 560), (212, 198, 184))
+    draw = ImageDraw.Draw(image)
+    draw.ellipse((132, 72, 288, 242), fill=(178, 132, 112))
+    draw.rounded_rectangle((105, 240, 315, 515), radius=80, fill=(58, 66, 78))
+    draw.line((150, 300, 270, 360), fill=(70, 75, 86), width=2)
+    draw.line((260, 285, 165, 390), fill=(72, 78, 88), width=2)
+    return image
+
+
 def test_estimate_straighten_angle_detects_small_tilt() -> None:
     result = estimate_straighten_angle(_tilted_line_image(3.0))
 
@@ -145,6 +247,71 @@ def test_estimate_straighten_angle_detects_fragmented_horizon() -> None:
 
     assert result.applied is True
     assert result.angle_degrees == pytest.approx(2.0, abs=0.8)
+    assert result.scene_type in {"horizon", "mixed_axis"}
+
+
+def test_estimate_straighten_angle_prefers_horizon_over_vertical_distractors() -> None:
+    result = estimate_straighten_angle(
+        _horizon_with_opposing_verticals_image(
+            horizon_angle_degrees=3.0,
+            vertical_angle_degrees=-2.0,
+        )
+    )
+
+    assert result.applied is True
+    assert result.scene_type == "horizon"
+    assert result.angle_degrees == pytest.approx(3.0, abs=0.7)
+    assert result.horizon_score > result.axis_score * 0.8
+    assert result.horizontal_line_count > 0
+    assert result.vertical_line_count > 0
+
+
+def test_estimate_straighten_angle_skips_large_ambiguous_event_backdrop() -> None:
+    result = estimate_straighten_angle(
+        _horizon_with_opposing_verticals_image(
+            horizon_angle_degrees=4.2,
+            vertical_angle_degrees=-3.0,
+        )
+    )
+
+    assert result.applied is False
+    assert result.reason == "ambiguous_event_geometry"
+    assert result.scene_type == "horizon"
+    assert result.horizontal_line_count > 0
+    assert result.vertical_line_count >= result.horizontal_line_count * 0.75
+
+
+def test_estimate_straighten_angle_prefers_centre_horizon_over_offcentre_lines() -> None:
+    result = estimate_straighten_angle(
+        _centre_horizon_with_offcentre_distractors_image(
+            centre_angle_degrees=3.0,
+            distractor_angle_degrees=-3.0,
+        )
+    )
+
+    assert result.applied is True
+    assert result.scene_type == "horizon"
+    assert result.angle_degrees == pytest.approx(3.0, abs=0.7)
+
+
+def test_estimate_straighten_angle_prefers_central_object_over_corner_lines() -> None:
+    result = estimate_straighten_angle(
+        _central_object_with_corner_distractors_image(
+            object_angle_degrees=-1.0,
+            distractor_angle_degrees=1.0,
+        )
+    )
+
+    assert result.applied is True
+    assert result.scene_type == "centre_object"
+    assert result.angle_degrees == pytest.approx(-1.0, abs=0.7)
+
+
+def test_estimate_straighten_angle_skips_soft_portrait_without_structure() -> None:
+    result = estimate_straighten_angle(_soft_portrait_like_image())
+
+    assert result.applied is False
+    assert result.reason in {"angle_too_small", "too_few_edges", "too_few_lines"}
 
 
 def test_estimate_straighten_angle_skips_random_texture() -> None:
@@ -156,22 +323,69 @@ def test_estimate_straighten_angle_skips_random_texture() -> None:
 
 
 def test_crop_angle_attributes_only_for_applied_result() -> None:
-    applied = estimate_straighten_angle(_tilted_line_image(2.0))
+    image = _tilted_line_image(2.0)
+    applied = estimate_straighten_angle(image)
     skipped = estimate_straighten_angle(Image.new("RGB", (400, 300), "white"))
 
-    assert crop_angle_attributes(applied)["HasCrop"] == "True"
-    assert crop_angle_attributes(applied)["CropTop"] == "0"
-    assert crop_angle_attributes(applied)["CropLeft"] == "0"
-    assert crop_angle_attributes(applied)["CropBottom"] == "1"
-    assert crop_angle_attributes(applied)["CropRight"] == "1"
-    assert crop_angle_attributes(applied)["CropAngle"].startswith("+")
-    assert crop_angle_attributes(skipped) == {}
+    attrs = crop_angle_attributes(applied, image.size)
+    assert attrs["HasCrop"] == "True"
+    assert attrs["CropAngle"].startswith("+")
+    assert 0.0 < float(attrs["CropTop"]) < 0.5
+    assert 0.0 < float(attrs["CropLeft"]) < 0.5
+    assert float(attrs["CropBottom"]) == pytest.approx(1.0 - float(attrs["CropTop"]))
+    assert float(attrs["CropRight"]) == pytest.approx(1.0 - float(attrs["CropLeft"]))
+    assert attrs["CropConstrainToWarp"] == "0"
+    assert attrs["CropConstrainToUnitSquare"] == "1"
+    assert attrs["AlreadyApplied"] == "False"
+    assert crop_angle_attributes(skipped, image.size) == {}
+
+
+def test_crop_angle_attributes_match_lightroom_angle_only_sample() -> None:
+    result = StraightenResult(
+        angle_degrees=-1.93,
+        confidence=1.0,
+        applied=True,
+        reason="applied",
+        edge_count=1000,
+    )
+
+    attrs = crop_angle_attributes(result, (5472, 3648))
+
+    assert float(attrs["CropTop"]) == pytest.approx(0.048114, abs=2e-6)
+    assert float(attrs["CropLeft"]) == pytest.approx(0.013364, abs=2e-6)
+    assert float(attrs["CropBottom"]) == pytest.approx(0.951886, abs=2e-6)
+    assert float(attrs["CropRight"]) == pytest.approx(0.986634, abs=2e-6)
+    assert attrs["CropAngle"] == "-1.93"
+    assert attrs["CropConstrainToWarp"] == "0"
+    assert attrs["CropConstrainToUnitSquare"] == "1"
+    assert attrs["HasCrop"] == "True"
+    assert attrs["AlreadyApplied"] == "False"
+
+
+def test_crop_angle_attributes_use_lightroom_style_bounds() -> None:
+    image = _tilted_room_image(3.0)
+    result = estimate_straighten_angle(image)
+
+    attrs = crop_angle_attributes(result, image.size)
+
+    assert attrs["HasCrop"] == "True"
+    assert float(attrs["CropAngle"]) == pytest.approx(3.0, abs=0.7)
+    assert float(attrs["CropTop"]) > float(attrs["CropLeft"])
+    assert float(attrs["CropBottom"]) == pytest.approx(1.0 - float(attrs["CropTop"]))
+    assert float(attrs["CropRight"]) == pytest.approx(1.0 - float(attrs["CropLeft"]))
+
+
+def test_estimate_straighten_angle_clamps_high_angle_with_lightroom_bounds() -> None:
+    result = estimate_straighten_angle(_tilted_line_image(6.0))
+
+    assert result.applied is True
+    assert result.reason == "applied"
+
+    attrs = crop_angle_attributes(result, (400, 300))
+
+    assert float(attrs["CropAngle"]) == pytest.approx(5.0, abs=0.1)
+    assert float(attrs["CropRight"]) < 1.0
 
 
 def test_straighten_engine_version_is_recorded_for_diagnostics() -> None:
     assert STRAIGHTEN_ENGINE_VERSION.startswith("opencv-")
-
-
-def test_rotated_content_scale_is_minimal_above_one() -> None:
-    assert rotated_content_scale(0.0, 400, 300) == pytest.approx(1.0)
-    assert rotated_content_scale(3.0, 400, 300) > 1.0

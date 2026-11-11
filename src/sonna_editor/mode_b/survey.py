@@ -35,7 +35,7 @@ SURVEY_SCHEMA_VERSION: Final[str] = "1.0"
 OFFSET_MAGNITUDES: Final[dict[str, float]] = {
     "exposure":    1.0,     # stops  — Exposure2012  range (-5.0, 5.0)
     "temperature": 1000.0,  # Kelvin — Temperature   range (2000.0, 50000.0)
-    "tint":        20.0,    #        — Tint          range (-150.0, 150.0)
+    "tint":        10.0,    #        — Tint          range (-150.0, 150.0)
     "contrast":    30.0,    #        — Contrast2012  range (-100.0, 100.0)
     "saturation":  20.0,    #        — Saturation    range (-100.0, 100.0)
     "shadows":     40.0,    #        — Shadows2012   range (-100.0, 100.0)

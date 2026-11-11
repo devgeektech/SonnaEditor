@@ -2,14 +2,12 @@
 // Ported from "SAHA UI/shell.jsx" (IIFE -> ESM). Window controls are delegated
 // to Electron so the same shell works on macOS, Windows, and Linux.
 
-import { useState } from 'react';
-
 import SONNA from '../tokens.js';
 import { SahaMark } from './logo.jsx';
 
 // nav rail icons, 14×14, drawn as simple shapes
 function RailIcon({ kind, active }) {
-  const stroke = active ? SONNA.fg : SONNA.fgDim;
+  const stroke = active ? SONNA.ochre : SONNA.fgMute;
   const sw = 1.4;
   return (
     <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
@@ -46,6 +44,22 @@ function RailIcon({ kind, active }) {
           <path d="M4.5 8h7M4.5 10h4.5" stroke={stroke} strokeWidth={sw} strokeLinecap="round" />
         </>
       )}
+      {kind === 'logout' && (
+        <>
+          <path d="M6.6 3.2h-3v9.6h3" stroke={stroke} strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round" />
+          <path d="M7.8 8h5.2M10.9 5.8 13.1 8l-2.2 2.2" stroke={stroke} strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round" />
+        </>
+      )}
+    </svg>
+  );
+}
+
+function ThemeIcon({ active }) {
+  const stroke = active ? SONNA.ochre : SONNA.fgMute;
+  return (
+    <svg width="15" height="15" viewBox="0 0 15 15" fill="none">
+      <circle cx="7.5" cy="7.5" r="3.2" stroke={stroke} strokeWidth="1.3" />
+      <path d="M7.5 1.2v1.7M7.5 12.1v1.7M13.8 7.5h-1.7M2.9 7.5H1.2M12 3l-1.2 1.2M4.2 10.8 3 12M12 12l-1.2-1.2M4.2 4.2 3 3" stroke={stroke} strokeWidth="1.3" strokeLinecap="round" />
     </svg>
   );
 }
@@ -55,8 +69,7 @@ export function NavRail({
   accent = false,
   accentColor = SONNA.ochre,
   onNavigate,
-  theme = SONNA.theme,
-  onToggleTheme,
+  onLogout,
 }) {
   const items = [
     { kind: 'home', enabled: true, label: 'Home' },
@@ -102,26 +115,31 @@ export function NavRail({
       <div style={{ flex: 1 }} />
       <button
         type="button"
-        onClick={onToggleTheme}
-        title={`Switch to ${theme === 'dark' ? 'light' : 'dark'} theme`}
+        onClick={() => {
+          if (window.confirm('Do you want to logout?')) {
+            onLogout?.();
+          }
+        }}
+        title="Logout"
+        aria-label="Logout"
         style={{
-        width: 32, height: 32, borderRadius: 6,
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-        border: `1px solid ${SONNA.lineSoft}`,
-        background: SONNA.ochreTint,
-        color: SONNA.fg,
-        opacity: 1,
-        cursor: 'pointer',
-        padding: 0,
-      }}>
-        <RailIcon kind="settings" active />
+          width: 32, height: 32, borderRadius: 6,
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          border: `1px solid ${SONNA.line}`,
+          background: SONNA.bgPanel,
+          color: SONNA.fg,
+          opacity: 1,
+          cursor: 'pointer',
+          padding: 0,
+        }}
+      >
+        <RailIcon kind="logout" active />
       </button>
     </div>
   );
 }
 
-function HeaderProfileButton({ onLogout }) {
-  const [open, setOpen] = useState(false);
+function HeaderThemeButton({ theme = SONNA.theme, onToggleTheme }) {
   return (
     <div style={{
       position: 'absolute',
@@ -131,66 +149,29 @@ function HeaderProfileButton({ onLogout }) {
     }}>
       <button
         type="button"
-        onClick={() => setOpen((v) => !v)}
-        title="Profile"
-        aria-label="Profile"
+        onClick={onToggleTheme}
+        title={`Switch to ${theme === 'dark' ? 'light' : 'dark'} theme`}
+        aria-label={`Switch to ${theme === 'dark' ? 'light' : 'dark'} theme`}
         style={{
           width: 32,
           height: 32,
           padding: 0,
           borderRadius: 6,
-          border: `1px solid ${SONNA.lineSoft}`,
+          border: `1px solid ${SONNA.line}`,
           background: SONNA.bgPanel,
-          color: SONNA.fg,
           cursor: 'pointer',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
         }}
       >
-        <RailIcon kind="profile" active />
+        <ThemeIcon active={theme === 'light'} />
       </button>
-      {open && (
-        <div style={{
-          position: 'absolute',
-          right: 0,
-          top: 38,
-          width: 136,
-          padding: 4,
-          background: SONNA.bgPanel,
-          border: `1px solid ${SONNA.line}`,
-          borderRadius: 4,
-          boxShadow: '0 10px 24px rgba(0,0,0,0.28)',
-        }}>
-          <button
-            type="button"
-            onClick={() => {
-              setOpen(false);
-              onLogout?.();
-            }}
-            style={{
-              width: '100%',
-              height: 30,
-              border: 'none',
-              borderRadius: 3,
-              background: 'transparent',
-              color: SONNA.fg,
-              cursor: 'pointer',
-              textAlign: 'left',
-              padding: '0 9px',
-              fontFamily: SONNA.font,
-              fontSize: 12,
-            }}
-          >
-            Logout
-          </button>
-        </div>
-      )}
     </div>
   );
 }
 
-export function TitleBar({ folder = '', onLogout }) {
+export function TitleBar({ folder = '', theme, onToggleTheme }) {
   const isMac = typeof window !== 'undefined' && window.saha?.platform === 'darwin';
   const logoLeft = isMac ? 78 : 14;
   const contentLeftPadding = isMac ? 122 : 86;
@@ -222,7 +203,7 @@ export function TitleBar({ folder = '', onLogout }) {
       }}>
         {folder && <span style={{ color: SONNA.fgDim, fontWeight: 400, letterSpacing: 0 }}>{folder}</span>}
       </div>
-      <HeaderProfileButton onLogout={onLogout} />
+      <HeaderThemeButton theme={theme} onToggleTheme={onToggleTheme} />
     </div>
   );
 }
@@ -251,15 +232,14 @@ export function AppShell({
       display: 'flex', flexDirection: 'column',
       overflow: 'hidden',
     }}>
-      <TitleBar title={title} folder={folder} onLogout={onLogout} />
+      <TitleBar title={title} folder={folder} theme={theme} onToggleTheme={onToggleTheme} />
       <div style={{ flex: 1, display: 'flex', minHeight: 0 }}>
         <NavRail
           active={activeNav}
           accent={accent}
           accentColor={accentColor}
           onNavigate={onNavigate}
-          theme={theme}
-          onToggleTheme={onToggleTheme}
+          onLogout={onLogout}
         />
         <div style={{ flex: 1, display: 'flex', minWidth: 0 }}>
           {children}

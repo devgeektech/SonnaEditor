@@ -17,9 +17,9 @@
       --saha-fg-mute: #5F564E;
       --saha-fg-dim: #7A7067;
       --saha-fg-faint: #A3988D;
-      --saha-accent: #C76F35;
-      --saha-accent-soft: #A65A2B;
-      --saha-accent-tint: rgba(199, 111, 53, 0.14);
+      --saha-accent: #E17A36;
+      --saha-accent-soft: #C36127;
+      --saha-accent-tint: rgba(225, 122, 54, 0.16);
       --saha-on-accent: #FFFFFF;
       --saha-green: #4F8464;
       --saha-amber: #A9792C;
@@ -37,9 +37,9 @@
       --saha-fg-mute: #B2ADA1;
       --saha-fg-dim: #807A6D;
       --saha-fg-faint: #5C574D;
-      --saha-accent: #D9864A;
-      --saha-accent-soft: #B66E3E;
-      --saha-accent-tint: rgba(217, 134, 74, 0.16);
+      --saha-accent: #F0944F;
+      --saha-accent-soft: #D47A3E;
+      --saha-accent-tint: rgba(240, 148, 79, 0.18);
       --saha-on-accent: #1F130B;
       --saha-green: #6E9B7E;
       --saha-amber: #C49A5E;
@@ -58,6 +58,10 @@
     #root { height: 100%; }
     * { box-sizing: border-box; }
     @keyframes saha-spin { to { transform: rotate(360deg); } }
+    @keyframes saha-processing-pulse {
+      0%, 100% { box-shadow: 0 0 0 rgba(225, 122, 54, 0); }
+      50% { box-shadow: 0 0 18px rgba(225, 122, 54, 0.28); }
+    }
   </style>
 </head>
 <body>

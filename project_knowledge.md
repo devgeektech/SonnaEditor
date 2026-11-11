@@ -4,12 +4,17 @@
 
 Sonna Editor is a local desktop tool for predicting Lightroom slider adjustments from RAW images. It uses a PyTorch regression model trained on Lightroom-edited photos, then writes XMP sidecars alongside RAW files. The UI is Electron + React and the backend is Python. The runtime target is cross-platform: macOS, Windows, and Linux.
 
-Current local workspace state as of 2026-06-15:
+Current local workspace state as of 2026-07-01:
 - Windows path: `C:\Users\vikas.DESKTOP-61LEE8B\Projects\SonnaEditor`
+- Branch: `Auto_Straighten`, tracking `origin/Auto_Straighten`. Treat this
+  branch as the current context for auto-straighten behavior, Lite WB/tint
+  repair, selected-folder processing, and the tracked hidden foundation
+  checkpoint.
 - Python 3.11.15 via uv 0.11.17. `pyproject.toml` / `uv.lock` require Python `3.11.*`.
 - PyTorch `2.11.0+cu128`, CUDA active on NVIDIA GeForce RTX 3050. `torch==2.11.0` / `torchvision==0.26.0` are exact-pinned in `pyproject.toml`; Windows/Linux x86_64 resolve CUDA 12.8 local wheels through the configured PyTorch index, while macOS resolves public wheels.
 - Training/profile caches were intentionally cleared for a fresh dataset reset.
 - There is no guaranteed local `data/training_workspace/sonna_personal_001_dataset/` split set or frontend-visible `v1_learning/model-v*.ckpt` profile until fresh RAW+XMP data is added and a Personal AI profile is trained or a checkpoint is intentionally published. The duplicate generated folder `v1_learning/dataset` was removed. Generated datasets, splits, thumbnails, audits, and run workspaces belong under `data/training_workspace`; `v1_learning` is reserved for frontend-visible checkpoint/sidecar/preset/survey files.
+- Hidden foundation state is present and tracked in this branch. `SonnaEditorFoundation/foundation_manifest.json` has active version `foundation-sonna-raw-xmp-004-visual`, pointing at `SonnaEditorFoundation/checkpoints/foundation-sonna-raw-xmp-004-visual.ckpt` and matching `.json` sidecar. The sidecar records `profile_type=mode_a_trained`, `slider_set_version=v2`, `arch_version=3`, `resolution=512`, `train_rows=5021`, and `val_loss=0.02533668652176857`.
 - Historical diagnostics from the previous 189-photo local dataset remain useful for collapse analysis context, but do not assume those local Parquet/checkpoint files are present in this checkout.
 - Supported RAW extension scanning is centralised in `config.SUPPORTED_RAW_EXTENSIONS` and currently covers `.cr2`, `.cr3`, `.nef`, `.arw`, `.raf`, `.orf`, `.rw2`, `.pef`, `.dng`, `.x3f`, `.rwl`, and `.srw` across dataset building, folder/API scans, preset processing, model inference, and fine-tune capture. Decode/conversion still depends on `rawpy`/LibRaw or Adobe DNG Converter supporting the specific camera file.
 - Preferred app startup is now one command: `.\run_saha.cmd` on Windows and
@@ -18,11 +23,11 @@ Current local workspace state as of 2026-06-15:
   readiness guard waits up to 30s with 1s `/api/health` probes, configurable
   via `SAHA_BACKEND_STARTUP_TIMEOUT_MS`, to avoid false failures during cold
   Windows/CUDA startup.
-- Latest full local verification on 2026-06-12 passed: environment `11/11`,
-  `uv run ruff check .`, `uv run python -m compileall -q src scripts tests`,
-  `npm run build:vite`, and `uv run pytest -q` (`753 passed, 45 skipped,
-  1 warning`). The remaining warning is the known PyTorch scalar-conversion
-  warning in `tests/test_losses.py`.
+- Latest full backend verification recorded in `SESSION_STATE.md` for the
+  auto-straighten branch passed with `uv run ruff check .` and
+  `uv run pytest -q` (`771 passed, 45 skipped, 1 existing PyTorch
+  scalar-conversion warning`). The documentation reconciliation itself was
+  docs-only; it did not rerun the full suite.
 
 The core inference flow is:
 - extract RAW preview + metadata
@@ -49,7 +54,7 @@ The core inference flow is:
 - `v1_learning/`: frontend-visible published profile checkpoints plus sidecar/preset/survey files only. Generated datasets do not belong here.
 - `.saha/`: repo-local runtime state for active-profile selection, recent folders, job snapshots, Personal AI training scratch runs, and fine-tune scratch runs. Auto-created at runtime and gitignored.
 - `MAC_SETUP.md`: Mac-specific setup and run guide covering clean install, backend/frontend startup, frontend-capable workflows, and CLI equivalents.
-- `SonnaEditorFoundation/`: repo-local hidden foundation-model folder by default, or `SONNA_FOUNDATION_REPO` if overridden. It contains schema-v2 `foundation_manifest.json` with `active_version` / `versions[]` lineage metadata and versioned `checkpoints/foundation-vN.ckpt` files. The active checkpoint is cumulative across real Lightroom-parameter sources: catalog and RAW+XMP runs update the same native `SonnaEditor` slider-regression checkpoint. Keep this out of gitignored `data/` but inside the SonnaEditor project root so the workspace stays self-contained. Checkpoint binaries are Git LFS-managed through `.gitattributes`; normal `git push` uploads them after `git lfs install`.
+- `SonnaEditorFoundation/`: repo-local hidden foundation-model folder by default, or `SONNA_FOUNDATION_REPO` if overridden. It contains schema-v2 `foundation_manifest.json` with `active_version` / `versions[]` lineage metadata and versioned checkpoints under `checkpoints/`. In this branch the active checkpoint is `foundation-sonna-raw-xmp-004-visual`. The active checkpoint is cumulative across real Lightroom-parameter sources: catalog and RAW+XMP runs update the same native `SonnaEditor` slider-regression checkpoint. Keep this out of gitignored `data/` but inside the SonnaEditor project root so the workspace stays self-contained. Checkpoint binaries are Git LFS-managed through `.gitattributes`; normal `git push` uploads them after `git lfs install`.
 
  ## Source Package Map (`src/sonna_editor`)
 
@@ -105,8 +110,8 @@ This section tracks what each backend source file/folder does. Keep it updated w
 |---|---|
 | `src/sonna_editor/inference/__init__.py` | Package marker for inference code. |
 | `src/sonna_editor/inference/engine.py` | Checkpoint loading and batched prediction engine. Builds tensors from extracted previews/metadata plus scene stats, maps categorical metadata through the checkpoint registry, supports uncertainty sampling, and postprocesses outputs. |
-| `src/sonna_editor/inference/pipeline.py` | End-to-end shoot processing: scan RAW files using the central `config.SUPPORTED_RAW_EXTENSIONS` set, extract features, run inference, apply WB/skip semantics, optionally apply preview-based auto straightening, write XMP sidecars, write `sonna_predictions.json` including straightening engine/line diagnostics, and emit progress callbacks. |
-| `src/sonna_editor/inference/straighten.py` | Optional auto-straightening postprocess. Uses CLAHE-normalized OpenCV Canny edges plus probabilistic Hough lines, OpenCV line segments, and a broad Hough fallback for fragmented line evidence to estimate small Lightroom `CropAngle` corrections from preview geometry, with conservative confidence thresholds and full-frame CRS crop attributes only when selected per processing job. This is not a trained model output. |
+| `src/sonna_editor/inference/pipeline.py` | End-to-end shoot processing: scan RAW files using the central `config.SUPPORTED_RAW_EXTENSIONS` set, extract features, run inference, apply WB/skip semantics, optionally apply preview-based auto straightening, write XMP sidecars, write `sonna_predictions.json` including straightening engine/line diagnostics and crop-reference dimensions, and emit progress callbacks. Auto-straighten crop-bound math uses extracted RAW/source dimensions when available, falling back to preview dimensions only when source dimensions are missing. Initial Lite/Mode B processing anchors preset Temperature/Tint to each photo's AsShot WB as bounded style offsets so absolute preset WB values do not create shoot-wide colour casts. |
+| `src/sonna_editor/inference/straighten.py` | Optional auto-straightening postprocess. Uses CLAHE-normalized OpenCV Canny edges plus probabilistic Hough lines, OpenCV line segments, and a broad Hough fallback for fragmented line evidence, then classifies evidence as horizon, centre-object, architecture, or mixed-axis geometry before estimating Lightroom `CropAngle` corrections up to the small-rotation clamp. Centre-band horizontal evidence is preferred when present so the visible centre/horizon line is not overruled by off-centre distractor lines. Coherent central horizontal+vertical object evidence can also win over comparable global/corner architecture evidence, so straightening follows the main central object rather than background frame lines when the central evidence is strong. Large horizon corrections above 3 degrees are skipped as `ambiguous_event_geometry` when vertical evidence is comparable to horizontal evidence, preventing event backdrops/signage from forcing aggressive auto-straightening. When selected per processing job and confidence passes the scene-specific thresholds, it writes Lightroom-style crop-angle metadata: calculated `CropTop`, `CropLeft`, `CropBottom`, `CropRight` bounds, `CropAngle`, `CropConstrainToWarp=0`, `CropConstrainToUnitSquare=1`, `HasCrop=True`, and `AlreadyApplied=False`. This is based on the user-provided Lightroom before/after sidecars `Documents\Example\0H5A5927 - org.xmp` and `Documents\Example\0H5A5927.xmp`. This is not a trained model output. |
 
 ### Fine-Tune Package
 
@@ -123,9 +128,9 @@ This section tracks what each backend source file/folder does. Keep it updated w
 |---|---|
 | `src/sonna_editor/mode_b/__init__.py` | Package marker for Lite/Mode B profile creation. |
 | `src/sonna_editor/mode_b/checkpoint_builder.py` | Builds a Lite initial checkpoint/sidecar package from the configured foundation checkpoint, Lightroom preset, and style survey. It keeps pretrained foundation feature layers for future fine-tuning and stores preset/survey provenance for the adaptive initial Lite processing path. This is not supervised photo training. |
-| `src/sonna_editor/mode_b/survey.py` | Lite style survey models and conversion from six user answers into slider offsets for Exposure2012, Temperature, Tint, Contrast2012, Saturation, and Shadows2012. Initial Lite runtime applies only Exposure/WB dynamically, but all six answers are stored in the profile package. |
+| `src/sonna_editor/mode_b/survey.py` | Lite style survey models and conversion from six user answers into slider offsets for Exposure2012, Temperature, Tint, Contrast2012, Saturation, and Shadows2012. Initial Lite runtime applies only Exposure/WB dynamically, but all six answers are stored in the profile package. Tint survey calibration is intentionally gentle: max 10 Lightroom tint units. |
 | `src/sonna_editor/preset/__init__.py` | Package marker for preset code. |
-| `src/sonna_editor/preset/adjuster.py` | Heuristic content-aware preset adjustments for exposure, WB, shadows/highlights, and similar safe corrections. Auto exposure uses mean luminance with 85th/95th percentile upper-tone guards so dark suits/rooms do not force bright faces/signage into overexposure. |
+| `src/sonna_editor/preset/adjuster.py` | Heuristic content-aware preset adjustments for exposure, WB, shadows/highlights, and similar safe corrections. Auto exposure uses mean luminance with 85th/95th percentile upper-tone guards so dark suits/rooms do not force bright faces/signage into overexposure. Lite WB keeps Temperature on red-vs-blue balance and Tint on green-vs-magenta balance, preferring likely neutral midtone pixels over whole-frame colour averages to avoid chasing dominant venue/clothing/background colours. |
 | `src/sonna_editor/preset/parser.py` | Parses Lightroom `.xmp`, `.xmpsettings`, and `.lrtemplate` presets and validates extreme preset values. |
 | `src/sonna_editor/preset/pipeline.py` | Legacy preset application pipeline that writes preset-derived XMP files for a RAW folder. It is useful for Mode B/preset output, not supervised model training. |
 
@@ -145,7 +150,7 @@ This section tracks what each backend source file/folder does. Keep it updated w
 | `src/sonna_editor/api/routes/folders.py` | Folder scan and recent-folder endpoints for UI file selection workflows. |
 | `src/sonna_editor/api/routes/health.py` | Health endpoint exposing backend status, device information, git SHA, and model-loaded state. |
 | `src/sonna_editor/api/routes/process.py` | Process-shoot job endpoints, job snapshots, cancellation, and websocket event streaming. |
-| `src/sonna_editor/api/routes/profiles.py` | Profile management endpoints. Scans `v1_learning/model-v*.ckpt`, reads sidecar JSON files, activates/deletes profiles, starts frontend Personal AI RAW+XMP training jobs warm-started from the configured hidden foundation checkpoint, and creates Lite profiles from the configured foundation checkpoint. |
+| `src/sonna_editor/api/routes/profiles.py` | Profile management endpoints. Scans `v1_learning/model-v*.ckpt`, reads sidecar JSON files, activates/deletes profiles, starts backend Personal AI RAW+XMP training jobs warm-started from the configured hidden foundation checkpoint, and creates Lite profiles from the configured foundation checkpoint. The current frontend keeps the Personal AI creation tile disabled as "Coming soon" while exposing Lite creation. |
 
 ### Profiles And UI Placeholders
 
@@ -281,15 +286,38 @@ This section tracks what each backend source file/folder does. Keep it updated w
   mounted while other pages are visible, loaded folders survive tab switches.
   Folder checkboxes are unselected by default: with no boxes checked, processing
   is disabled; with boxes checked, processing runs those checked folders only.
+  The Add folder picker is parented to the Electron window, refocuses Saha
+  after a folder is chosen, and is guarded by a temporary choosing state so
+  repeated clicks cannot open overlapping native folder dialogs. The Process
+  progress bar uses `photos_prepared` only for early movement and caps at 99%
+  until `photos_processed` reaches the folder total. The old right-column Live
+  log has been removed, and completed runs use the shared orange CTA styling
+  for `Process another folder`. The bar is monotonic across preparation and
+  XMP-writing updates, using the furthest known progress so it does not appear
+  to load twice. During active processing, the centre processing button has a
+  subtle orange pulse/spinner and the Cancel button uses the orange CTA colour.
   Projects lists loaded/current folders and recent run rows by
   loaded time. Profile rows use a three-dot actions menu for profile deletion.
   The Profile screen currently shows Personal AI profile creation as a disabled
   "Coming soon" tile; Lite profile creation remains the active creation path.
-- `src/hooks/`: React hooks for jobs, profiles, captures, and recent folders
+- `src/hooks/`: React hooks for jobs, profiles, captures, and recent folders.
+  `useJob` now keeps coalesced progress snapshots only; it no longer accumulates
+  per-photo Live log rows because the Process UI does not render that panel.
 - `electron/`: Electron main/preload process wiring. The preload bridge exposes
   `window.saha.platform`; the shared titlebar uses it to add a macOS-only left
   inset so the Saha mark clears the native traffic-light controls when
-  `titleBarStyle: hiddenInset` is active.
+  `titleBarStyle: hiddenInset` is active. Folder-picking IPC opens
+  `showOpenDialog` against the focused Saha `BrowserWindow` when available and
+  restores focus after the dialog resolves. The theme toggle lives in the
+  top-right titlebar action slot and reuses the login page's plain
+  panel/line-border/sun-icon design. The bottom-left rail slot is a direct
+  Logout button rather than a profile menu, since Logout is the only available
+  action there, and it asks for confirmation before logging out. In-app rail
+  icons use active orange and inactive muted strokes, matching the login
+  theme-icon colour pattern.
+- Shared accent styling is defined in both `src/tokens.js` and
+  `src/index.html` boot CSS variables. Keep them aligned when changing the
+  orange CTA/accent colour so the first paint and React-applied theme match.
 - front-end interacts with Python backend via REST and websocket status updates
 
 ## Scripts
@@ -390,9 +418,9 @@ Lite checkpoints are marked with `profile_type: mode_b_initial` in the sidecar J
 - Foundation checkpoint versioning, 2026-06-03 and schema-v2 update 2026-06-04: promotion never overwrites old foundation checkpoints. Each run updates `foundation_manifest.json` so the new checkpoint becomes active, records `active_version`, `versions[]`, SHA256, capabilities, and training source tags, and `scripts/rollback_foundation.py` can switch the active version without deleting files. `resolve_foundation_checkpoint()` still falls back to the newest remaining checkpoint if the active manifest target has been removed.
 - Git LFS checkpoint workflow, 2026-06-10: `.gitattributes` routes `SonnaEditorFoundation/checkpoints/*.ckpt`, `v1_learning/*.ckpt`, and `models/**/*.ckpt` through Git LFS. Operators run `git lfs install` once per machine, use normal `git add` / `git commit` / `git push` for checkpoints, and run `git lfs pull` on new machines to materialize real `.ckpt` files.
 - Legacy foundation manifest compatibility, 2026-06-05: `list_foundation_versions()` now includes the active checkpoint from older manifests that only have `active_checkpoint` plus `history`, so `scripts\rollback_foundation.py --list` shows both historical and active entries before the next schema-v2 promotion rewrites the manifest.
-- Foundation clean slate, 2026-06-05: previous local trained profile and foundation checkpoint artifacts were removed (`v1_learning\model-v0.1.0.*`, `SonnaEditorFoundation\checkpoints\foundation-sonna-raw-xmp-001.*`, `foundation-sonna-raw-xmp-003.*`, and old `data\training_workspace\foundation_runs\`). `foundation_manifest.json` is now an empty schema-v2 manifest. `resolve_foundation_checkpoint()` raises `FileNotFoundError` for that state, and `scripts\train_foundation_model.py` treats it as no warm-start so the first new FiveK catalog foundation run can train from scratch and then become the default base.
+- Foundation clean-slate history, 2026-06-05: previous local trained profile and foundation checkpoint artifacts were removed (`v1_learning\model-v0.1.0.*`, `SonnaEditorFoundation\checkpoints\foundation-sonna-raw-xmp-001.*`, `foundation-sonna-raw-xmp-003.*`, and old `data\training_workspace\foundation_runs\`). That was a historical reset state, not the current `Auto_Straighten` branch state.
 - Foundation warm-start retention, 2026-06-04 and simplification/capacity update 2026-06-05/08: frontend Personal AI uses the progressive backbone schedule by default. Foundation training uses adaptive capacity: larger splits start with the final ConvNeXt stage trainable (`stage:7`) plus feature fusion/heads, while splits below 500 train rows default to heads/fusion-only (`custom` + `none`) to reduce overfitting. Compact specs such as `block:7:2,stage:6`, `block:7:1-2,stage:6`, `stage:7`, and `from:6` are supported for ablations. Warm starts now come from native `SonnaEditor` slider-regression checkpoints only. Use `scripts/analyse_backbone_drift.py` after training to quantify whether foundation features were preserved.
-- Foundation bad-run triage, 2026-06-05: `foundation-sonna-raw-xmp-001` was rejected as the active foundation after diagnostics showed the Sonna continuation used only 132 train rows with 16.2M trainable parameters, overfit, and collapsed `Highlights2012`/`Shadows2012`. `SonnaEditorFoundation\foundation_manifest.json` was rolled back to `foundation-fivek-catalog-expert-c-001`. Future training summaries include split row counts, parquet paths, train-batch count, and all-slider `test_per_field_mae`; `quick_diagnostic.py` prints an all-parameter check when available.
+- Foundation active state, 2026-06-19: `foundation-sonna-raw-xmp-001` remains rejected because diagnostics showed only 132 train rows, overfitting, and collapsed `Highlights2012`/`Shadows2012`. Earlier docs described a rollback to `foundation-fivek-catalog-expert-c-001`; the current branch now tracks `foundation-sonna-raw-xmp-004-visual` as the active hidden foundation checkpoint.
 - Dataset-location cleanup, 2026-06-05: removed the duplicate generated `v1_learning/dataset` folder and moved remaining active defaults to the canonical `data/training_workspace/sonna_personal_001_dataset` layout. Updated `config.ORIGINAL_TRAIN_PARQUET`, `quick_diagnostic`, `finetune_profile`, legacy v1 audit/training helpers, and `migrate_labels_to_v2`; added config regression coverage so the default train parquet cannot drift back to `v1_learning/dataset`.
 - RAW+XMP foundation runbook cleanup, 2026-06-03 and path correction 2026-06-04: `FOUNDATION_TRAINING.md` now documents the parameter-supervised foundation path with direct script commands only: export Lightroom XMP sidecars, place source files under `data/training_sources/`, build inspectable Parquet splits, audit the dataset, then train from `--splits-dir` or use the direct `--raw-xmp-dir` shortcut. `CLI_COMMANDS.md`, `RUN.md`, `MAC_SETUP.md`, `README.md`, `HANDOVER.md`, and `SESSION_STATE.md` are aligned with the repo-local `SonnaEditorFoundation/` folder and the current cleared-local-cache state.
 - Dataset audit dependency fix, 2026-06-03: `matplotlib` is now a base dependency so `scripts/audit_catalog.py` can generate ISO and slider-distribution PNGs without optional-import warnings. The audit CLI prints ASCII status labels to avoid Windows PowerShell emoji encoding errors.
@@ -407,8 +435,9 @@ Lite checkpoints are marked with `profile_type: mode_b_initial` in the sidecar J
   `inference/straighten.py` estimates a small Lightroom-native `CropAngle`
   from the extracted preview and writes Lightroom crop metadata only when
   confidence passes conservative thresholds. Applied results include
-  `HasCrop=True`, full-frame `CropTop/CropLeft/CropBottom/CropRight` bounds,
-  and `CropAngle=...`. The result is recorded under `auto_straighten` and
+  `HasCrop=True`, explicit centred crop bounds that preserve the original shot
+  aspect ratio, and `CropAngle=...`. The result is recorded under
+  `auto_straighten` and
   `straightening` in `sonna_predictions.json`. No model retraining is required.
 - Auto straightening repair, 2026-06-15: `saha-app/src/components/editor.jsx`
   requires explicit queued-row selection before processing. Queued folders
@@ -428,8 +457,9 @@ Lite checkpoints are marked with `profile_type: mode_b_initial` in the sidecar J
   `straightening` keys and the generated XMP files had no `CropAngle`, which
   points to that batch being produced by an older/stale app or backend process.
   New sidecars record `straightening_engine:
-  opencv-clahe-canny-lines-v2`, `line_count`, and `line_length_px` so future
-  batches can be audited per photo.
+  opencv-scene-horizon-lines-v4`, `scene_type`, `horizon_score`,
+  `axis_score`, horizontal/vertical line counts, `line_count`, and
+  `line_length_px` so future batches can be audited per photo.
 - Auto straightening crop metadata fix, 2026-06-16: user-supplied
   `0H5A6295_.xmp` proved the Mac run wrote `crs:HasCrop="True"` and
   `crs:CropAngle="+5"`, but Lightroom Classic still showed Angle `0.00`.
@@ -441,6 +471,84 @@ Lite checkpoints are marked with `profile_type: mode_b_initial` in the sidecar J
   opposite direction (`-1.96` from Saha vs `+5.94` manual correction). The
   OpenCV axis residual now maps directly to Lightroom `CropAngle`; the old
   negation was removed.
+- Auto straightening scene classification, 2026-06-17: the estimator now keeps
+  each detected line's orientation, length, and position, then scores horizon,
+  architecture, and mixed-axis candidates separately. Horizon scoring prefers
+  long horizontal evidence in the plausible horizon band even when vertical
+  distractors lean differently; architecture scoring still uses consistent
+  horizontal plus vertical support. `sonna_predictions.json` records the
+  chosen `scene_type`, horizon/axis scores, and horizontal/vertical line
+  counts for batch audits.
+- Auto straightening full-frame crop repair, 2026-06-18: applied straightening
+  now writes Lightroom `CropAngle` with full-frame crop bounds
+  (`CropTop=0`, `CropLeft=0`, `CropBottom=1`, `CropRight=1`). This may still
+  make Lightroom label the crop as Custom/Original, but it avoids intentionally
+  shrinking the crop rectangle while letting the Crop Angle slider load. The XMP attributes also include
+  `CropConstrainToWarp=0`, `CropConstrainToUnitSquare=1`, and
+  `AlreadyApplied=False`, matching Lightroom/Imagen sidecars more closely.
+- Auto straightening centre-line preference, 2026-06-18: horizon detection now
+  prefers horizontal evidence in the centre band of the preview when present,
+  so the visible centre/horizon line can win over off-centre architectural or
+  background lines with a conflicting tilt.
+- Auto straightening aspect-locked crop repair, 2026-06-19: applied
+  straightening no longer writes full-frame crop bounds. It computes centred
+  same-scale `CropTop/CropLeft/CropBottom/CropRight` bounds from the
+  rotate-then-inscribe math, so the Lightroom crop pixel aspect remains exactly
+  the original shot aspect. Valid high-angle corrections are still applied;
+  crop bounds preserve as much centred frame as possible for the detected angle
+  instead of skipping solely because the crop is deep.
+- Auto straightening centre-object repair, 2026-06-22: expanded synthetic
+  validation found that long corner/background lines could overpower a tilted
+  central object in small-angle conflict cases. The estimator now builds a
+  `centre_object` candidate from central horizontal+vertical line evidence and
+  lets coherent central evidence win over comparable global architecture
+  evidence. Final stress validation covered 235 synthetic straightening cases
+  with 0 centre-preference failures, 0 aspect-ratio failures, and 0 blank or
+  texture false applies.
+- Auto straightening As Shot crop repair, 2026-06-30: Lightroom screenshots
+  showed the explicit crop bounds made Crop & Straighten show Aspect `Custom`
+  and over-cropped the image. An angle-only attempt was rejected because
+  Lightroom ignored `CropAngle`. The active contract now uses Lightroom-style
+  calculated bounds and source-size crop-reference dimensions so Lightroom
+  activates the Angle slider with the same sidecar shape it writes manually.
+- Auto straightening Lightroom activation repair, 2026-06-30: a follow-up
+  Lightroom screenshot of `019_0H5A9024.CR3` showed the angle-only XMP had
+  `crs:CropAngle="+4.1849"` but Lightroom still displayed Angle `0.00`.
+  A user-provided Lightroom before/after pair,
+  `Documents\Example\0H5A5927 - org.xmp` and
+  `Documents\Example\0H5A5927.xmp`, showed unedited metadata already has
+  full-frame crop defaults (`CropTop=0`, `CropLeft=0`, `CropBottom=1`,
+  `CropRight=1`, `CropAngle=0`) and that a manual angle-only edit changes
+  those to calculated bounds plus `HasCrop=True` and `AlreadyApplied=False`.
+  `crop_angle_attributes()` now matches that sidecar shape; for the sample
+  dimensions/angle it outputs values within last-decimal tolerance of
+  `CropTop=0.048114`, `CropLeft=0.013364`, `CropBottom=0.951886`,
+  `CropRight=0.986634`, and `CropAngle=-1.93`.
+- Auto straightening event-backdrop guard, 2026-07-01: `0H5A8969.CR3`
+  looked visually acceptable but the detector applied about `+4.1065` degrees
+  because the Panerai backdrop/signage was classified as `horizon` with strong
+  mixed line evidence (`H=61`, `V=57`, confidence `0.7322`). The estimator now
+  skips large horizon corrections above 3 degrees when vertical evidence is
+  comparable to horizontal evidence, returning
+  `reason=ambiguous_event_geometry`. Direct verification on the same RAW
+  preview now skips that file with the same angle/confidence diagnostics.
+- Lite WB/tint repair, 2026-06-18: `preset.adjuster` no longer derives Tint
+  from red-vs-blue balance. Temperature remains red-vs-blue, while Tint now
+  uses green-vs-magenta balance so warm/red frames do not get an extra magenta
+  push. The Lite survey's maximum Tint offset was reduced from 20 to 10 units
+  after Sony/Canon feedback showed +20-range pink output was too strong.
+- Lite preset WB anchoring, 2026-06-19: Mode B processing no longer applies
+  absolute preset `Temperature`/`Tint` across a new shoot. When AsShot WB is
+  available, `inference.pipeline` treats preset WB as a bounded style offset
+  from Lightroom defaults (`±300K`, `±5 Tint`) and adds that to each photo's
+  AsShot WB before the normal grey-world correction. This protects against
+  presets that accidentally carry a source photo's warm/magenta WB.
+- Lite neutral-anchor WB, 2026-06-19: `preset.adjuster._grey_world_wb()` now
+  uses likely neutral midtone pixels when available, rather than blindly
+  averaging the whole image. This gives Temperature/Tint intelligence a better
+  signal in photos dominated by warm venue light, coloured clothing, decor, or
+  branded backgrounds. It falls back to whole-frame RGB only when there is no
+  stable neutral sample.
 
 ## Important behavior notes
 
@@ -449,14 +557,32 @@ Lite checkpoints are marked with `profile_type: mode_b_initial` in the sidecar J
 - Legacy v1 checkpoint support is preserved via checkpoint sidecar heuristics and output count gating.
 - Lite profile creation from a v2 base must keep `slider_set_version="v2"`; down-converting via `from_checkpoint(target_slider_set_version="v1")` is intentionally rejected by the model loader.
 - Initial Mode B/Lite checkpoints are intentionally profile carriers with preset/survey metadata and the configured foundation checkpoint's native slider set. Before fine-tuning, the UI/CLI processing path is Imagen-aligned Lite execution: uploaded preset controls the look, with per-photo Exposure/WB corrections only.
+- Lite survey Tint calibration is deliberately conservative: a strongest
+  green/magenta answer maps to 10 Lightroom tint units, and per-photo WB Tint
+  correction uses green-vs-magenta balance rather than red-vs-blue balance.
+  During initial Lite/Mode B processing, preset Temperature/Tint values are
+  anchored to the current photo's AsShot WB as bounded style offsets (`±300K`,
+  `±5 Tint`) instead of being copied as absolute WB from the preset source
+  image. The per-photo WB estimator prefers likely neutral midtone pixels when
+  available, which makes Lite WB more image-specific without allowing other
+  preset-owned sliders to drift.
 - Auto straightening is an opt-in inference postprocess, shared by Personal AI
   and Lite processing. It writes Lightroom crop-angle metadata from OpenCV
   preview-geometry analysis when confident, while high-texture/no-line frames
-  are skipped. Applied results include full-frame crop bounds plus
-  `CropAngle`, because Lightroom Classic may ignore angle-only crop metadata.
-  `sonna_predictions.json` records the straightening engine and per-photo line
-  support for diagnostics. It does not use or update model checkpoints and it
-  does not train on crop labels.
+  are skipped. Applied results write Lightroom-style calculated crop bounds,
+  `CropAngle`, `CropConstrainToWarp=0`, `CropConstrainToUnitSquare=1`,
+  `HasCrop=True`, and `AlreadyApplied=False`. Lightroom Classic needs a crop
+  block to activate the Angle slider, and the sidecar shape now follows the
+  user's manual angle-only XMP sample instead of neutral full-frame bounds.
+  Centre-band horizontal evidence is preferred when present.
+  The estimator is scene-aware: horizon, architecture, and mixed-axis evidence
+  use separate scores and confidence gates. Large horizon corrections above 3
+  degrees are skipped as `ambiguous_event_geometry` when vertical evidence is
+  comparable to horizontal evidence, which protects branded/event backdrops.
+  `sonna_predictions.json` records
+  the straightening engine, chosen scene type, horizon/axis scores, and
+  per-photo line support for diagnostics. It does not use or update model
+  checkpoints and it does not train on crop labels.
 - Process dispatch behavior: with no selected queued folders, the UI does not
   dispatch a process job. With one or more selected queued folders, it processes
   only those selected folders. This matters for per-run options like Auto

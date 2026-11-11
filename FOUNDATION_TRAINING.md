@@ -18,6 +18,23 @@ Foundation training is now **Lightroom-parameter supervised only**:
 slider-regression checkpoint and promotes it into `SonnaEditorFoundation\`.
 Every run creates a new checkpoint. Old checkpoints are never overwritten.
 
+## Current Active Foundation (2026-06-19)
+
+This `Auto_Straighten` branch has a tracked active hidden foundation checkpoint:
+
+```text
+active_version:     foundation-sonna-raw-xmp-004-visual
+active_checkpoint:  SonnaEditorFoundation/checkpoints/foundation-sonna-raw-xmp-004-visual.ckpt
+active_sidecar:     SonnaEditorFoundation/checkpoints/foundation-sonna-raw-xmp-004-visual.json
+display_name:       Sonna RAW XMP Foundation Visual 004
+```
+
+The sidecar records `profile_type=mode_a_trained`, `slider_set_version=v2`,
+`arch_version=3`, `resolution=512`, `train_rows=5021`, and
+`val_loss=0.02533668652176857`. `uv run python scripts\rollback_foundation.py
+--list` reports this version as active. Do not treat this branch as the old
+empty-foundation reset state.
+
 ## Backbone Capacity And Diagnostics
 
 Foundation training uses an adaptive capacity default. Catalog-scale runs start
@@ -195,8 +212,10 @@ Override hard failures only after visual review:
 ```
 
 The rejected example was `foundation-sonna-raw-xmp-001`: it used only 132 train
-rows, trained 16.2M parameters, overfit, and collapsed Highlights/Shadows. The
-active manifest was rolled back to `foundation-fivek-catalog-expert-c-001`.
+rows, trained 16.2M parameters, overfit, and collapsed Highlights/Shadows.
+Earlier docs described a rollback to `foundation-fivek-catalog-expert-c-001`;
+the current branch now tracks `foundation-sonna-raw-xmp-004-visual` as the
+active hidden foundation.
 
 Future `training_summary.json` files embed train/val/test row counts, parquet
 paths, train-batch count, `hparams.max_epochs`, `checkpoint_monitor`,

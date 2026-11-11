@@ -8,6 +8,7 @@ from sonna_editor.config import SLIDER_FIELDS, SLIDER_RANGES
 from sonna_editor.preset.adjuster import (
     _clip_ratio_at_ends,
     _luminance,
+    _neutral_reference_rgb,
     apply_adjustment,
     compute_adjustment,
 )
@@ -23,6 +24,12 @@ def _solid(r: int, g: int, b: int, size: tuple[int, int] = (64, 64)) -> Image.Im
 
 def _grey(v: int, size: tuple[int, int] = (64, 64)) -> Image.Image:
     return _solid(v, v, v, size)
+
+
+def _dominant_colour_with_neutral_patch() -> Image.Image:
+    arr = np.full((80, 80, 3), [210, 90, 45], dtype=np.uint8)
+    arr[24:56, 24:56, :] = [132, 132, 132]
+    return Image.fromarray(arr, "RGB")
 
 
 def _base_preset(**overrides: float) -> dict:
@@ -177,6 +184,36 @@ def test_wb_on_warm_image_gets_cooling_delta() -> None:
     # Grey-world: blue channel low → should push temperature cooler (negative delta)
     # Direction depends on implementation; just check a delta appears
     assert "Temperature" in delta or "Tint" in delta
+
+
+def test_wb_on_warm_magenta_image_does_not_add_pink_tint() -> None:
+    img = _solid(230, 120, 80)
+    delta = compute_adjustment(img, {}, _base_preset(), _opts(auto_white_balance=True))
+
+    assert delta.get("Tint", 0.0) <= 0.0
+
+
+def test_wb_on_green_image_adds_magenta_tint() -> None:
+    img = _solid(80, 150, 80)
+    delta = compute_adjustment(img, {}, _base_preset(), _opts(auto_white_balance=True))
+
+    assert delta.get("Tint", 0.0) > 0.0
+
+
+def test_wb_prefers_neutral_midtone_patch_over_dominant_warm_colour() -> None:
+    img = _dominant_colour_with_neutral_patch()
+    delta = compute_adjustment(img, {}, _base_preset(), _opts(auto_white_balance=True))
+
+    assert abs(delta.get("Temperature", 0.0)) <= 10.0
+    assert abs(delta.get("Tint", 0.0)) <= 0.5
+
+
+def test_neutral_reference_uses_patch_when_available() -> None:
+    r, g, b = _neutral_reference_rgb(_dominant_colour_with_neutral_patch())
+
+    assert r == pytest.approx(132.0)
+    assert g == pytest.approx(132.0)
+    assert b == pytest.approx(132.0)
 
 
 # ---------------------------------------------------------------------------

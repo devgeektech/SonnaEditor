@@ -5,7 +5,7 @@
 **Reference hardware:** M1 Pro MacBook Pro, 32GB RAM
 **Goal:** Internal AI photo editing tool that learns Sonna's editing style and applies it to new event work, outputting Lightroom-compatible XMP sidecars.
 
-**Implementation status note (2026-06-01):** This spec remains the historical build plan and workflow reference. The current implementation state lives in `HANDOVER.md`, `SESSION_STATE.md`, and `project_knowledge.md`. Current Windows training verification uses Python 3.11.15, uv 0.11.17, PyTorch `2.11.0+cu128`, and CUDA on an NVIDIA GeForce RTX 3050. Do not rewrite completed task specs for minor implementation changes; update the status docs instead.
+**Implementation status note (2026-06-19):** This spec remains the historical build plan and workflow reference. The current branch implementation state lives in `HANDOVER.md`, `SESSION_STATE.md`, and `project_knowledge.md`. Current Windows training verification uses Python 3.11.15, uv 0.11.17, PyTorch `2.11.0+cu128`, and CUDA on an NVIDIA GeForce RTX 3050. The `Auto_Straighten` branch also tracks the hidden foundation checkpoint `foundation-sonna-raw-xmp-004-visual`. Do not rewrite completed task specs for minor implementation changes; update the status docs instead.
 
 ---
 

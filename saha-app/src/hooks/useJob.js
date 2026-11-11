@@ -7,7 +7,7 @@
 //
 // Public API:
 //   const job = useJob({ onError })
-//   job.current   → null | { id, snapshot, liveLog, wsStatus }
+//   job.current   → null | { id, snapshot, wsStatus }
 //   job.start(req) → POST /api/process, opens stream, returns the new snapshot
 //   job.cancel()   → POST /api/jobs/{id}/cancel
 //   job.reset()    → clear current (e.g. "Process another folder")
@@ -16,7 +16,6 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { cancelJob, getJob, jobStreamUrl, startProcess } from '../api/client.js';
 import { connectJobStream } from '../api/websocket.js';
 
-const LIVE_LOG_CAP = 200;
 const POLL_INTERVAL_MS = 1000;
 
 const TERMINAL_STATES = new Set(['complete', 'cancelled', 'failed']);
@@ -32,11 +31,8 @@ export function useJob({ onError } = {}) {
 
   // Photo / epoch progress messages are coalesced via requestAnimationFrame so
   // a 1000-photo shoot that fires 1000 messages in <1s flushes at ~60Hz instead
-  // of overwhelming React's scheduler (which would batch them into one final
-  // render and make the right column look frozen until completion). Pending
-  // log entries accumulate until the rAF tick. Terminal messages flush
-  // synchronously so the final state isn't lost on tab-blur or rAF skip.
-  const pendingPhotosRef = useRef([]);
+  // of overwhelming React's scheduler. Terminal messages flush synchronously
+  // so the final state isn't lost on tab-blur or rAF skip.
   const pendingSnapshotRef = useRef(null);
   const pendingEpochRef = useRef(null);
   const rafIdRef = useRef(null);
@@ -55,7 +51,6 @@ export function useJob({ onError } = {}) {
       else clearTimeout(rafIdRef.current);
       rafIdRef.current = null;
     }
-    pendingPhotosRef.current = [];
     pendingSnapshotRef.current = null;
     pendingEpochRef.current = null;
   }, []);
@@ -65,22 +60,17 @@ export function useJob({ onError } = {}) {
 
   const flushPending = useCallback(() => {
     rafIdRef.current = null;
-    const photos = pendingPhotosRef.current;
     const snapPatch = pendingSnapshotRef.current;
     const epochPatch = pendingEpochRef.current;
-    pendingPhotosRef.current = [];
     pendingSnapshotRef.current = null;
     pendingEpochRef.current = null;
-    if (photos.length === 0 && !snapPatch && !epochPatch) return;
+    if (!snapPatch && !epochPatch) return;
     setCurrent((prev) => {
       if (!prev) return prev;
       const snapshot = (snapPatch || epochPatch)
         ? { ...prev.snapshot, ...(snapPatch || {}), ...(epochPatch || {}) }
         : prev.snapshot;
-      const liveLog = photos.length
-        ? [...photos, ...prev.liveLog].slice(0, LIVE_LOG_CAP)
-        : prev.liveLog;
-      return { ...prev, snapshot, liveLog };
+      return { ...prev, snapshot };
     });
   }, []);
 
@@ -115,10 +105,6 @@ export function useJob({ onError } = {}) {
       return;
     }
     if (msg.type === 'photo_complete') {
-      pendingPhotosRef.current = [
-        { name: msg.name, edit_summary: msg.edit_summary, status: msg.status },
-        ...pendingPhotosRef.current,
-      ];
       pendingSnapshotRef.current = {
         state: 'running',
         photos_total: msg.photos_total,
@@ -208,7 +194,6 @@ export function useJob({ onError } = {}) {
     setCurrent({
       id: ack.job_id,
       snapshot: snap,
-      liveLog: [],
       wsStatus: 'connecting',
     });
 

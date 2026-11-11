@@ -68,6 +68,12 @@ Preferred torch device: cuda
 GPU: NVIDIA GeForce RTX 3050
 ```
 
+Current branch context: this checkout is the `Auto_Straighten` branch. The
+hidden foundation manifest is active and points to
+`foundation-sonna-raw-xmp-004-visual` under
+`SonnaEditorFoundation/checkpoints/`; `v1_learning/` remains only for
+frontend-visible Personal AI or Lite profiles.
+
 ## 3. Start The App
 
 From the repo root, use the one-command launcher.
@@ -213,10 +219,11 @@ active foundation by default. It is not `--resume-from-checkpoint`; resume is
 only for continuing an interrupted run from that same run's Lightning
 checkpoint.
 
-Current active foundation note: `foundation-sonna-raw-xmp-001` was rolled back
-after diagnostics showed only 132 train rows, overfitting, and collapsed
-Highlights/Shadows. The active manifest now points to
-`foundation-fivek-catalog-expert-c-001`.
+Current active foundation note: `foundation-sonna-raw-xmp-001` remains a
+rejected historical run after diagnostics showed only 132 train rows,
+overfitting, and collapsed Highlights/Shadows. Earlier docs described a
+rollback to `foundation-fivek-catalog-expert-c-001`; this branch's active
+manifest now points to `foundation-sonna-raw-xmp-004-visual`.
 
 When copying foundation commands, change both `--run-name` and `--version-stem`
 for every new run. Keep them the same, for example
@@ -236,12 +243,18 @@ So `catalog_dataset.py` is the catalog-based dataset preparation module. It can 
 
 ### Frontend profile creation
 
-The Saha frontend has two profile creation paths:
+The Saha backend has two profile creation paths, with one current frontend
+boundary:
 
-- **Personal AI profile:** choose a folder containing RAW files and matching Lightroom `.xmp` sidecars. The backend resolves the hidden foundation checkpoint, builds the dataset, warm-starts training from that foundation, publishes a versioned checkpoint into `v1_learning/`, and streams progress through the normal job API.
-- **Lite profile:** choose a Lightroom preset and answer the six-question style survey. The backend derives a `mode_b_initial` checkpoint from the configured foundation checkpoint, the preset, and all six survey answers. The initial Lite run dynamically adjusts Exposure, Temperature, and Tint while preset look sliders stay fixed.
+- **Personal AI profile:** choose a folder containing RAW files and matching Lightroom `.xmp` sidecars. The backend resolves the hidden foundation checkpoint, builds the dataset, warm-starts training from that foundation, publishes a versioned checkpoint into `v1_learning/`, and streams progress through the normal job API. In the current frontend, the Profile screen tile for this flow is disabled and labelled "Coming soon".
+- **Lite profile:** choose a Lightroom preset and answer the six-question style survey. The backend derives a `mode_b_initial` checkpoint from the configured foundation checkpoint, the preset, and all six answers. The initial Lite run dynamically adjusts Exposure, Temperature, and Tint while preset look sliders stay fixed. Tint calibration is deliberately gentle: the strongest survey answer maps to 10 Lightroom tint units, and per-photo Tint correction uses green-vs-magenta balance.
+  Lite WB prefers likely neutral midtone pixels over whole-frame colour averages when estimating per-photo Temperature/Tint.
+  If the preset carries absolute Temperature/Tint values, initial Lite processing treats them as small AsShot-relative style offsets (`±300K`, `±5 Tint`) rather than copying those absolute WB values across the shoot.
 
-Profile deletion from the frontend asks for confirmation before removing the local checkpoint and sidecar files. Active profiles still cannot be deleted until another profile is activated.
+Profile deletion from the frontend asks for confirmation before removing the
+local checkpoint, sidecar, preset copy, and survey copy. Active profile
+deletion is allowed; if another profile remains it is promoted active
+automatically, and if no profiles remain the active pointer is cleared.
 
 Foundation model training is intentionally **not** exposed in the frontend. Train and promote it with:
 
@@ -339,6 +352,8 @@ to fetch the real checkpoint contents. Do not push `data\training_workspace\`.
 ### Lite profile flow
 
 Preset-based profiles are Lite profiles. They do not train from photo labels. They start with the configured foundation checkpoint, read a Lightroom preset plus Lite survey answers, and create a new checkpoint/sidecar package that the UI can select. During initial Lite processing, `process_shoot_model.py` detects `profile_type: mode_b_initial`, uses the preset as the fixed style baseline, and computes per-photo Exposure, Temperature, and Tint corrections before writing XMPs. Preset look sliders such as Contrast, Shadows, Highlights, Whites, Blacks, Saturation, and Vibrance stay fixed from the preset. The foundation checkpoint provides the profile shell and future fine-tuning starting point.
+Preset Temperature/Tint values are anchored to each photo's AsShot WB as bounded style offsets (`±300K`, `±5 Tint`), so a preset made from one warm or magenta source image does not force that absolute WB onto every new photo.
+Per-photo WB uses likely neutral midtone pixels first, falling back to whole-frame colour only when there is no stable neutral sample.
 
 Create a survey JSON:
 
@@ -381,13 +396,24 @@ uv run python scripts\process_shoot_model.py `
 ```
 
 `--auto-straighten` is optional and matches the Process UI checkbox. It uses
-OpenCV Canny + Hough/LSD line detection on the extracted preview, then writes
-Lightroom `CropAngle` metadata only when the geometry is confident; it does not
-retrain or alter the selected profile checkpoint. Applied results write
-full-frame crop bounds with the angle so Lightroom Classic activates the crop
-state. `sonna_predictions.json` records `straightening_engine`, `line_count`,
-and `line_length_px` for each photo so a batch can be audited if Lightroom does
-not appear to show straightening.
+OpenCV Canny + Hough/LSD line detection on the extracted preview, then scores
+horizon, architecture, and mixed-axis evidence before writing Lightroom
+`CropAngle` metadata. It does not retrain or alter the selected profile
+checkpoint. Lightroom Classic needs a crop block before it activates the Angle
+slider, but manual Angle-only edits do not use neutral full-frame bounds.
+Current Saha output writes Lightroom-style calculated crop bounds plus
+`HasCrop=True`, `CropAngle`,
+`CropConstrainToWarp=0`, `CropConstrainToUnitSquare=1`, and
+`AlreadyApplied=False`, matching the sidecar shape Lightroom wrote for a
+manual crop-angle-only edit. Large horizon corrections above 3 degrees are
+skipped as `ambiguous_event_geometry` when vertical evidence is comparable to
+horizontal evidence, which protects event backdrops/signage from over-eager
+straightening. `sonna_predictions.json` records
+`straightening_engine`, `scene_type`, `horizon_score`, `axis_score`,
+horizontal/vertical line counts, `line_count`, and `line_length_px` for each
+photo so a batch can be audited if Lightroom does not appear to show
+straightening. Restart the backend/Electron app after pulling straightening
+changes, because a running backend keeps the old Python code loaded.
 
 ### UI-based Lite profile creation and processing
 
@@ -464,7 +490,14 @@ Optional flags:
 
 ### Train from prepared splits
 
-Use the stratified by-shoot splits and train a fresh Personal AI profile. The current frontend Personal AI path warm-starts from the configured foundation checkpoint. The direct CLI command below starts from scratch unless you pass `--base-model-checkpoint` for a warm start or `--resume-from-checkpoint` for an interrupted-run resume. The current default recipe uses 512px input, direct AsShot WB metadata skip, stronger Temperature/Tint/Exposure loss weights, and frontend publishing into `v1_learning/`.
+Use the stratified by-shoot splits and train a fresh Personal AI profile. The
+backend Personal AI route warm-starts from the configured foundation checkpoint,
+but the current frontend tile is disabled as "Coming soon". The direct CLI
+command below starts from scratch unless you pass `--base-model-checkpoint` for
+a warm start or `--resume-from-checkpoint` for an interrupted-run resume. The
+current default recipe uses 512px input, direct AsShot WB metadata skip,
+stronger Temperature/Tint/Exposure loss weights, and publishes into
+`v1_learning/` unless `--no-publish` is supplied.
 
 ```bash
 uv run python scripts/train_profile.py \

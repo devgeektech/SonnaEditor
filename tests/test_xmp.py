@@ -888,6 +888,9 @@ class TestExtraAttributes:
                 "CropBottom": "1",
                 "CropRight": "1",
                 "CropAngle": "-2.25",
+                "CropConstrainToWarp": "0",
+                "CropConstrainToUnitSquare": "1",
+                "AlreadyApplied": "False",
             },
         )
 
@@ -898,3 +901,6 @@ class TestExtraAttributes:
         assert 'crs:CropBottom="1"' in text
         assert 'crs:CropRight="1"' in text
         assert 'crs:CropAngle="-2.25"' in text
+        assert 'crs:CropConstrainToWarp="0"' in text
+        assert 'crs:CropConstrainToUnitSquare="1"' in text
+        assert 'crs:AlreadyApplied="False"' in text

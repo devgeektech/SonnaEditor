@@ -68,10 +68,6 @@ const folderBasename = (p) => {
   return segs[segs.length - 1] || p || '';
 };
 
-const dotColor = (status) =>
-  status === 'flag' ? SONNA.amber : status === 'fail' ? SONNA.red : SONNA.green;
-
-
 // ── LEFT column — multi-folder queue ─────────────────────
 function ChevronIcon({ expanded }) {
   return (
@@ -247,12 +243,14 @@ function LeftFolderQueue({
   queue,
   expandedSet,
   locked,
+  picking,
   onAddFolder,
   onRemove,
   onSelect,
   onToggleExpand,
 }) {
   const totalRaws = queue.reduce((sum, f) => sum + (f.fileCount || 0), 0);
+  const addDisabled = locked || picking;
 
   return (
     <div style={{
@@ -266,34 +264,34 @@ function LeftFolderQueue({
           display: 'flex', alignItems: 'baseline', justifyContent: 'space-between',
         }}>
           <div style={Tlabel}>Queue</div>
-          {locked && (
+          {(locked || picking) && (
             <span style={{ fontSize: 10, color: SONNA.fgFaint, fontStyle: 'italic' }}>
-              Locked while processing
+              {locked ? 'Locked while processing' : 'Choosing folder'}
             </span>
           )}
         </div>
         <button
           onClick={onAddFolder}
-          disabled={locked}
+          disabled={addDisabled}
           style={{
             marginTop: 12,
             width: '100%', height: 36,
             background: SONNA.bgLifted,
             border: `1px solid ${SONNA.line}`,
             borderRadius: 3,
-            color: locked ? SONNA.fgFaint : SONNA.fg,
+            color: addDisabled ? SONNA.fgFaint : SONNA.fg,
             fontFamily: F, fontSize: 12, fontWeight: 500,
             display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10,
-            cursor: locked ? 'not-allowed' : 'pointer',
-            opacity: locked ? 0.5 : 1,
+            cursor: addDisabled ? 'not-allowed' : 'pointer',
+            opacity: addDisabled ? 0.5 : 1,
           }}
         >
           <svg width="11" height="11" viewBox="0 0 11 11" fill="none">
             <path d="M5.5 1.5v8M1.5 5.5h8"
-              stroke={locked ? SONNA.fgFaint : SONNA.fgMute}
+              stroke={addDisabled ? SONNA.fgFaint : SONNA.fgMute}
               strokeWidth="1.3" strokeLinecap="round" />
           </svg>
-          <span>Add folder</span>
+          <span>{picking ? 'Choosing folder…' : 'Add folder'}</span>
           <span style={{ ...Tnum, fontSize: 10, color: SONNA.fgFaint, marginLeft: 4 }}>⌘O</span>
         </button>
       </div>
@@ -489,15 +487,24 @@ function CentreAction({
       }}>
         {isProcessing ? (
           <button disabled style={{
+            position: 'relative',
+            overflow: 'hidden',
             width: '100%', height: 42,
-            background: SONNA.bgLifted, color: SONNA.fgMute,
-            border: `1px solid ${SONNA.line}`, borderRadius: 3,
+            background: SONNA.ochreTint, color: SONNA.fg,
+            border: `1px solid ${SONNA.ochreSoft}`, borderRadius: 3,
             fontFamily: F, fontSize: 13, fontWeight: 500,
             display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10,
             cursor: 'not-allowed',
+            animation: 'saha-processing-pulse 1.4s ease-in-out infinite',
           }}>
-            <span style={{ width: 7, height: 7, borderRadius: '50%', background: SONNA.ochre,
-              boxShadow: `0 0 6px ${SONNA.ochre}` }} />
+            <span style={{
+              width: 14,
+              height: 14,
+              borderRadius: '50%',
+              border: `2px solid ${SONNA.ochre}`,
+              borderTopColor: 'transparent',
+              animation: 'saha-spin 0.8s linear infinite',
+            }} />
             <span>Processing in progress…</span>
           </button>
         ) : (
@@ -617,12 +624,15 @@ function RightTransitioning({ queue }) {
   );
 }
 
-function RightProcessing({ snapshot, liveLog, wsStatus, onCancel, queue }) {
+function RightProcessing({ snapshot, wsStatus, onCancel, queue }) {
   const total = snapshot.photos_total || 0;
   const processed = snapshot.photos_processed || 0;
   const prepared = snapshot.photos_prepared || 0;
-  const done = Math.max(processed, prepared);
-  const pct = total ? Math.round((done / total) * 100) : 0;
+  const isComplete = total > 0 && processed >= total;
+  const progressUnits = Math.max(processed, prepared);
+  const rawPct = total ? Math.round((progressUnits / total) * 100) : 0;
+  const pct = total ? (isComplete ? 100 : Math.min(rawPct, 99)) : 0;
+  const done = progressUnits;
 
   // Queue position: 1-based index of the row currently running, derived from
   // queue statuses set by the dispatcher.
@@ -729,56 +739,19 @@ function RightProcessing({ snapshot, liveLog, wsStatus, onCancel, queue }) {
         <span style={{ flex: 1 }} />
         <button onClick={onCancel} disabled={snapshot.cancel_requested} style={{
           height: 24, padding: '0 12px',
-          background: 'transparent',
-          border: `1px solid ${SONNA.line}`, borderRadius: 3,
-          color: snapshot.cancel_requested ? SONNA.fgFaint : SONNA.fgMute,
+          background: snapshot.cancel_requested ? SONNA.bgLifted : SONNA.cta,
+          border: snapshot.cancel_requested ? `1px solid ${SONNA.line}` : 'none',
+          borderRadius: 3,
+          color: snapshot.cancel_requested ? SONNA.fgFaint : SONNA.onCta,
           fontFamily: F, fontSize: 11, fontWeight: 500,
           cursor: snapshot.cancel_requested ? 'not-allowed' : 'pointer',
           display: 'flex', alignItems: 'center', gap: 6,
         }}>
           <span>Cancel</span>
-          <span style={{ ...Tnum, fontSize: 9.5, color: SONNA.fgFaint }}>⌘.</span>
+          <span style={{ ...Tnum, fontSize: 9.5, opacity: 0.7 }}>⌘.</span>
         </button>
       </div>
-
-      <div style={{
-        borderTop: `1px solid ${SONNA.lineSoft}`,
-        padding: '10px 20px 6px',
-        display: 'flex', justifyContent: 'space-between',
-      }}>
-        <span style={Tlabel}>Live log</span>
-        <span style={{ ...Tnum, fontSize: 10, color: SONNA.fgFaint }}>tail -f</span>
-      </div>
-      <div style={{ flex: 1, minHeight: 0, overflow: 'auto', padding: '4px 14px 12px' }}>
-        {liveLog.slice(0, 30).map((l, i) => (
-          <div key={i} style={{
-            padding: '5px 6px',
-            display: 'grid', gridTemplateColumns: '1fr 8px',
-            alignItems: 'center', columnGap: 10,
-            opacity: 1 - Math.min(i * 0.04, 0.6),
-          }}>
-            <div style={{ minWidth: 0 }}>
-              <div style={{
-                ...Tnum, fontSize: 11, color: SONNA.fg,
-                whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
-              }}>{l.name}</div>
-              <div style={{
-                ...Tnum, fontSize: 10, color: SONNA.fgFaint, marginTop: 1,
-                whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
-              }}>{l.edit_summary}</div>
-            </div>
-            <span style={{
-              width: 8, height: 8, borderRadius: '50%',
-              background: dotColor(l.status),
-            }} />
-          </div>
-        ))}
-        {liveLog.length === 0 && (
-          <div style={{ padding: '12px 6px', fontSize: 11, color: SONNA.fgFaint }}>
-            Waiting for first photo…
-          </div>
-        )}
-      </div>
+      <div style={{ flex: 1, minHeight: 0 }} />
     </div>
   );
 }
@@ -880,9 +853,9 @@ function RightComplete({ runResults, onProcessAnother }) {
       <div style={{ padding: 14, borderTop: `1px solid ${SONNA.lineSoft}` }}>
         <button onClick={onProcessAnother} style={{
           width: '100%', height: 36,
-          background: SONNA.bgLifted,
-          border: `1px solid ${SONNA.line}`, borderRadius: 3,
-          color: SONNA.fg, fontFamily: F, fontSize: 12, fontWeight: 500,
+          background: SONNA.cta,
+          border: 'none', borderRadius: 3,
+          color: SONNA.onCta, fontFamily: F, fontSize: 12, fontWeight: 600,
           cursor: 'pointer',
         }}>
           Process another folder
@@ -1020,6 +993,7 @@ export function Editor({
   // Queue-level flags that drive the dispatcher state machine.
   const [isQueueRunning, setIsQueueRunning] = useState(false);
   const [cancelRequested, setCancelRequested] = useState(false);
+  const [isPickingFolder, setIsPickingFolder] = useState(false);
   // Guards against double-recording a terminal job (state flips can fire the
   // effect twice in StrictMode dev double-invoke).
   const lastTerminalIdRef = useRef(null);
@@ -1105,21 +1079,23 @@ export function Editor({
   }, [job, recentQ]);
 
   const handleAddFolder = useCallback(async () => {
+    if (isPickingFolder) return;
     if (!window.saha?.pickFolder) {
       setError({ source: 'pick', message: 'Folder picker unavailable (run via Electron)' });
       return;
     }
-    const path = await window.saha.pickFolder();
-    if (!path) return;
-    setError(null);
-    // Auto-clear only when the queue has no resumable work — i.e. the user
-    // is past a fully-completed run. Mid-resume adds (some folders still
-    // 'queued' after a cancel) preserve the existing complete/cancelled
-    // history so the user doesn't lose their place.
-    if (runResults.length > 0 && !hasQueuedFolders) {
-      clearRunState();
-    }
+    setIsPickingFolder(true);
     try {
+      const path = await window.saha.pickFolder();
+      if (!path) return;
+      setError(null);
+      // Auto-clear only when the queue has no resumable work — i.e. the user
+      // is past a fully-completed run. Mid-resume adds (some folders still
+      // 'queued' after a cancel) preserve the existing complete/cancelled
+      // history so the user doesn't lose their place.
+      if (runResults.length > 0 && !hasQueuedFolders) {
+        clearRunState();
+      }
       const result = await scanFolder(path);
       if (!result.is_valid) {
         setError({ source: 'scan', message: result.error || 'Could not scan folder' });
@@ -1142,8 +1118,10 @@ export function Editor({
       }]);
     } catch (e) {
       setError({ source: 'scan', message: e.message });
+    } finally {
+      setIsPickingFolder(false);
     }
-  }, [runResults.length, hasQueuedFolders, clearRunState, queue.length]);
+  }, [isPickingFolder, runResults.length, hasQueuedFolders, clearRunState]);
 
   useEffect(() => {
     if (typeof onProjectsChange !== 'function') return;
@@ -1452,7 +1430,6 @@ export function Editor({
       rightColumn = (
         <RightProcessing
           snapshot={job.current.snapshot}
-          liveLog={job.current.liveLog}
           wsStatus={job.current.wsStatus}
           onCancel={handleCancel}
           queue={queue}
@@ -1487,6 +1464,7 @@ export function Editor({
           queue={queue}
           expandedSet={expandedSet}
           locked={isQueueRunning}
+          picking={isPickingFolder}
           onAddFolder={handleAddFolder}
           onRemove={handleRemove}
           onSelect={handleSelectFolder}
