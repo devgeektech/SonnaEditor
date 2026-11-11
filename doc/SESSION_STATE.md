@@ -1,25 +1,21 @@
 # Session State - Sonna Editor
 
-**Saved:** 2026-07-01 local time
-**Current phase/task:** Auto-straighten event-backdrop guard, Lightroom crop repair, and catalog processing integration on main.
+**Saved:** 2026-11-11 local time
+**Current phase/task:** Documentation restructure into `doc/`, dead code cleanup, PyTorch warning fixes, backend/frontend performance optimizations, and full test suite verification.
 
 ## Current Workspace
 
 - Repo path: `C:\Users\vikas.DESKTOP-61LEE8B\Projects\SonnaEditor`
 - Branch: `main`, tracking `origin/main`.
-- All active feature branches (`Auto_Straighten`, `catalog_processing`, and `denoise-feature`) have been integrated into `main`.
-- The `Persepective_rotate` branch and the perspective rotate experiment stash were permanently removed.
-- Worktree was clean before this documentation reconciliation. There were no
-  uncommitted source changes to reverse-engineer; the docs were compared
-  against the tracked branch code and the tracked foundation manifest.
-- Training/profile caches were intentionally cleared for a fresh dataset reset.
-- Cleared repo-local generated artifacts: `data\training_workspace\sonna_personal_001_dataset`, `data\models`, `data\parquet`, `data\captures`, `data\thumbnails`, `data\audits`, `data\dbg`, `data\raw\sonna_training`, `.pytest_cache`, `.ruff_cache`.
-- Cleared frontend active-profile pointer: `.saha\active_profile.txt`.
-- `v1_learning\` currently contains a frontend-visible Lite profile package:
-  `model-v0.1.0.ckpt`, `model-v0.1.0.json`, `model-v0.1.0-preset.xmp`,
-  and `model-v0.1.0-survey.json`. Generated dataset folders do not belong in
-  `v1_learning\`.
-- Hidden foundation state is not empty on this branch. `SonnaEditorFoundation\foundation_manifest.json` has `active_version: foundation-sonna-raw-xmp-004-visual`, pointing at `SonnaEditorFoundation\checkpoints\foundation-sonna-raw-xmp-004-visual.ckpt` plus its `.json` sidecar. `uv run python scripts\rollback_foundation.py --list` reports this as the active foundation version.
+- All documentation centralized into `doc/` (`CLI_COMMANDS.md`, `FOUNDATION_TRAINING.md`, `HANDOVER.md`, `MAC_SETUP.md`, `RUN.md`, `SESSION_STATE.md`, `SONNA_EDITOR_BUILD_SPEC.md`, `project_knowledge.md`).
+- Live tracking record created at `session.md`.
+- Unused code, dead variables, and legacy empty packages (`src/sonna_editor/ui/`, `src/sonna_editor/Notes/`) eliminated.
+- PyTorch scalar conversion warning in `tests/test_losses.py` resolved with `.detach()`.
+- Code optimizations landed in `adjuster.py` (precomputed RGB/luma array sharing), `straighten.py` (uint8 array pipeline avoiding float conversion/round-trip clipping), and `extract.py` (regex precompilation and single-pass dual-percentile calculation).
+- Verified full test suite: 788 passed, 0 failures, 0 warnings.
+- Verified linting: `ruff check .` 0 errors.
+- Verified frontend build: `npm run build:vite` passes in 510ms.
+- Mac distribution setup: added double-clickable `start_saha_mac.command` with MPS GPU acceleration and automated dependency setup; DMG packaging targets configured in `saha-app/package.json`.
 
 ## Environment
 

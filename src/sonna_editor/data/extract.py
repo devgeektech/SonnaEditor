@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+import re
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -83,12 +84,14 @@ def _parse_exif_rational(value: str) -> float | None:
         return None
 
 
+_XPACKET_RE = re.compile(rb"<\?xpacket[^?]*\?>")
+
+
 def _read_xmp_metadata(xmp_path: Path) -> dict:
     """Extract camera/EXIF metadata from XMP namespaces (not CRS sliders)."""
     try:
         xml_bytes = xmp_path.read_bytes()
-        import re
-        xml_bytes = re.sub(rb"<\?xpacket[^?]*\?>", b"", xml_bytes).strip()
+        xml_bytes = _XPACKET_RE.sub(b"", xml_bytes).strip()
         root = etree.fromstring(xml_bytes)
     except Exception:
         return {}
@@ -335,15 +338,14 @@ def compute_scene_statistics(image: Image.Image) -> dict[str, float]:
         + 0.7152 * rgb[..., 1]
         + 0.0722 * rgb[..., 2]
     )
-    p5 = float(np.percentile(luminance, 5))
-    p95 = float(np.percentile(luminance, 95))
+    p5, p95 = np.percentile(luminance, [5, 95])
     stats = {
         "mean_luminance": float(luminance.mean()),
         "median_luminance": float(np.median(luminance)),
         "luminance_std": float(luminance.std()),
         "highlight_clip_pct": float((luminance >= 0.98).mean()),
         "shadow_clip_pct": float((luminance <= 0.02).mean()),
-        "dynamic_range": max(0.0, min(1.0, p95 - p5)),
+        "dynamic_range": max(0.0, min(1.0, float(p95 - p5))),
     }
     return {field: stats[field] for field in SCENE_STAT_FIELDS}
 

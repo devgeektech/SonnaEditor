@@ -31,10 +31,11 @@ def _luminance(image: Image.Image) -> float:
     return float(_luminance_values(image).mean())
 
 
-def _luminance_values(image: Image.Image) -> np.ndarray:
+def _luminance_values(image: Image.Image, rgb_arr: np.ndarray | None = None) -> np.ndarray:
     """Per-pixel Rec. 709 luminance values in the 0-255 range."""
-    arr = np.asarray(image.convert("RGB"), dtype=np.float32)
-    return 0.2126 * arr[:, :, 0] + 0.7152 * arr[:, :, 1] + 0.0722 * arr[:, :, 2]
+    if rgb_arr is None:
+        rgb_arr = np.asarray(image.convert("RGB"), dtype=np.float32)
+    return 0.2126 * rgb_arr[:, :, 0] + 0.7152 * rgb_arr[:, :, 1] + 0.0722 * rgb_arr[:, :, 2]
 
 
 def _stops_to_hit_target(current_luma: float) -> float:
@@ -45,7 +46,11 @@ def _stops_to_hit_target(current_luma: float) -> float:
     return float(np.log2(ratio))
 
 
-def _exposure_delta(image: Image.Image) -> float:
+def _exposure_delta(
+    image: Image.Image,
+    rgb_arr: np.ndarray | None = None,
+    lum: np.ndarray | None = None,
+) -> float:
     """Exposure correction with a stronger low-light lift.
 
     Imagen-like event output tends to lift low-light frames decisively while
@@ -54,7 +59,8 @@ def _exposure_delta(image: Image.Image) -> float:
     percentiles are close to clipping. This is deliberately less conservative
     than the earlier p85 guard, which made sofa/table scenes stay too dark.
     """
-    lum = _luminance_values(image)
+    if lum is None:
+        lum = _luminance_values(image, rgb_arr=rgb_arr)
     if lum.size == 0:
         return 0.0
 
@@ -83,13 +89,13 @@ def _exposure_delta(image: Image.Image) -> float:
     return float(np.clip(delta, -2.0, 1.25))
 
 
-def _grey_world_wb(image: Image.Image) -> tuple[float, float]:
+def _grey_world_wb(image: Image.Image, rgb_arr: np.ndarray | None = None) -> tuple[float, float]:
     """Estimate temp/tint correction using the grey-world assumption.
 
     Returns (temp_delta, tint_delta) — additive corrections to apply on top
     of the base preset's Temperature and Tint values.
     """
-    mean_r, mean_g, mean_b = _neutral_reference_rgb(image)
+    mean_r, mean_g, mean_b = _neutral_reference_rgb(image, rgb_arr=rgb_arr)
 
     if mean_g == 0:
         return 0.0, 0.0
@@ -109,7 +115,7 @@ def _grey_world_wb(image: Image.Image) -> tuple[float, float]:
     return float(temp_delta), float(tint_delta)
 
 
-def _neutral_reference_rgb(image: Image.Image) -> tuple[float, float, float]:
+def _neutral_reference_rgb(image: Image.Image, rgb_arr: np.ndarray | None = None) -> tuple[float, float, float]:
     """Return an RGB reference from likely neutral midtones when possible.
 
     Whole-image grey-world is easily fooled by warm venues, coloured clothing,
@@ -118,7 +124,7 @@ def _neutral_reference_rgb(image: Image.Image) -> tuple[float, float, float]:
     walls, tables, whites, greys, or other useful neutral anchors. Fall back to
     the whole frame only when no stable neutral sample exists.
     """
-    arr = np.asarray(image.convert("RGB"), dtype=np.float32)
+    arr = rgb_arr if rgb_arr is not None else np.asarray(image.convert("RGB"), dtype=np.float32)
     if arr.size == 0:
         return 0.0, 0.0, 0.0
 
@@ -148,10 +154,16 @@ def _neutral_reference_rgb(image: Image.Image) -> tuple[float, float, float]:
     )
 
 
-def _clip_ratio_at_ends(image: Image.Image) -> tuple[float, float]:
+def _clip_ratio_at_ends(
+    image: Image.Image,
+    luma: np.ndarray | None = None,
+) -> tuple[float, float]:
     """Return (shadow_ratio, highlight_ratio) — fraction of pixels in the
     darkest/brightest 10 % of the luminance range."""
-    arr = np.asarray(image.convert("L"), dtype=np.uint8).flatten()
+    if luma is not None:
+        arr = luma.reshape(-1)
+    else:
+        arr = np.asarray(image.convert("L"), dtype=np.uint8).reshape(-1)
     total = len(arr)
     if total == 0:
         return 0.0, 0.0
@@ -189,13 +201,23 @@ def compute_adjustment(
     auto_shadow = options.get("auto_shadow_recovery", True)
     auto_highlight = options.get("auto_highlight_recovery", True)
 
-    if auto_exposure:
-        raw_delta = _exposure_delta(image)
+    needs_analysis = auto_exposure or auto_wb or auto_shadow or auto_highlight
+    rgb_arr: np.ndarray | None = (
+        np.asarray(image.convert("RGB"), dtype=np.float32) if needs_analysis else None
+    )
+    luma: np.ndarray | None = (
+        _luminance_values(image, rgb_arr=rgb_arr)
+        if (rgb_arr is not None and (auto_exposure or auto_shadow or auto_highlight))
+        else None
+    )
+
+    if auto_exposure and rgb_arr is not None:
+        raw_delta = _exposure_delta(image, rgb_arr=rgb_arr, lum=luma)
         if abs(raw_delta) > 0.01:
             delta["Exposure2012"] = raw_delta
 
-    if auto_wb:
-        temp_d, tint_d = _grey_world_wb(image)
+    if auto_wb and rgb_arr is not None:
+        temp_d, tint_d = _grey_world_wb(image, rgb_arr=rgb_arr)
         temp_d = float(np.clip(temp_d, -_MAX_TEMP_DELTA, _MAX_TEMP_DELTA))
         tint_d = float(np.clip(tint_d, -_MAX_TINT_DELTA, _MAX_TINT_DELTA))
         if abs(temp_d) > 10:
@@ -203,13 +225,14 @@ def compute_adjustment(
         if abs(tint_d) > 0.5:
             delta["Tint"] = tint_d
 
-    shadow_ratio, highlight_ratio = _clip_ratio_at_ends(image)
+    if auto_shadow or auto_highlight:
+        shadow_ratio, highlight_ratio = _clip_ratio_at_ends(image, luma=luma)
 
-    if auto_shadow and shadow_ratio > _SHADOW_PIXEL_RATIO:
-        delta["Shadows2012"] = _SHADOW_BUMP
+        if auto_shadow and shadow_ratio > _SHADOW_PIXEL_RATIO:
+            delta["Shadows2012"] = _SHADOW_BUMP
 
-    if auto_highlight and highlight_ratio > _HIGHLIGHT_PIXEL_RATIO:
-        delta["Highlights2012"] = _HIGHLIGHT_BUMP
+        if auto_highlight and highlight_ratio > _HIGHLIGHT_PIXEL_RATIO:
+            delta["Highlights2012"] = _HIGHLIGHT_BUMP
 
     return delta
 

@@ -584,7 +584,7 @@ def test_per_row_mask_all_bad_returns_zero_loss() -> None:
     md = _make_meta(B)
     components = loss_fn(pred, targets, md, return_components=True)
     assert "_all_rows_skipped" in components, "all-skipped flag should be set"
-    assert float(components["total"]) == 0.0, "all-skipped batch should be zero loss"
+    assert float(components["total"].detach()) == 0.0, "all-skipped batch should be zero loss"
     components["total"].backward()
     grad = pred.grad
     assert grad is not None

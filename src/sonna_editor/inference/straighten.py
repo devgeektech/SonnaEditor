@@ -133,7 +133,10 @@ def _axis_support(
 
 
 def _analysis_image(gray: np.ndarray) -> np.ndarray:
-    image_u8 = np.clip(gray * 255.0, 0, 255).astype(np.uint8)
+    if gray.dtype == np.uint8:
+        image_u8 = gray
+    else:
+        image_u8 = np.clip(gray * 255.0, 0, 255).astype(np.uint8)
     equalised = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8)).apply(image_u8)
     return cv2.GaussianBlur(equalised, (3, 3), 0)
 
@@ -429,12 +432,9 @@ def estimate_straighten_angle(image: Image.Image) -> StraightenResult:
     a probabilistic Hough transform, reduces line angles to residual tilt from
     Lightroom's nearest 0/90-degree axes, then writes the correction angle.
     """
-    gray = np.asarray(_resize_for_analysis(image), dtype=np.float32) / 255.0
+    gray = np.asarray(_resize_for_analysis(image), dtype=np.uint8)
     if gray.ndim != 2 or min(gray.shape) < 32:
         return StraightenResult(0.0, 0.0, False, "image_too_small", 0, scene_type="invalid")
-
-    if not np.isfinite(gray).all():
-        return StraightenResult(0.0, 0.0, False, "invalid_image", 0, scene_type="invalid")
 
     image_u8 = _analysis_image(gray)
     edges = _opencv_edges(image_u8)
