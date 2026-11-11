@@ -185,12 +185,18 @@ Do not reuse a previous --version-stem; old checkpoints are never overwritten.
    - Optional auto straightening is controlled per run from the UI checkbox or
      `--auto-straighten`; it uses OpenCV preview-line geometry, then scores
      horizon, architecture, and mixed-axis evidence before writing Lightroom
-     `CropAngle` metadata with centred same-scale crop bounds when confident,
-     preserving the original shot aspect ratio mathematically. High-angle
-     corrections are skipped as `crop_too_deep` when the required
-     aspect-locked crop scale would fall below `0.91`. The predictions sidecar
-     records straightening engine, scene type, horizon/axis scores, and
-     line-support diagnostics. It does not require retraining.
+     crop-angle metadata when confident. Applied XMPs write the same crop block
+     shape Lightroom creates when the user only moves Angle: calculated
+     `CropTop`, `CropLeft`, `CropBottom`, `CropRight` bounds, `CropAngle`,
+     `CropConstrainToWarp=0`, `CropConstrainToUnitSquare=1`, `HasCrop=True`,
+     and `AlreadyApplied=False`. Angle-only XMP is ignored by Lightroom, and
+     neutral full-frame bounds are not Lightroom's manual-angle shape. The
+     estimator skips large horizon corrections above 3 degrees as
+     `ambiguous_event_geometry` when vertical evidence is comparable to
+     horizontal evidence, which protects event backdrops/signage. The
+     predictions sidecar records straightening engine, scene type,
+     horizon/axis scores, and line-support diagnostics. It does not require
+     retraining.
 
 6. Fine-tune later.
    - Capture final Lightroom tweaks.

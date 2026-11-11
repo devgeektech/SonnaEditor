@@ -4,7 +4,7 @@
 
 Sonna Editor is a local desktop tool for predicting Lightroom slider adjustments from RAW images. It uses a PyTorch regression model trained on Lightroom-edited photos, then writes XMP sidecars alongside RAW files. The UI is Electron + React and the backend is Python. The runtime target is cross-platform: macOS, Windows, and Linux.
 
-Current local workspace state as of 2026-06-19:
+Current local workspace state as of 2026-07-01:
 - Windows path: `C:\Users\vikas.DESKTOP-61LEE8B\Projects\SonnaEditor`
 - Branch: `Auto_Straighten`, tracking `origin/Auto_Straighten`. Treat this
   branch as the current context for auto-straighten behavior, Lite WB/tint
@@ -110,8 +110,8 @@ This section tracks what each backend source file/folder does. Keep it updated w
 |---|---|
 | `src/sonna_editor/inference/__init__.py` | Package marker for inference code. |
 | `src/sonna_editor/inference/engine.py` | Checkpoint loading and batched prediction engine. Builds tensors from extracted previews/metadata plus scene stats, maps categorical metadata through the checkpoint registry, supports uncertainty sampling, and postprocesses outputs. |
-| `src/sonna_editor/inference/pipeline.py` | End-to-end shoot processing: scan RAW files using the central `config.SUPPORTED_RAW_EXTENSIONS` set, extract features, run inference, apply WB/skip semantics, optionally apply preview-based auto straightening, write XMP sidecars, write `sonna_predictions.json` including straightening engine/line diagnostics and crop reference dimensions, and emit progress callbacks. Auto-straighten crop-bound math uses extracted RAW/source dimensions when available, falling back to preview dimensions only when source dimensions are missing. Initial Lite/Mode B processing anchors preset Temperature/Tint to each photo's AsShot WB as bounded style offsets so absolute preset WB values do not create shoot-wide colour casts. |
-| `src/sonna_editor/inference/straighten.py` | Optional auto-straightening postprocess. Uses CLAHE-normalized OpenCV Canny edges plus probabilistic Hough lines, OpenCV line segments, and a broad Hough fallback for fragmented line evidence, then classifies evidence as horizon, centre-object, architecture, or mixed-axis geometry before estimating small Lightroom `CropAngle` corrections. Centre-band horizontal evidence is preferred when present so the visible centre/horizon line is not overruled by off-centre distractor lines. Coherent central horizontal+vertical object evidence can also win over comparable global/corner architecture evidence, so straightening follows the main central object rather than background frame lines when the central evidence is strong. It writes centred same-scale crop bounds plus Lightroom crop constraint flags only when selected per processing job and confidence passes the scene-specific thresholds, so the pixel crop ratio remains exactly the same as the original shot ratio. High-angle corrections are skipped as `crop_too_deep` when the required aspect-locked crop scale would fall below `0.91`. This is not a trained model output. |
+| `src/sonna_editor/inference/pipeline.py` | End-to-end shoot processing: scan RAW files using the central `config.SUPPORTED_RAW_EXTENSIONS` set, extract features, run inference, apply WB/skip semantics, optionally apply preview-based auto straightening, write XMP sidecars, write `sonna_predictions.json` including straightening engine/line diagnostics and crop-reference dimensions, and emit progress callbacks. Auto-straighten crop-bound math uses extracted RAW/source dimensions when available, falling back to preview dimensions only when source dimensions are missing. Initial Lite/Mode B processing anchors preset Temperature/Tint to each photo's AsShot WB as bounded style offsets so absolute preset WB values do not create shoot-wide colour casts. |
+| `src/sonna_editor/inference/straighten.py` | Optional auto-straightening postprocess. Uses CLAHE-normalized OpenCV Canny edges plus probabilistic Hough lines, OpenCV line segments, and a broad Hough fallback for fragmented line evidence, then classifies evidence as horizon, centre-object, architecture, or mixed-axis geometry before estimating Lightroom `CropAngle` corrections up to the small-rotation clamp. Centre-band horizontal evidence is preferred when present so the visible centre/horizon line is not overruled by off-centre distractor lines. Coherent central horizontal+vertical object evidence can also win over comparable global/corner architecture evidence, so straightening follows the main central object rather than background frame lines when the central evidence is strong. Large horizon corrections above 3 degrees are skipped as `ambiguous_event_geometry` when vertical evidence is comparable to horizontal evidence, preventing event backdrops/signage from forcing aggressive auto-straightening. When selected per processing job and confidence passes the scene-specific thresholds, it writes Lightroom-style crop-angle metadata: calculated `CropTop`, `CropLeft`, `CropBottom`, `CropRight` bounds, `CropAngle`, `CropConstrainToWarp=0`, `CropConstrainToUnitSquare=1`, `HasCrop=True`, and `AlreadyApplied=False`. This is based on the user-provided Lightroom before/after sidecars `Documents\Example\0H5A5927 - org.xmp` and `Documents\Example\0H5A5927.xmp`. This is not a trained model output. |
 
 ### Fine-Tune Package
 
@@ -457,7 +457,7 @@ Lite checkpoints are marked with `profile_type: mode_b_initial` in the sidecar J
   `straightening` keys and the generated XMP files had no `CropAngle`, which
   points to that batch being produced by an older/stale app or backend process.
   New sidecars record `straightening_engine:
-  opencv-scene-horizon-lines-v3`, `scene_type`, `horizon_score`,
+  opencv-scene-horizon-lines-v4`, `scene_type`, `horizon_score`,
   `axis_score`, horizontal/vertical line counts, `line_count`, and
   `line_length_px` so future batches can be audited per photo.
 - Auto straightening crop metadata fix, 2026-06-16: user-supplied
@@ -494,9 +494,9 @@ Lite checkpoints are marked with `profile_type: mode_b_initial` in the sidecar J
   straightening no longer writes full-frame crop bounds. It computes centred
   same-scale `CropTop/CropLeft/CropBottom/CropRight` bounds from the
   rotate-then-inscribe math, so the Lightroom crop pixel aspect remains exactly
-  the original shot aspect. High-angle corrections that would require an
-  aspect-locked crop scale below `0.91` are skipped as `crop_too_deep` instead
-  of over-cropping.
+  the original shot aspect. Valid high-angle corrections are still applied;
+  crop bounds preserve as much centred frame as possible for the detected angle
+  instead of skipping solely because the crop is deep.
 - Auto straightening centre-object repair, 2026-06-22: expanded synthetic
   validation found that long corner/background lines could overpower a tilted
   central object in small-angle conflict cases. The estimator now builds a
@@ -505,6 +505,33 @@ Lite checkpoints are marked with `profile_type: mode_b_initial` in the sidecar J
   evidence. Final stress validation covered 235 synthetic straightening cases
   with 0 centre-preference failures, 0 aspect-ratio failures, and 0 blank or
   texture false applies.
+- Auto straightening As Shot crop repair, 2026-06-30: Lightroom screenshots
+  showed the explicit crop bounds made Crop & Straighten show Aspect `Custom`
+  and over-cropped the image. An angle-only attempt was rejected because
+  Lightroom ignored `CropAngle`. The active contract now uses Lightroom-style
+  calculated bounds and source-size crop-reference dimensions so Lightroom
+  activates the Angle slider with the same sidecar shape it writes manually.
+- Auto straightening Lightroom activation repair, 2026-06-30: a follow-up
+  Lightroom screenshot of `019_0H5A9024.CR3` showed the angle-only XMP had
+  `crs:CropAngle="+4.1849"` but Lightroom still displayed Angle `0.00`.
+  A user-provided Lightroom before/after pair,
+  `Documents\Example\0H5A5927 - org.xmp` and
+  `Documents\Example\0H5A5927.xmp`, showed unedited metadata already has
+  full-frame crop defaults (`CropTop=0`, `CropLeft=0`, `CropBottom=1`,
+  `CropRight=1`, `CropAngle=0`) and that a manual angle-only edit changes
+  those to calculated bounds plus `HasCrop=True` and `AlreadyApplied=False`.
+  `crop_angle_attributes()` now matches that sidecar shape; for the sample
+  dimensions/angle it outputs values within last-decimal tolerance of
+  `CropTop=0.048114`, `CropLeft=0.013364`, `CropBottom=0.951886`,
+  `CropRight=0.986634`, and `CropAngle=-1.93`.
+- Auto straightening event-backdrop guard, 2026-07-01: `0H5A8969.CR3`
+  looked visually acceptable but the detector applied about `+4.1065` degrees
+  because the Panerai backdrop/signage was classified as `horizon` with strong
+  mixed line evidence (`H=61`, `V=57`, confidence `0.7322`). The estimator now
+  skips large horizon corrections above 3 degrees when vertical evidence is
+  comparable to horizontal evidence, returning
+  `reason=ambiguous_event_geometry`. Direct verification on the same RAW
+  preview now skips that file with the same angle/confidence diagnostics.
 - Lite WB/tint repair, 2026-06-18: `preset.adjuster` no longer derives Tint
   from red-vs-blue balance. Temperature remains red-vs-blue, while Tint now
   uses green-vs-magenta balance so warm/red frames do not get an extra magenta
@@ -542,15 +569,17 @@ Lite checkpoints are marked with `profile_type: mode_b_initial` in the sidecar J
 - Auto straightening is an opt-in inference postprocess, shared by Personal AI
   and Lite processing. It writes Lightroom crop-angle metadata from OpenCV
   preview-geometry analysis when confident, while high-texture/no-line frames
-  are skipped. Applied results include explicit centred crop bounds plus
-  `CropAngle`, because Lightroom Classic may ignore angle-only crop metadata
-  and explicit crop bounds are needed for reliable sidecar loading. The crop
-  bounds shrink by the same normalized amount on both axes so the pixel crop
-  aspect stays exactly as shot, and high-angle corrections are skipped as
-  `crop_too_deep` when the required crop scale would fall below `0.91`.
+  are skipped. Applied results write Lightroom-style calculated crop bounds,
+  `CropAngle`, `CropConstrainToWarp=0`, `CropConstrainToUnitSquare=1`,
+  `HasCrop=True`, and `AlreadyApplied=False`. Lightroom Classic needs a crop
+  block to activate the Angle slider, and the sidecar shape now follows the
+  user's manual angle-only XMP sample instead of neutral full-frame bounds.
   Centre-band horizontal evidence is preferred when present.
   The estimator is scene-aware: horizon, architecture, and mixed-axis evidence
-  use separate scores and confidence gates. `sonna_predictions.json` records
+  use separate scores and confidence gates. Large horizon corrections above 3
+  degrees are skipped as `ambiguous_event_geometry` when vertical evidence is
+  comparable to horizontal evidence, which protects branded/event backdrops.
+  `sonna_predictions.json` records
   the straightening engine, chosen scene type, horizon/axis scores, and
   per-photo line support for diagnostics. It does not use or update model
   checkpoints and it does not train on crop labels.

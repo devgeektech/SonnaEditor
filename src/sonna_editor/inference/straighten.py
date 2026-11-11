@@ -15,7 +15,7 @@ import numpy as np
 from PIL import Image
 
 
-STRAIGHTEN_ENGINE_VERSION = "opencv-scene-horizon-lines-v3"
+STRAIGHTEN_ENGINE_VERSION = "opencv-scene-horizon-lines-v4"
 
 
 @dataclass(frozen=True)
@@ -68,7 +68,6 @@ _MIN_LINE_COUNT = 1
 _MIN_LINE_LENGTH_PX = 24.0
 _HOUGH_THRESHOLD = 18
 _MAX_LINE_GAP = 16
-_MIN_ASPECT_LOCKED_CROP_SCALE = 0.91
 _AXIS_CANDIDATE_TOLERANCE_DEGREES = 7.0
 _AXIS_SUPPORT_TOLERANCE_DEGREES = 2.8
 _HORIZON_BAND_TOP = 0.16
@@ -77,6 +76,8 @@ _CENTRE_HORIZON_BAND_TOP = 0.34
 _CENTRE_HORIZON_BAND_BOTTOM = 0.66
 _CENTRE_OBJECT_MARGIN_X = 0.18
 _CENTRE_OBJECT_MARGIN_Y = 0.16
+_LARGE_AMBIGUOUS_HORIZON_ANGLE = 3.0
+_MIXED_VERTICAL_TO_HORIZONTAL_RATIO = 0.75
 
 
 def _resize_for_analysis(image: Image.Image) -> Image.Image:
@@ -509,22 +510,6 @@ def estimate_straighten_angle(image: Image.Image) -> StraightenResult:
             horizontal_line_count=horizontal_count,
             vertical_line_count=vertical_count,
         )
-    crop_scale = _aspect_locked_crop_scale(angle, image.width, image.height)
-    if crop_scale < _MIN_ASPECT_LOCKED_CROP_SCALE:
-        return StraightenResult(
-            angle,
-            confidence,
-            False,
-            "crop_too_deep",
-            edge_count,
-            line_count,
-            total_line_length,
-            scene_type=scene_type,
-            horizon_score=round(horizon_score, 4),
-            axis_score=round(axis_score, 4),
-            horizontal_line_count=horizontal_count,
-            vertical_line_count=vertical_count,
-        )
     min_confidence = (
         _MIN_HORIZON_CONFIDENCE
         if scene_type == "horizon"
@@ -538,6 +523,25 @@ def estimate_straighten_angle(image: Image.Image) -> StraightenResult:
             confidence,
             False,
             "low_confidence",
+            edge_count,
+            line_count,
+            total_line_length,
+            scene_type=scene_type,
+            horizon_score=round(horizon_score, 4),
+            axis_score=round(axis_score, 4),
+            horizontal_line_count=horizontal_count,
+            vertical_line_count=vertical_count,
+        )
+    if (
+        scene_type == "horizon"
+        and abs_angle > _LARGE_AMBIGUOUS_HORIZON_ANGLE
+        and vertical_count >= horizontal_count * _MIXED_VERTICAL_TO_HORIZONTAL_RATIO
+    ):
+        return StraightenResult(
+            angle,
+            confidence,
+            False,
+            "ambiguous_event_geometry",
             edge_count,
             line_count,
             total_line_length,
@@ -570,19 +574,19 @@ def crop_angle_attributes(
 ) -> dict[str, str]:
     """Return Lightroom CRS crop attributes for an applied straighten result.
 
-    Lightroom needs explicit crop bounds for `CropAngle` to activate reliably
-    from a generated sidecar. The crop bounds are centred and shrink by the
-    same normalized amount on both axes, so the pixel crop ratio remains exactly
-    the same as the original shot ratio.
+    Lightroom Classic writes a complete crop block even when the user only
+    moves the Angle slider. Angle-only XMP is ignored; neutral full-frame bounds
+    activate inconsistently. These bounds match Lightroom's own angle-only
+    sidecar shape for the source aspect, without reviving the old same-inset
+    crop math that changed the visible aspect too aggressively.
     """
     if not result.applied:
         return {}
-    top, left, bottom, right = _straighten_crop_bounds(
+    top, left, bottom, right = _lightroom_angle_crop_bounds(
         result.angle_degrees,
         image_size,
     )
     return {
-        "HasCrop": "True",
         "CropTop": _format_crop_bound(top),
         "CropLeft": _format_crop_bound(left),
         "CropBottom": _format_crop_bound(bottom),
@@ -590,34 +594,47 @@ def crop_angle_attributes(
         "CropAngle": _format_lightroom_angle(result.angle_degrees),
         "CropConstrainToWarp": "0",
         "CropConstrainToUnitSquare": "1",
+        "HasCrop": "True",
         "AlreadyApplied": "False",
     }
 
 
-def _straighten_crop_bounds(
+def _lightroom_angle_crop_bounds(
     angle_degrees: float,
     image_size: tuple[int, int] | None,
 ) -> tuple[float, float, float, float]:
+    """Approximate Lightroom's generated crop bounds for an angle-only edit."""
     if image_size is None:
         return 0.0, 0.0, 1.0, 1.0
     width, height = image_size
-    scale = _aspect_locked_crop_scale(angle_degrees, width, height)
-    inset = (1.0 - scale) * 0.5
-    return inset, inset, 1.0 - inset, 1.0 - inset
-
-
-def _aspect_locked_crop_scale(angle_degrees: float, width: int, height: int) -> float:
-    """Return the largest centred crop scale preserving the source aspect."""
     if width <= 0 or height <= 0:
-        return 1.0
+        return 0.0, 0.0, 1.0, 1.0
+
     theta = abs(radians(angle_degrees))
+    if theta == 0:
+        return 0.0, 0.0, 1.0, 1.0
+
+    aspect = float(width) / float(height)
     c = abs(cos(theta))
     s = abs(sin(theta))
-    width_ratio = float(width) / float(height)
-    height_ratio = float(height) / float(width)
-    scale_from_width = 1.0 / (c + height_ratio * s)
-    scale_from_height = 1.0 / (width_ratio * s + c)
-    return max(0.0, min(1.0, scale_from_width, scale_from_height))
+
+    if aspect >= 1.0:
+        horizontal_scale = (aspect * c + s) / (aspect * (aspect * s + c))
+        vertical_inset = (aspect * s) / (c + aspect * s)
+        left = (1.0 - horizontal_scale) * 0.5
+        top = vertical_inset
+    else:
+        portrait_aspect = 1.0 / aspect
+        vertical_scale = (portrait_aspect * c + s) / (
+            portrait_aspect * (portrait_aspect * s + c)
+        )
+        horizontal_inset = (portrait_aspect * s) / (c + portrait_aspect * s)
+        left = horizontal_inset
+        top = (1.0 - vertical_scale) * 0.5
+
+    top = max(0.0, min(0.49, top))
+    left = max(0.0, min(0.49, left))
+    return top, left, 1.0 - top, 1.0 - left
 
 
 def _format_crop_bound(value: float) -> str:
@@ -634,19 +651,3 @@ def _format_lightroom_angle(angle: float) -> str:
         return f"+{int(angle)}" if angle > 0 else str(int(angle))
     text = f"{angle:+.4f}".rstrip("0").rstrip(".")
     return text if text != "-0" else "0"
-
-
-def rotated_content_scale(angle_degrees: float, width: int, height: int) -> float:
-    """Return the minimal scale needed to hide empty corners after rotation.
-
-    This is diagnostic only for now. Lightroom owns the actual crop rendering,
-    but the value is useful in tests and future UI reporting.
-    """
-    if width <= 0 or height <= 0:
-        return 1.0
-    theta = abs(radians(angle_degrees))
-    c = abs(cos(theta))
-    s = abs(sin(theta))
-    new_w = width * c + height * s
-    new_h = width * s + height * c
-    return max(new_w / width, new_h / height)

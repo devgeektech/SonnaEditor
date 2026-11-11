@@ -198,7 +198,7 @@ def _straighten_reference_size(
     metadata: dict,
     preview: Image.Image,
 ) -> tuple[int, int]:
-    """Return the image dimensions to use for Lightroom crop math."""
+    """Return the image dimensions to use for Lightroom crop bounds."""
     width = metadata.get("width")
     height = metadata.get("height")
     if isinstance(width, int) and isinstance(height, int) and width > 0 and height > 0:

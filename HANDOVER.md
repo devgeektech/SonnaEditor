@@ -5,11 +5,11 @@
 **Platforms:** macOS, Windows, and Linux
 **Reference hardware:** M1 Pro MacBook Pro, 32GB RAM
 **Status:** Auto Straighten branch active; tracked foundation checkpoint available; Phase 8 (team distribution) deferred
-**Last updated:** 2026-06-19
+**Last updated:** 2026-07-01
 
 ---
 
-## Current workspace state (2026-06-19)
+## Current workspace state (2026-07-01)
 
 This checkout is a Windows development/training workspace at `C:\Users\vikas.DESKTOP-61LEE8B\Projects\SonnaEditor`.
 
@@ -21,6 +21,20 @@ This checkout is a Windows development/training workspace at `C:\Users\vikas.DES
 - **Runtime layout:** the app now auto-creates repo-local working directories on startup, including `data\training_sources\`, `data\raw\`, `data\raw\sonna_training\`, `v1_learning\`, and `.saha\`. A fresh clone no longer depends on pre-existing gitignored folders or user-home `~\.saha` state.
 - **Client startup:** the preferred local app launch is now one command from the repo root: `.\run_saha.cmd` on Windows or `bash run_saha.sh` on macOS/Linux. These wrappers call `uv run python scripts/run_app.py`, which creates runtime folders, checks for Node/npm, installs frontend npm dependencies only when `saha-app/node_modules` is missing, then starts the existing Electron dev command. Electron starts or reuses the FastAPI backend on port `8765`; the startup readiness probe now waits up to 30s with 1s health probes so Windows/CUDA cold starts do not show a false backend-failed dialog while Uvicorn is still coming up. Override with `SAHA_BACKEND_STARTUP_TIMEOUT_MS` only for unusually slow machines. `run_saha.ps1` is also available for PowerShell users. `.gitattributes` pins `.sh` to LF and Windows wrappers to CRLF so clones behave correctly on both OS families.
 - **RAW format scanning:** supported RAW extensions are now centralised in `config.SUPPORTED_RAW_EXTENSIONS` and shared by dataset builds, folder/API scans, preset processing, model inference, and fine-tune capture. The current scanned formats are `.cr2`, `.cr3`, `.nef`, `.arw`, `.raf`, `.orf`, `.rw2`, `.pef`, `.dng`, `.x3f`, `.rwl`, and `.srw`. Actual preview/metadata extraction still depends on `rawpy`/LibRaw support for the specific camera file, and DNG conversion depends on Adobe DNG Converter support.
+- **Auto-straighten crop contract:** auto straightening writes the same crop
+  block shape Lightroom Classic writes when the user only changes Angle:
+  calculated `CropTop`, `CropLeft`, `CropBottom`, `CropRight` bounds,
+  `CropAngle`, `CropConstrainToWarp=0`, `CropConstrainToUnitSquare=1`,
+  `HasCrop=True`, and `AlreadyApplied=False`. This is based on the
+  user-provided before/after Lightroom sidecars
+  `Documents\Example\0H5A5927 - org.xmp` and
+  `Documents\Example\0H5A5927.xmp`. The unedited file has full-frame crop
+  defaults (`CropTop=0`, `CropLeft=0`, `CropBottom=1`, `CropRight=1`,
+  `CropAngle=0`) and no `HasCrop`. After manually changing only Angle,
+  Lightroom wrote `CropAngle=-1.93`, `CropTop=0.048114`,
+  `CropLeft=0.013364`, `CropBottom=0.951886`, `CropRight=0.986634`,
+  `HasCrop=True`, and `AlreadyApplied=False`. Angle-only XMP is ignored;
+  neutral full-frame bounds are not Lightroom's manual-angle shape.
 - **Dataset timestamp handling:** RAW+XMP dataset shoot bucketing now normalizes timezone-aware capture timestamps to naive UTC before computing 12-hour shoot IDs, preventing Mac builds from failing on offset-aware ISO timestamps with `can't subtract offset-naive and offset-aware datetimes`.
 - **Production profile UX boundary:** the frontend currently exposes Lite profile creation from preset plus the six-question survey. Personal AI profile creation from RAW+XMP remains implemented behind the API/wizard code path but the Profile screen tile is disabled and labelled "Coming soon". Foundation model training is CLI-only with `scripts/train_foundation_model.py`.
 - **Foundation/Lite boundary:** Lite profile creation no longer depends on the currently active Personal AI profile. It resolves the active foundation checkpoint from `SONNA_FOUNDATION_CHECKPOINT`, `SONNA_FOUNDATION_REPO/foundation_manifest.json`, or `SONNA_FOUNDATION_REPO/foundation.ckpt`; the default foundation folder is now the repo-local child folder `SonnaEditorFoundation\` unless overridden. The parent repo tracks this folder, with checkpoint binaries routed through Git LFS. The foundation CLI supports real Lightroom-label training from RAW+XMP folders or trusted catalog splits. The promoted foundation checkpoint is cumulative through native `SonnaEditor` slider-regression warm starts.
@@ -93,14 +107,17 @@ This checkout is a Windows development/training workspace at `C:\Users\vikas.DES
   `straightening_engine`, `scene_type`, `horizon_score`, `axis_score`,
   horizontal/vertical line counts, `line_count`, and `line_length_px` so stale
   runs or low-recall batches can be audited immediately. A later Lightroom Classic
-  check with user-supplied `0H5A6295_.xmp` showed angle-only crop metadata
-  (`HasCrop` + `CropAngle`) can still display as Angle `0.00`; applied
-  straightening now writes centred same-scale crop bounds plus
-  `CropConstrainToWarp=0`, `CropConstrainToUnitSquare=1`, and
-  `AlreadyApplied=False` with every `CropAngle`, preserving the original shot
-  aspect ratio mathematically. High-angle corrections are skipped as
-  `crop_too_deep` when the required aspect-locked crop scale would fall below
-  `0.91`. A follow-up screenshot on `0H5A6236.CR3`
+  check showed explicit crop bounds make Lightroom show Aspect `Custom` and
+  crop more aggressively than desired. As of 2026-06-30, applied
+  straightening writes Lightroom-style calculated crop bounds and
+  `CropAngle`; Lightroom Classic requires a crop block before it shows the
+  Angle slider change. As of 2026-07-01, large horizon corrections above
+  3 degrees are skipped as `ambiguous_event_geometry` when vertical line
+  evidence is comparable to horizontal evidence, preventing event
+  backdrops/signage from forcing aggressive auto-straightening. This was
+  verified on `0H5A8969.CR3`, which previously applied `+4.1065` from Panerai
+  backdrop geometry (`H=61`, `V=57`) and now skips with the same diagnostics.
+  A follow-up screenshot on `0H5A6236.CR3`
   showed the earlier OpenCV-to-Lightroom sign mapping was reversed (`-1.96`
   from Saha vs `+5.94` manual correction); the estimator now keeps the OpenCV
   residual sign for Lightroom `CropAngle` instead of negating it. No model

@@ -617,9 +617,10 @@ def test_pipeline_auto_straighten_writes_crop_angle_and_sidecar(
     assert attrs["LensProfileEnable"] == "1"
     assert attrs["AutoLateralCA"] == "1"
     assert attrs["HasCrop"] == "True"
-    crop_width = (float(attrs["CropRight"]) - float(attrs["CropLeft"])) * image.width
-    crop_height = (float(attrs["CropBottom"]) - float(attrs["CropTop"])) * image.height
-    assert crop_width / crop_height == pytest.approx(image.width / image.height, abs=1e-6)
+    assert 0.0 < float(attrs["CropTop"]) < 0.5
+    assert 0.0 < float(attrs["CropLeft"]) < 0.5
+    assert float(attrs["CropBottom"]) == pytest.approx(1.0 - float(attrs["CropTop"]))
+    assert float(attrs["CropRight"]) == pytest.approx(1.0 - float(attrs["CropLeft"]))
     assert float(attrs["CropAngle"]) == pytest.approx(3.0, abs=0.5)
     assert attrs["CropConstrainToWarp"] == "0"
     assert attrs["CropConstrainToUnitSquare"] == "1"
@@ -643,7 +644,7 @@ def test_pipeline_auto_straighten_writes_crop_angle_and_sidecar(
     assert sidecar["straightening"]["tilted.cr3"]["crop_reference_height"] == image.height
 
 
-def test_pipeline_auto_straighten_uses_source_dimensions_for_crop_math(
+def test_pipeline_auto_straighten_uses_source_dimensions_for_crop_bounds(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -717,20 +718,15 @@ def test_pipeline_auto_straighten_uses_source_dimensions_for_crop_math(
 
     assert result["processed"] == 1
     attrs = captured["extra_attributes"]
-    angle = float(attrs["CropAngle"])
-    radians = math.radians(abs(angle))
-    c = abs(math.cos(radians))
-    s = abs(math.sin(radians))
-    width_ratio = source_size[0] / source_size[1]
-    height_ratio = source_size[1] / source_size[0]
-    expected_scale = min(
-        1.0,
-        1.0 / (c + height_ratio * s),
-        1.0 / (width_ratio * s + c),
-    )
-    actual_scale = float(attrs["CropRight"]) - float(attrs["CropLeft"])
-
-    assert actual_scale == pytest.approx(expected_scale, abs=1e-6)
+    assert attrs["HasCrop"] == "True"
+    assert float(attrs["CropAngle"]) == pytest.approx(3.0, abs=0.5)
+    assert 0.0 < float(attrs["CropTop"]) < 0.5
+    assert 0.0 < float(attrs["CropLeft"]) < 0.5
+    assert float(attrs["CropBottom"]) == pytest.approx(1.0 - float(attrs["CropTop"]))
+    assert float(attrs["CropRight"]) == pytest.approx(1.0 - float(attrs["CropLeft"]))
+    assert attrs["CropConstrainToWarp"] == "0"
+    assert attrs["CropConstrainToUnitSquare"] == "1"
+    assert attrs["AlreadyApplied"] == "False"
 
     sidecar = _json.loads((folder / "sonna_predictions.json").read_text())
     straightening = sidecar["straightening"]["source_size.cr3"]

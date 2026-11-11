@@ -399,15 +399,21 @@ uv run python scripts\process_shoot_model.py `
 OpenCV Canny + Hough/LSD line detection on the extracted preview, then scores
 horizon, architecture, and mixed-axis evidence before writing Lightroom
 `CropAngle` metadata. It does not retrain or alter the selected profile
-checkpoint. Applied results write centred same-scale crop bounds with the
-angle so Lightroom Classic activates the Crop Angle state while the pixel crop
-aspect stays exactly as shot. High-angle corrections are skipped as
-`crop_too_deep` when preserving the aspect would require a crop scale below
-`0.91`. `sonna_predictions.json` records
+checkpoint. Lightroom Classic needs a crop block before it activates the Angle
+slider, but manual Angle-only edits do not use neutral full-frame bounds.
+Current Saha output writes Lightroom-style calculated crop bounds plus
+`HasCrop=True`, `CropAngle`,
+`CropConstrainToWarp=0`, `CropConstrainToUnitSquare=1`, and
+`AlreadyApplied=False`, matching the sidecar shape Lightroom wrote for a
+manual crop-angle-only edit. Large horizon corrections above 3 degrees are
+skipped as `ambiguous_event_geometry` when vertical evidence is comparable to
+horizontal evidence, which protects event backdrops/signage from over-eager
+straightening. `sonna_predictions.json` records
 `straightening_engine`, `scene_type`, `horizon_score`, `axis_score`,
 horizontal/vertical line counts, `line_count`, and `line_length_px` for each
 photo so a batch can be audited if Lightroom does not appear to show
-straightening.
+straightening. Restart the backend/Electron app after pulling straightening
+changes, because a running backend keeps the old Python code loaded.
 
 ### UI-based Lite profile creation and processing
 

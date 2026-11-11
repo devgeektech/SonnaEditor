@@ -1,7 +1,7 @@
 # Session State - Sonna Editor
 
-**Saved:** 2026-06-22 local time
-**Current phase/task:** Auto straightening crop reference repair.
+**Saved:** 2026-07-01 local time
+**Current phase/task:** Auto-straighten event-backdrop guard and Lightroom crop repair.
 
 ## Current Workspace
 
@@ -13,7 +13,10 @@
 - Training/profile caches were intentionally cleared for a fresh dataset reset.
 - Cleared repo-local generated artifacts: `data\training_workspace\sonna_personal_001_dataset`, `data\models`, `data\parquet`, `data\captures`, `data\thumbnails`, `data\audits`, `data\dbg`, `data\raw\sonna_training`, `.pytest_cache`, `.ruff_cache`.
 - Cleared frontend active-profile pointer: `.saha\active_profile.txt`.
-- `v1_learning\` currently has no trained profile checkpoint and no generated dataset folder; there is no frontend-visible profile until a fresh Personal AI/Lite profile is trained or intentionally published.
+- `v1_learning\` currently contains a frontend-visible Lite profile package:
+  `model-v0.1.0.ckpt`, `model-v0.1.0.json`, `model-v0.1.0-preset.xmp`,
+  and `model-v0.1.0-survey.json`. Generated dataset folders do not belong in
+  `v1_learning\`.
 - Hidden foundation state is not empty on this branch. `SonnaEditorFoundation\foundation_manifest.json` has `active_version: foundation-sonna-raw-xmp-004-visual`, pointing at `SonnaEditorFoundation\checkpoints\foundation-sonna-raw-xmp-004-visual.ckpt` plus its `.json` sidecar. `uv run python scripts\rollback_foundation.py --list` reports this as the active foundation version.
 
 ## Environment
@@ -43,7 +46,9 @@ x86_64, while macOS resolves the matching public wheels.
 - The previous split was imbalanced for Exposure2012: train mean ~0.212 while val/test were ~0.480/~0.504. The regenerated split reduces that gap: train mean ~0.264, val ~0.379, test ~0.318.
 - Temperature labels in the current dataset mostly cool relative to AsShot WB, so a warmer model output points to training flow/initialisation/split issues rather than warmer target labels.
 - Tint labels are consistently positive/magenta relative to AsShot, so some magenta tendency is present in the labels.
-- No `v1_learning/model-v*.ckpt` profile is present after the reset.
+- `v1_learning/model-v0.1.0.ckpt` is present as a Lite initial profile package.
+  Its prediction sidecar identifies `profile_type=mode_b_initial` and uses
+  `foundation-sonna-raw-xmp-004-visual` as the base checkpoint.
 - The tracked hidden foundation checkpoint is present and active:
   `foundation-sonna-raw-xmp-004-visual`. Its sidecar records
   `profile_type=mode_a_trained`, `slider_set_version=v2`, `arch_version=3`,
@@ -53,6 +58,160 @@ x86_64, while macOS resolves the matching public wheels.
 - A fresh scene-stats candidate was trained at `data/models/sonna-v2-scene-stats-run01/`, but it was rejected for frontend use. It briefly published as `v1_learning/model-v2.0.1.*`, then those frontend-visible copies were removed after collapse analysis showed worse prediction spread than v2.0.0.
 
 ## What Changed This Session
+
+- Ran a 100-image real-RAW auto-straighten verification from ordinary
+  `Documents\` folders, excluding DNG/catalog/FiveK sources:
+  - Test folder:
+    `C:\Users\vikas.DESKTOP-61LEE8B\Documents\Test_results\raw_100_straighten_20260630_175511`.
+  - Selected 100 random non-DNG RAW files from:
+    `Documents\Raw+Xmp`, `Documents\Testing_Sonna`,
+    `Documents\Test_Sonna - Copy`, `Documents\Test_Sonna - Copy2`,
+    `Documents\Test_Imagen`, and `Documents\Straight_test`.
+  - Created a flat `selected_raws\` test set using hardlinks where possible
+    and saved source mapping to `selected_manifest.json`.
+  - Processed with `uv run python scripts\process_shoot_model.py --auto-straighten`
+    using `v1_learning\model-v0.1.0.ckpt`; result was 100 processed, 0 failed.
+  - `sonna_predictions.json` contained 100 straightening entries:
+    75 applied and 25 skipped as `angle_too_small`.
+  - First generated XMP verification: 75/100 XMPs contained `crs:CropAngle`;
+    0/100 contained `CropTop`, `CropLeft`, `CropBottom`, or `CropRight`.
+    A Lightroom screenshot then proved Lightroom Classic ignores this
+    angle-only crop block, showing Angle `0.00` for `019_0H5A9024.CR3`
+    despite `crs:CropAngle="+4.1849"` in the sidecar.
+  - The generated XMPs were copied next to the selected RAW hardlinks so
+    Lightroom can test the folder directly:
+    `...\raw_100_straighten_20260630_175511\selected_raws`.
+  - A neutral-bound rerun was tried, but the user correctly flagged it as a
+    likely return to the same crop/aspect problem. Do not treat that
+    `saha_output_fixed\` folder as the final contract.
+  - User then supplied a before/after Lightroom pair:
+    `C:\Users\vikas.DESKTOP-61LEE8B\Documents\Example\0H5A5927 - org.xmp`
+    is unedited and `...\0H5A5927.xmp` has only crop angle edited manually.
+    The unedited file has full-frame crop defaults: `CropTop=0`,
+    `CropLeft=0`, `CropBottom=1`, `CropRight=1`, `CropAngle=0`,
+    `CropConstrainToWarp=0`, and `CropConstrainToUnitSquare=1`, with no
+    `HasCrop` / `AlreadyApplied`.
+  - The edited file changes the crop block to calculated bounds:
+    `CropTop=0.048114`, `CropLeft=0.013364`, `CropBottom=0.951886`,
+    `CropRight=0.986634`, `CropAngle=-1.93`, keeps
+    `CropConstrainToWarp=0` and `CropConstrainToUnitSquare=1`, and adds
+    `HasCrop=True` plus `AlreadyApplied=False`.
+  - Reran the same 100-RAW test folder to
+    `...\raw_100_straighten_20260630_175511\saha_output_lightroom_sample`
+    with the final Lightroom-sample crop contract, then copied those XMPs
+    beside the RAWs in `selected_raws\`.
+  - Final refreshed verification: 100 XMPs beside the RAWs; 75/100 contain
+    `crs:CropAngle`. For `019_0H5A9024.xmp`, the refreshed sidecar contains
+    `crs:HasCrop="True"`, `crs:CropTop="0.098755"`,
+    `crs:CropLeft="0.02736"`, `crs:CropBottom="0.901245"`,
+    `crs:CropRight="0.97264"`, `crs:CropAngle="+4.1849"`,
+    `crs:CropConstrainToWarp="0"`,
+    `crs:CropConstrainToUnitSquare="1"`, and
+    `crs:AlreadyApplied="False"`.
+  - Reports saved:
+    `straightening_summary.md` and `straightening_analysis.csv`.
+  - If Lightroom appears to show no straightening for this run, the likely
+    issue is Lightroom not reading the sidecars or using cached catalog crop
+    state. Import/read metadata from the `selected_raws\` folder, where the
+    matching XMPs now sit beside the RAWs.
+
+- Repaired auto-straighten output to match the Lightroom-written manual
+  angle-only XMP sample:
+  - User screenshots showed the explicit crop bounds made Lightroom show
+    Aspect `Custom` and over-cropped the image. Desired behavior is Aspect
+    `As Shot` with only the Angle slider moved slightly.
+  - `src\sonna_editor\inference\straighten.py` now returns calculated
+    Lightroom-style crop bounds plus `CropAngle`, `CropConstrainToWarp=0`,
+    `CropConstrainToUnitSquare=1`, `HasCrop=True`, and
+    `AlreadyApplied=False` for applied straightening.
+  - Regression coverage now asserts the sample contract for `5472x3648`,
+    `CropAngle=-1.93`: `CropTop=0.048114`, `CropLeft=0.013364`,
+    `CropBottom=0.951886`, and `CropRight=0.986634` within tiny
+    last-decimal tolerance because Lightroom appears to save the displayed
+    angle rounded.
+  - Removed the unused crop-bound math helpers and the diagnostic
+    `rotated_content_scale()` helper.
+  - `src\sonna_editor\inference\pipeline.py` passes source RAW dimensions
+    into the Lightroom-style crop-bound math when available, falling back to
+    preview dimensions only when source dimensions are missing, and records
+    `crop_reference_width` / `crop_reference_height` in
+    `sonna_predictions.json`.
+  - Updated tests to assert the new contract: applied auto-straightening writes
+    Lightroom-style calculated crop bounds and the same crop flags Lightroom
+    wrote in the user's sample.
+  - Verification passed after rerunning outside the Windows sandbox runner:
+    `uv run pytest tests\test_straighten.py tests\api\test_callback_bridge.py::test_pipeline_auto_straighten_writes_crop_angle_and_sidecar tests\api\test_callback_bridge.py::test_pipeline_auto_straighten_uses_source_dimensions_for_crop_bounds tests\test_xmp.py::TestExtraAttributes::test_write_xmp_with_crop_angle_attributes -q`
+    (`19 passed`) and
+    `uv run ruff check src\sonna_editor\inference\straighten.py src\sonna_editor\inference\pipeline.py tests\test_straighten.py tests\api\test_callback_bridge.py tests\test_xmp.py`.
+
+- Added a conservative event-backdrop guard for auto-straighten after the
+  `0H5A8969.CR3` Lightroom screenshot:
+  - The previous 100-RAW diagnostic showed this image was applied at
+    `+4.1065` degrees with `confidence=0.7322`, `scene=horizon`, `lines=118`,
+    `H=61`, and `V=57`. That means the estimator was treating mixed
+    Panerai backdrop/signage geometry as a clean horizon, even though the photo
+    was visually acceptable.
+  - `src\sonna_editor\inference\straighten.py` now skips large horizon
+    corrections above `3.0` degrees when vertical evidence is comparable to
+    horizontal evidence (`V >= H * 0.75`), returning
+    `reason=ambiguous_event_geometry`.
+  - `STRAIGHTEN_ENGINE_VERSION` is now `opencv-scene-horizon-lines-v4`.
+  - Direct verification on
+    `C:\Users\vikas.DESKTOP-61LEE8B\Documents\Raw+Xmp\0H5A8969.CR3` now
+    returns the same angle/confidence/line diagnostics but
+    `applied=False` and `reason=ambiguous_event_geometry`.
+  - Added regression coverage for a large ambiguous event-backdrop style
+    correction.
+  - Verification passed:
+    `uv run pytest tests\test_straighten.py tests\api\test_callback_bridge.py::test_pipeline_auto_straighten_writes_crop_angle_and_sidecar tests\api\test_callback_bridge.py::test_pipeline_auto_straighten_uses_source_dimensions_for_crop_bounds tests\test_xmp.py::TestExtraAttributes::test_write_xmp_with_crop_angle_attributes -q`
+    (`20 passed`) and
+    `uv run ruff check src\sonna_editor\inference\straighten.py src\sonna_editor\inference\pipeline.py tests\test_straighten.py tests\api\test_callback_bridge.py tests\test_xmp.py`.
+
+- Ran a 50-random-DNG processing smoke test from the local FiveK source:
+  - Source folder:
+    `C:\Users\vikas.DESKTOP-61LEE8B\Downloads\fivek_dataset\fivek_dataset\raw_photos`.
+  - Output folder:
+    `C:\Users\vikas.DESKTOP-61LEE8B\Documents\Test_results\dng_50_random_20260630_115315`.
+  - The selected DNG copies were saved under `selected_dngs\`; source/copy
+    mapping was saved to `selected_manifest.json`.
+  - Processing command used `v1_learning\model-v0.1.0.ckpt` and wrote XMPs to
+    `saha_output\`.
+  - Result: 50 processed, 0 failed, 50 XMP sidecars written, and
+    `saha_output\sonna_predictions.json` saved with `profile_type:
+    mode_b_initial`, `slider_set_version: v2`, and `auto_straighten: false`.
+  - One informational warning appeared for `a0787-kme_306.dng`: AsShot WB
+    extraction failed, so the Pre-Saha snapshot used the fallback `5500/0`.
+    The file still processed successfully.
+  - A human-readable run report was saved as `processing_summary.md`.
+
+- Updated `Auto_Straighten` after clarifying the desired behavior: apply
+  straightening to all images where the detector decides it is needed, while
+  keeping the crop aspect as-shot and preserving as much centred frame as
+  possible for the detected angle.
+  - Removed the crop-depth skip gate from
+    `src\sonna_editor\inference\straighten.py`; valid corrections are no
+    longer skipped only because the required crop is deep.
+  - The same 300-DNG real-image smoke test processed 300/300 with 0 errors,
+    applied 223, skipped 77 (`angle_too_small`: 73, `edge_texture`: 4), and
+    wrote `CropAngle` plus centred same-scale crop bounds for every applied
+    image.
+  - Written crop bounds preserved source/as-shot aspect exactly
+    (`max_aspect_delta_abs=2.22e-16`). The largest correction was clamped to
+    `5.0` degrees; max crop area loss was `22.63%` because high-angle
+    straightening necessarily crops more to avoid empty corners.
+  - Reports were written under
+    `C:\tmp\sonna_auto_straighten_crop_smoke\`, including
+    `auto_straighten_300_report_apply_all_needed.json` and
+    `sample_auto_straighten_apply_all_needed.xmp`.
+  - A separate proof run on the next 400 local DNGs
+    (`all_dngs[300:700]` under
+    `Documents\fivek_dataset\fivek_dataset\raw_photos`) processed 400/400 with
+    0 errors. It applied 283, skipped 117 (`angle_too_small`: 108,
+    `edge_texture`: 7, `weak_axis_support`: 1, `low_confidence`: 1), wrote
+    `CropAngle` for every applied image, wrote no top-level
+    `PerspectiveRotate`/`PerspectiveScale`, and preserved aspect for every
+    written crop (`max_aspect_delta_abs=2.22e-16`). The report is
+    `C:\tmp\sonna_auto_straighten_crop_smoke\auto_straighten_400_report_apply_all_needed_second_set.json`.
 
 - Ran an expanded straightening and Lite-profile validation pass, then patched
   the one straightening failure mode it found:
@@ -176,10 +335,9 @@ x86_64, while macOS resolves the matching public wheels.
     normalized amount, so
     `(CropRight-CropLeft)*image_width / ((CropBottom-CropTop)*image_height)`
     stays equal to the original shot aspect ratio.
-  - Added a crop-depth threshold: if the required aspect-locked crop scale is
-    below `0.91`, the straightening result is skipped with reason
-    `crop_too_deep` instead of applying a high-angle crop that would cut too
-    much of the frame.
+  - Current behavior no longer skips valid high-angle corrections only because
+    the required crop is deep; crop bounds remain centred and same-scale so
+    the written crop aspect stays as-shot.
   - Updated regression tests so they assert mathematical aspect preservation
     rather than full-frame `0/1` bounds, and added coverage for the high-angle
     crop-depth skip.
@@ -200,8 +358,8 @@ x86_64, while macOS resolves the matching public wheels.
     creation remains available; active/last profile deletion is allowed with
     automatic active promotion or pointer clearing.
   - Reconfirmed auto-straighten current behavior from source:
-    `opencv-scene-horizon-lines-v3`, centre-band horizon preference,
-    centred aspect-locked crop bounds, high-angle `crop_too_deep` skipping,
+    `opencv-scene-horizon-lines-v4`, centre-band horizon preference,
+    Lightroom-style calculated crop bounds, conservative event-backdrop guard,
     `CropConstrainToWarp=0`, `CropConstrainToUnitSquare=1`, and
     `AlreadyApplied=False`.
   - No generated diagnostic reports under `scripts/output/` were modified.
@@ -274,7 +432,7 @@ x86_64, while macOS resolves the matching public wheels.
     that folder applied straightening to 310 files and skipped 190 as
     `angle_too_small`; there were no preview extraction errors.
   - `sonna_predictions.json` now records `straightening_engine:
-    opencv-scene-horizon-lines-v3` plus per-photo `scene_type`,
+    opencv-scene-horizon-lines-v4` plus per-photo `scene_type`,
     `horizon_score`, `axis_score`, horizontal/vertical line counts,
     `line_count`, and `line_length_px`, so future 300+ image runs can be
     audited immediately if Lightroom appears not to show crop-angle changes.
@@ -1031,13 +1189,14 @@ x86_64, while macOS resolves the matching public wheels.
 - Auto straightening is opt-in and runs after preview extraction during
   processing. It uses CLAHE-normalized OpenCV Canny edges plus Hough/LSD line
   geometry, then classifies the evidence into horizon, architecture, or
-  mixed-axis candidates before estimating small Lightroom `CropAngle`
-  rotations. It writes crop metadata only when scene-specific confidence is
-  high, using centred same-scale crop bounds that preserve the original shot
-  aspect ratio plus Lightroom crop constraint flags. High-angle corrections are
-  skipped as `crop_too_deep` when the required aspect-locked crop scale would
-  fall below `0.91`. Skipped/applied diagnostics are recorded in
-  `sonna_predictions.json`.
+  centre-object, or mixed-axis candidates before estimating small Lightroom
+  `CropAngle` rotations. It writes crop metadata only when scene-specific
+  confidence is high, using Lightroom-style calculated crop bounds plus
+  `CropAngle`, `CropConstrainToWarp=0`, `CropConstrainToUnitSquare=1`,
+  `HasCrop=True`, and `AlreadyApplied=False`. Large horizon corrections above
+  3 degrees are skipped as `ambiguous_event_geometry` when vertical evidence is
+  comparable to horizontal evidence. Skipped/applied diagnostics are recorded
+  in `sonna_predictions.json`.
   Centre-band horizontal evidence is preferred when present.
   It is independent of training and checkpoint versioning.
 - The Process UI requires explicit row selection. With no checked queued rows,
