@@ -57,15 +57,15 @@ class _AngleCandidate:
 
 
 _MAX_WORKING_EDGE = 640
-_MIN_APPLY_ANGLE = 0.08
+_MIN_APPLY_ANGLE = 0.25
 _MAX_APPLY_ANGLE = 5.0
-_MIN_CONFIDENCE = 0.28
-_MIN_HORIZON_CONFIDENCE = 0.22
-_MIN_MIXED_CONFIDENCE = 0.34
-_MIN_EDGE_COUNT = 120
+_MIN_CONFIDENCE = 0.50
+_MIN_HORIZON_CONFIDENCE = 0.45
+_MIN_MIXED_CONFIDENCE = 0.55
+_MIN_EDGE_COUNT = 150
 _MAX_EDGE_DENSITY = 0.32
-_MIN_LINE_COUNT = 1
-_MIN_LINE_LENGTH_PX = 24.0
+_MIN_LINE_COUNT = 2
+_MIN_LINE_LENGTH_PX = 36.0
 _HOUGH_THRESHOLD = 18
 _MAX_LINE_GAP = 16
 _AXIS_CANDIDATE_TOLERANCE_DEGREES = 7.0
@@ -258,8 +258,13 @@ def _candidate_from_observations(
         return None
     residual = np.asarray([item.residual for item in observations], dtype=np.float64)
     weights = np.asarray([item.weight for item in observations], dtype=np.float64)
+    min_side = float(min(image_shape))
     if residual.size < _MIN_LINE_COUNT or weights.size < _MIN_LINE_COUNT:
-        return None
+        # Allow single line ONLY if it spans a substantial portion of the image (e.g. true wide horizon)
+        if residual.size == 1 and float(weights.sum()) >= min_side * 0.75:
+            pass
+        else:
+            return None
 
     median_residual = _weighted_median(residual, weights)
     support = _axis_support(

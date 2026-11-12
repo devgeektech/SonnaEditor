@@ -358,3 +358,23 @@ def test_all_slider_fields_present_in_result() -> None:
     result = apply_adjustment({}, {})
     assert set(result.keys()) == set(SLIDER_FIELDS)
     assert all(v is None for v in result.values())
+
+
+def test_exposure_adjustment_accounts_for_base_preset_exposure() -> None:
+    """When base preset has non-zero exposure, delta prevents double-bumping."""
+    img = _grey(40)  # dark image needing positive exposure
+    zero_base_preset = _base_preset(Exposure2012=0.0)
+    delta_zero = compute_adjustment(img, {}, zero_base_preset, _opts())
+    target_exp = delta_zero["Exposure2012"]
+    assert target_exp > 0.0
+
+    offset_base_preset = _base_preset(Exposure2012=0.40)
+    delta_offset = compute_adjustment(img, {}, offset_base_preset, _opts())
+
+    # Net delta should be target_exp - 0.40
+    assert delta_offset["Exposure2012"] == pytest.approx(target_exp - 0.40, abs=1e-5)
+
+    # When applied, final exposure matches target_exp without double bump
+    applied = apply_adjustment(offset_base_preset, delta_offset)
+    assert applied["Exposure2012"] == pytest.approx(target_exp, abs=1e-5)
+

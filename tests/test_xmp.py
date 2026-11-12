@@ -904,3 +904,48 @@ class TestExtraAttributes:
         assert 'crs:CropConstrainToWarp="0"' in text
         assert 'crs:CropConstrainToUnitSquare="1"' in text
         assert 'crs:AlreadyApplied="False"' in text
+
+
+class TestColorWheelPairing:
+    """Tests for color wheel Hue-Saturation pairing guards to prevent red casts."""
+
+    def test_missing_hue_omits_positive_saturation(self, tmp_path: Path) -> None:
+        """When Hue is missing, positive Saturation must be omitted so Lightroom does not default to pure red."""
+        out = tmp_path / "red_guard.xmp"
+        write_xmp(
+            out,
+            {
+                "ColorGradeMidtoneSat": 7.0,
+                # ColorGradeMidtoneHue omitted / None
+                "SplitToningShadowSaturation": 6.0,
+                # SplitToningShadowHue omitted / None
+            },
+        )
+        text = out.read_text()
+        assert "crs:ColorGradeMidtoneSat" not in text
+        assert "crs:ColorGradeMidtoneHue" not in text
+        assert "crs:SplitToningShadowSaturation" not in text
+        assert "crs:SplitToningShadowHue" not in text
+
+        parsed = read_xmp(out)
+        assert parsed["ColorGradeMidtoneSat"] is None
+        assert parsed["SplitToningShadowSaturation"] is None
+
+    def test_both_hue_and_saturation_present_are_written(self, tmp_path: Path) -> None:
+        """When Hue and Saturation are both provided, both are written cleanly."""
+        out = tmp_path / "valid_grade.xmp"
+        write_xmp(
+            out,
+            {
+                "ColorGradeMidtoneHue": 38.0,
+                "ColorGradeMidtoneSat": 7.0,
+                "SplitToningShadowHue": 337.0,
+                "SplitToningShadowSaturation": 6.0,
+            },
+        )
+        text = out.read_text()
+        assert 'crs:ColorGradeMidtoneHue="+38"' in text or 'crs:ColorGradeMidtoneHue="38"' in text
+        assert 'crs:ColorGradeMidtoneSat="+7"' in text or 'crs:ColorGradeMidtoneSat="7"' in text
+        assert 'crs:SplitToningShadowHue="+337"' in text or 'crs:SplitToningShadowHue="337"' in text
+        assert 'crs:SplitToningShadowSaturation="+6"' in text or 'crs:SplitToningShadowSaturation="6"' in text
+

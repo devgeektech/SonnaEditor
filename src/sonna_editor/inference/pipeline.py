@@ -15,7 +15,7 @@ from PIL import Image
 
 from sonna_editor import config
 from sonna_editor.data.extract import extract_metadata, extract_preview
-from sonna_editor.data.xmp import LR_DEFAULTS, write_xmp
+from sonna_editor.data.xmp import COLOR_WHEEL_PAIRS, LR_DEFAULTS, write_xmp
 from sonna_editor.inference.engine import InferenceEngine
 from sonna_editor.inference.straighten import (
     STRAIGHTEN_ENGINE_VERSION,
@@ -241,7 +241,7 @@ _MODE_B_INITIAL_PROFILE_TYPE = "mode_b_initial"
 _MODE_B_SURVEY_FIELDS = {"Exposure2012", "Temperature", "Tint"}
 _MODE_B_ADJUSTMENT_OPTIONS: dict[str, bool] = {
     "auto_exposure": True,
-    "auto_white_balance": True,
+    "auto_white_balance": False,
     "auto_shadow_recovery": False,
     "auto_highlight_recovery": False,
 }
@@ -403,11 +403,11 @@ def _anchor_mode_b_wb_to_as_shot(
     Temperature/Tint. Applying that absolute WB across a new shoot is a common
     route to pink or over-warm output. Lite should start from the current
     photo's AsShot WB, then allow only a small preset/survey style nudge.
+    If the preset does not specify WB, leave Temperature/Tint as None so
+    Lightroom keeps native As-Shot camera WB.
     """
     preset_temperature = photo_preset.get("Temperature")
-    if preset_temperature is None:
-        photo_preset["Temperature"] = float(as_shot_wb[0])
-    else:
+    if preset_temperature is not None:
         temp_style = float(preset_temperature) - float(LR_DEFAULTS["Temperature"])
         temp_style = max(
             -_MODE_B_MAX_PRESET_TEMP_STYLE_DELTA,
@@ -416,9 +416,7 @@ def _anchor_mode_b_wb_to_as_shot(
         photo_preset["Temperature"] = float(as_shot_wb[0]) + temp_style
 
     preset_tint = photo_preset.get("Tint")
-    if preset_tint is None:
-        photo_preset["Tint"] = float(as_shot_wb[1])
-    else:
+    if preset_tint is not None:
         tint_style = float(preset_tint) - float(LR_DEFAULTS["Tint"])
         tint_style = max(
             -_MODE_B_MAX_PRESET_TINT_STYLE_DELTA,
@@ -715,6 +713,17 @@ def process_shoot_with_model(
             k: v for k, v in full_slider_dict.items()
             if k not in effective_skip
         }
+        # Color wheel Hue-Saturation coupling guard:
+        # Lightroom defaults missing Hue to 0.0° (pure red). If a Hue is skipped
+        # or absent, its matching Saturation must NOT be written with a positive value.
+        # Conversely, if Saturation is 0.0, skipped, or absent, omit Hue.
+        for hue_field, sat_field in COLOR_WHEEL_PAIRS:
+            if hue_field in effective_skip or full_slider_dict.get(hue_field) is None:
+                filtered_slider_dict.pop(sat_field, None)
+            sat_val = filtered_slider_dict.get(sat_field)
+            if sat_field in effective_skip or sat_val is None or sat_val == 0.0:
+                filtered_slider_dict.pop(hue_field, None)
+
         # WB skip semantics: substitute AsShot values for skipped
         # Temperature/Tint rather than omitting (see _V1_SKIP_FIELDS doc).
         _apply_wb_skip_substitution(

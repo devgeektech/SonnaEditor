@@ -1,18 +1,28 @@
 # Session State - Sonna Editor
 
-**Saved:** 2026-11-11 local time
-**Current phase/task:** Documentation restructure into `doc/`, dead code cleanup, PyTorch warning fixes, backend/frontend performance optimizations, and full test suite verification.
+**Saved:** 2026-11-12 local time
+**Current phase/task:** Fixed exposure, auto-straightening, white balance temperature, and color wheel red cast issues. Full test suite passing (791 tests).
 
 ## Current Workspace
 
 - Repo path: `C:\Users\vikas.DESKTOP-61LEE8B\Projects\SonnaEditor`
 - Branch: `main`, tracking `origin/main`.
 - All documentation centralized into `doc/` (`CLI_COMMANDS.md`, `FOUNDATION_TRAINING.md`, `HANDOVER.md`, `MAC_SETUP.md`, `RUN.md`, `SESSION_STATE.md`, `SONNA_EDITOR_BUILD_SPEC.md`, `project_knowledge.md`).
-- Live tracking record created at `session.md`.
-- Unused code, dead variables, and legacy empty packages (`src/sonna_editor/ui/`, `src/sonna_editor/Notes/`) eliminated.
-- PyTorch scalar conversion warning in `tests/test_losses.py` resolved with `.detach()`.
-- Code optimizations landed in `adjuster.py` (precomputed RGB/luma array sharing), `straighten.py` (uint8 array pipeline avoiding float conversion/round-trip clipping), and `extract.py` (regex precompilation and single-pass dual-percentile calculation).
-- Verified full test suite: 788 passed, 0 failures, 0 warnings.
+- Live tracking record maintained at `session.md`.
+- **Color Wheels Major (Fixed)**:
+  - Eliminated rogue red color casts caused by Lightroom defaulting missing Hues to 0.0° (pure red) when saturations are written.
+  - Cleared `default_skip_fields` in `v1_learning/model-v0.1.0.json`.
+  - Added `COLOR_WHEEL_PAIRS` hue-saturation coupling guard in `src/sonna_editor/data/xmp.py` and `src/sonna_editor/inference/pipeline.py`.
+- **Straightening Major (Fixed)**:
+  - Raised thresholds in `src/sonna_editor/inference/straighten.py` to conservative standards (`_MIN_APPLY_ANGLE = 0.25`, `_MIN_CONFIDENCE = 0.50`, `_MIN_HORIZON_CONFIDENCE = 0.45`, `_MIN_LINE_COUNT = 2`, `_MIN_LINE_LENGTH_PX = 36.0`).
+  - Single lines require full-frame span (>= 0.75 * min dimension) to prevent false-positive tilts on event objects.
+- **Temperature Major (Fixed)**:
+  - Set `_MODE_B_ADJUSTMENT_OPTIONS["auto_white_balance"] = False` by default in `src/sonna_editor/inference/pipeline.py`.
+  - Updated `_anchor_mode_b_wb_to_as_shot`: presets without explicit WB keep `Temperature` and `Tint` as `None` so Lightroom maintains native camera **"As Shot"** WB without erratic Grey World jumps.
+- **Exposure Minor (Fixed)**:
+  - In `src/sonna_editor/preset/adjuster.py`, adjusted `compute_adjustment` to compute `net_delta = target_delta - base_exp`, preventing double-bumping when presets carry base exposure.
+  - Upgraded highlight clipping protection in `_exposure_delta` to `p98` and `p99.5` with smoothed low-light floor.
+- Verified full test suite: 791 passed, 0 failures, 0 warnings.
 - Verified linting: `ruff check .` 0 errors.
 - Verified frontend build: `npm run build:vite` passes in 510ms.
 - Mac distribution setup: added double-clickable `start_saha_mac.command` with MPS GPU acceleration and automated dependency setup; DMG packaging targets configured in `saha-app/package.json`.

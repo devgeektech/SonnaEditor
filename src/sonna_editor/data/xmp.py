@@ -47,6 +47,16 @@ _TONE_CURVE_FIELDS: frozenset[str] = frozenset(
     f for f in SLIDER_FIELDS if f.startswith("ToneCurve")
 )
 
+# Color wheel Hue and Saturation pairings in Lightroom Camera Raw settings.
+# Lightroom treats a missing Hue attribute as 0.0° (pure red). Therefore,
+# a positive Saturation must NEVER be written without its corresponding Hue.
+COLOR_WHEEL_PAIRS: tuple[tuple[str, str], ...] = (
+    ("SplitToningShadowHue", "SplitToningShadowSaturation"),
+    ("SplitToningHighlightHue", "SplitToningHighlightSaturation"),
+    ("ColorGradeMidtoneHue", "ColorGradeMidtoneSat"),
+    ("ColorGradeGlobalHue", "ColorGradeGlobalSat"),
+)
+
 # Lightroom RAW-import defaults — what every slider shows on a freshly imported,
 # untouched RAW. Used to build the "Pre-Saha" snapshot so clicking it in LR's
 # Snapshots panel reverts the photo to its pre-edit visual state.
@@ -581,10 +591,25 @@ def write_xmp(
             li_el.text = f"{px}, {py}"
 
     # Write scalar slider values (tone curve fields handled above as child elements)
+    # Guard against Lightroom missing-hue bug: if a color grading saturation
+    # is positive (>0) but its corresponding hue is missing/None, omit the
+    # saturation attribute so Lightroom does not default the hue to 0° (pure red).
+    sanitized_settings: dict[str, float | str | None] = dict(settings)
+    for hue_field, sat_field in COLOR_WHEEL_PAIRS:
+        sat_val = sanitized_settings.get(sat_field)
+        hue_val = sanitized_settings.get(hue_field)
+        if sat_val is not None:
+            try:
+                sat_num = float(sat_val)
+            except (ValueError, TypeError):
+                sat_num = 0.0
+            if sat_num > 0.0 and (hue_val is None or hue_val == ""):
+                sanitized_settings[sat_field] = None
+
     for field in SLIDER_FIELDS:
         if field in _TONE_CURVE_FIELDS:
             continue
-        val = settings.get(field)
+        val = sanitized_settings.get(field)
         if val is None:
             continue
         # Mode B (preset pipeline) sentinel: Temperature=0 from a preset

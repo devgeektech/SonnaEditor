@@ -68,21 +68,24 @@ def _exposure_delta(
     mean_luma = float(lum.mean())
     median_luma = float(np.median(lum))
     p85 = float(np.percentile(lum, 85))
-    p95 = float(np.percentile(lum, 95))
-    p99 = float(np.percentile(lum, 99))
+    p98 = float(np.percentile(lum, 98))
+    p995 = float(np.percentile(lum, 99.5))
 
     candidates = [mean_delta]
-    if p95 > 0:
-        candidates.append(float(np.log2(235.0 / p95)))
-    if p99 > 0:
-        candidates.append(float(np.log2(248.0 / p99)))
+    # Protect against blowing real highlights:
+    # Use p98 (top 2%) and p99.5 (top 0.5%) rather than p95 (which throttles
+    # dark scenes containing normal white clothing or diffuse light).
+    if p98 > 0:
+        candidates.append(float(np.log2(242.0 / p98)))
+    if p995 > 0:
+        candidates.append(float(np.log2(252.0 / p995)))
 
     delta = min(candidates)
 
     # Low-light event frames often have bright cushions, shirts, signage, or
     # decor but still read underexposed overall. Give those frames a floor so
     # they do not stay stuck around +0.2 to +0.3 stops.
-    if mean_luma < 92.0 and median_luma < 82.0 and p95 < 230.0:
+    if mean_luma < 92.0 and median_luma < 82.0 and p98 < 240.0:
         low_light_floor = min(0.75, max(0.35, float(np.log2(170.0 / max(p85, 1.0)))))
         delta = max(delta, low_light_floor)
 
@@ -212,9 +215,11 @@ def compute_adjustment(
     )
 
     if auto_exposure and rgb_arr is not None:
-        raw_delta = _exposure_delta(image, rgb_arr=rgb_arr, lum=luma)
-        if abs(raw_delta) > 0.01:
-            delta["Exposure2012"] = raw_delta
+        target_delta = _exposure_delta(image, rgb_arr=rgb_arr, lum=luma)
+        base_exp = float(base_preset.get("Exposure2012") or 0.0)
+        net_delta = target_delta - base_exp
+        if abs(net_delta) > 0.01:
+            delta["Exposure2012"] = net_delta
 
     if auto_wb and rgb_arr is not None:
         temp_d, tint_d = _grey_world_wb(image, rgb_arr=rgb_arr)

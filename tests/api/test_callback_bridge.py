@@ -470,7 +470,7 @@ def test_mode_b_initial_uses_per_photo_preset_adjuster(tmp_path: Path) -> None:
     bright = captured["warm_bright.xmp"]
     assert dark["Exposure2012"] > 0.0
     assert bright["Exposure2012"] < 0.0
-    assert bright["Temperature"] != 5200.0 or bright["Tint"] != 2.0
+    assert bright.get("Temperature") is None and bright.get("Tint") is None
     assert dark["Contrast2012"] == pytest.approx(15.0)
     assert bright["Contrast2012"] == pytest.approx(15.0)
     assert dark["Shadows2012"] == pytest.approx(10.0)
