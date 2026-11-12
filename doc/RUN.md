@@ -15,7 +15,7 @@ dev`. macOS resolves the matching public PyTorch wheels.
 Windows PowerShell:
 
 ```powershell
-cd C:\Users\vikas.DESKTOP-61LEE8B\Projects\SonnaEditor
+cd C:\path\to\SonnaEditor
 uv sync --extra dev
 uv run python --version
 ```
@@ -27,6 +27,30 @@ cd /path/to/SonnaEditor
 uv sync --extra dev
 uv run python --version
 ```
+
+### macOS Developer Prerequisites
+
+If setting up on a fresh Mac (Apple Silicon or Intel):
+
+```bash
+# 1. Install Apple Command Line Tools
+xcode-select --install
+
+# 2. Install Homebrew (if not already installed)
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+
+# 3. Install core tools: git, Git LFS, uv, Python 3.11, and Node.js
+brew install git git-lfs uv python@3.11 node
+git lfs install
+
+# 4. Clone and pull Git LFS model checkpoints
+git clone git@github.com:darshilp16-byte/sonnaeditor.git
+cd sonnaeditor
+git lfs pull
+```
+
+> [!NOTE]
+> For client or non-developer testing on macOS (Darshil at Sonna Studios), see [MAC_CLIENT_TESTING.md](MAC_CLIENT_TESTING.md) or double-click `start_saha_mac.command` directly without manual command-line setup.
 
 If `uv` is not installed yet:
 
@@ -309,7 +333,7 @@ For FiveK, build Expert C catalog splits first:
 
 ```powershell
 uv run python scripts\build_dataset_from_catalog.py `
-  --catalog-path "C:\Users\vikas.DESKTOP-61LEE8B\Downloads\fivek_dataset\fivek_dataset\raw_photos\fivek.lrcat" `
+  --catalog-path "C:\path\to\fivek_dataset\raw_photos\fivek.lrcat" `
   --output-dir data\training_workspace\fivek_expert_c_catalog_dataset `
   --profile-name "fivek_expert_c_catalog" `
   --collection-name "C" `
@@ -341,8 +365,7 @@ The promoted checkpoint becomes the default base model through
 `SonnaEditorFoundation\foundation_manifest.json`; Mode A and Mode B use that
 active pointer unless an environment override is set.
 
-The inspected FiveK download at
-`C:\Users\vikas.DESKTOP-61LEE8B\Downloads\fivek_dataset\fivek_dataset`
+The FiveK download dataset folder (e.g. `path/to/fivek_dataset`)
 contains the 5,000 DNG source files and `raw_photos\fivek.lrcat`. The Lightroom
 catalog contains usable slider targets as virtual-copy
 develop settings: 60,000 catalog rows over 5,000 DNGs, with collections `A` to

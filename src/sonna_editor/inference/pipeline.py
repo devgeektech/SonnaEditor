@@ -592,16 +592,26 @@ def process_shoot_with_model(
     cancelled = False
 
     pool = ThreadPoolExecutor(max_workers=max_workers)
-    future_to_path = {}
+    future_to_path: dict = {}
+    cancelled = False
     try:
-        future_to_path = {pool.submit(_extract_one, p, target_size): p for p in raws}
-        for future in as_completed(future_to_path):
+        # Bounded sliding window submission to prevent queue/memory spikes on large shoots (e.g. 5K+ photos)
+        max_in_flight = max(16, max_workers * 4)
+        raw_iter = iter(raws)
+        for _ in range(min(max_in_flight, len(raws))):
+            p = next(raw_iter)
+            future_to_path[pool.submit(_extract_one, p, target_size)] = p
+
+        while future_to_path:
+            done_future = next(as_completed(future_to_path))
+            raw_path = future_to_path.pop(done_future)
+
             if cancel_event is not None and cancel_event.is_set():
                 cancelled = True
                 break
-            raw_path = future_to_path[future]
+
             try:
-                preview, meta = future.result()
+                preview, meta = done_future.result()
                 if cancel_event is not None and cancel_event.is_set():
                     cancelled = True
                     break
@@ -618,6 +628,13 @@ def process_shoot_with_model(
                         _logger.warning("on_photo_prepared raised %r; continuing", cb_exc)
             except Exception as exc:
                 failures.append({"path": str(raw_path), "error": str(exc)})
+
+            if not cancelled:
+                try:
+                    next_p = next(raw_iter)
+                    future_to_path[pool.submit(_extract_one, next_p, target_size)] = next_p
+                except StopIteration:
+                    pass
     finally:
         if cancelled:
             for future in future_to_path:

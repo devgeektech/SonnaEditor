@@ -67,6 +67,22 @@
      - `uv run ruff check .` passed with 0 errors.
      - Mypy passed with 0 errors across modified files and `api/`.
 
+8. [x] **Task 8: Cross-Platform Environment Setup, Code Weakness Fixes, Mac Compatibility & Client Distribution**
+   - Bootstrapped `uv` 0.13.8, portable Node.js LTS v22.11.0, official signed CPython 3.11.9.
+   - Consolidated 147 default slider values in `config.py` as `DEFAULT_SLIDER_VALUES`, re-exported in `xmp.py` and sliced in `config.py`, eliminating duplicate tables.
+   - Sanitized hardcoded absolute paths in `SonnaEditorFoundation/checkpoints/` to relative repository paths.
+   - Enabled Personal AI profile creation in frontend UI (`profile-view.jsx`).
+   - Added bounded sliding window in `pipeline.py` to throttle memory on large shoots.
+   - Created zero-touch macOS launcher `start_saha_mac.command` with auto Homebrew/uv/Node.js setup and Finder execution fix in Electron.
+   - Packaged 106.2 MB ready-to-test client bundle `dist/saha-mac-client-bundle.zip` and authored `doc/MAC_CLIENT_TESTING.md`.
+
+9. [x] **Task 9: Documentation Pruning, Consolidation & Enforced Change Recording Flow**
+   - Consolidated duplicate instruction file: reduced `CLAUDE.md` to a clean pointer directing Claude Code to `AGENTS.md`.
+   - Merged unique macOS developer prerequisites into `doc/RUN.md` and deleted redundant 694-line `doc/MAC_SETUP.md`.
+   - Streamlined `doc/SESSION_STATE.md` from 1,315 lines (121 KB) to ~80 lines, eliminating 1,200 lines of obsolete July 2026 terminal dumps.
+   - Codified the **Mandatory Change Recording Flow** in `AGENTS.md`: every code modification, optimization, bug fix, and doc change MUST be recorded in `session.md`.
+   - Updated `README.md`, `doc/project_knowledge.md`, `doc/HANDOVER.md`, and `doc/SESSION_STATE.md` to form a cohesive, unbloated documentation hierarchy.
+
 ---
 
 ## Detailed Change Log
@@ -99,3 +115,34 @@
 - `src/sonna_editor/data/extract.py`: regex precompilation and single-pass dual-percentile computation.
 - Full pytest verification: 788 tests passed, 0 failures, 0 warnings.
 - Frontend build verified: `dist/index.html` (2.13 kB) and `dist/assets/index-f2qWcwkj.js` (236.17 kB) built in 510ms.
+
+### Task 8: Cross-Platform Environment Setup, Code Weakness Fixes, Mac Compatibility & Client Distribution
+- **Environment Bootstrapping**: Installed `uv` 0.13.8, portable Node.js LTS v22.11.0, official signed CPython 3.11.9 (resolving Windows Smart App Control error 4551), and synced full `.venv` with CUDA 12.8 PyTorch, TorchVision, rawpy, OpenCV, etc.
+- **Slider Defaults Consolidation**: Defined single canonical `DEFAULT_SLIDER_VALUES` for all 147 sliders in `src/sonna_editor/config.py`. Made `SLIDER_DEFAULTS` in `config.py` a clean slice and `LR_DEFAULTS` in `src/sonna_editor/data/xmp.py` re-export it, removing 95 lines of duplicate tables and preventing any table drift.
+- **Checkpoint Path Portability**: Sanitized machine-specific `/Users/sonnawork/...` absolute paths in `SonnaEditorFoundation/checkpoints/foundation-sonna-raw-xmp-004-visual.json` and `SonnaEditorFoundation/foundation_manifest.json` to relative repository paths.
+- **Personal AI Profile UI Wiring**: Enabled the "Personal AI profile" button in `saha-app/src/components/profile-view.jsx`, removing the hardcoded disabled "Coming soon" state and wiring `PersonalProfileWizard` with complete step-by-step training from RAW+XMP folders.
+- **Memory Throttling in Inference Pipeline**: Replaced unbounded parallel submission in `src/sonna_editor/inference/pipeline.py` with a sliding window (bounded in-flight tasks) to eliminate memory spikes on large shoots (5,000+ images).
+- **Mac Launcher & Finder Compatibility**:
+  - Enhanced `start_saha_mac.command` to auto-detect Homebrew on Apple Silicon (`/opt/homebrew/bin`), auto-install `uv`, and auto-bootstrap portable Node.js LTS for `darwin-arm64` if Node is not on the Mac.
+  - Augmented `process.env.PATH` in `saha-app/electron/main.js` so Electron finds `uv` and Python when double-clicking `Saha.app` or running from Finder.
+- **Client Packaging**: Created `scripts/package_for_client.py` and generated a self-contained 106MB client test bundle `dist/saha-mac-client-bundle.zip` with `start_saha_mac.command`, pretrained foundation AI weights, Lightroom Classic plugin, and quick-start instructions for Darshil. Created `doc/MAC_CLIENT_TESTING.md`.
+- **Verification**: Frontend Vite build passed in 31s; `ruff check src/ scripts/` passed with 0 errors; pytest suites (`test_config.py`, `test_xmp.py`) passed 100%.
+
+### Task 9: Documentation Pruning, Consolidation & Enforced Change Recording Flow
+- **Consolidated Duplicate Instruction Files**:
+  - `CLAUDE.md` reduced from 153 redundant lines to a clean pointer directing Claude Code directly to `AGENTS.md`.
+  - `AGENTS.md` established as the single authoritative operational rules and agent instructions document.
+- **Eliminated Redundant Documentation**:
+  - Deleted `doc/MAC_SETUP.md` (694 lines) which duplicated commands already maintained in `doc/RUN.md`, `doc/CLI_COMMANDS.md`, and `doc/MAC_CLIENT_TESTING.md`.
+  - Incorporated all unique macOS developer setup steps (Xcode command line tools, Homebrew setup, Git LFS `.ckpt` pull instructions) into a dedicated section in `doc/RUN.md`.
+  - Sanitized hardcoded machine paths in `doc/RUN.md` to generic cross-platform paths.
+- **Streamlined `doc/SESSION_STATE.md`**:
+  - Stripped 1,200 lines of obsolete June/July 2026 terminal dumps from a defunct workstation (`vikas.DESKTOP-61LEE8B`), reducing file size from 121 KB (1,315 lines) to ~80 lines.
+  - Refocused `doc/SESSION_STATE.md` as a clean architecture reference documenting active foundation checkpoint lineage (`foundation-sonna-raw-xmp-004-visual`), Lite profile lineage, and runtime behaviors.
+- **Codified Mandatory Change Recording Flow**:
+  - Added explicit instructions in `AGENTS.md`: every code modification, optimization, bug fix, and doc change MUST be recorded in `session.md` at the project root with rationale, files modified, and verification results.
+  - Aligned `README.md`, `doc/HANDOVER.md`, `doc/project_knowledge.md`, and `doc/SESSION_STATE.md` with this unified documentation hierarchy.
+- **Verification**:
+  - `ruff check .` passed with 0 errors.
+  - Regression pytest suites passed with 100%.
+  - Re-generated client package `dist/saha-mac-client-bundle.zip` with the pruned, clean documentation.

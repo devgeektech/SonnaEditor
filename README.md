@@ -78,22 +78,21 @@ The project requires Python `3.11.*`; do not create the uv environment with
 Python 3.12 or newer. Direct Python dependencies are exact-pinned to reduce
 Mac setup drift and resolver conflicts.
 
-For Mac setup from a clean machine through frontend/CLI operation, see
-`doc/MAC_SETUP.md`.
+For Mac developer setup, see [`doc/RUN.md`](doc/RUN.md). For client testing on macOS, see [`doc/MAC_CLIENT_TESTING.md`](doc/MAC_CLIENT_TESTING.md).
 
 ## Documentation
 
 Comprehensive project documentation is maintained in the [`doc/`](doc/) directory:
 
+- [`session.md`](session.md): Real-time change log tracking repository tasks, refactoring, and test outputs.
 - [`doc/HANDOVER.md`](doc/HANDOVER.md): Master project handover, active architecture, decisions, and environment state.
-- [`doc/SESSION_STATE.md`](doc/SESSION_STATE.md): Session-by-session status and verified milestones.
+- [`doc/SESSION_STATE.md`](doc/SESSION_STATE.md): Architecture status, model checkpoint pointers, and runtime behavior reference.
 - [`doc/project_knowledge.md`](doc/project_knowledge.md): Source map, package responsibilities, and runtime notes.
 - [`doc/CLI_COMMANDS.md`](doc/CLI_COMMANDS.md): Runbook for data prep, personal AI, Lite profiles, and inference.
 - [`doc/FOUNDATION_TRAINING.md`](doc/FOUNDATION_TRAINING.md): Foundation dataset prep, training, and promotion runbook.
-- [`doc/RUN.md`](doc/RUN.md): Full operator manual and quick-start reference.
+- [`doc/RUN.md`](doc/RUN.md): Full operator manual and quick-start reference for macOS, Windows, and Linux.
+- [`doc/MAC_CLIENT_TESTING.md`](doc/MAC_CLIENT_TESTING.md): Step-by-step testing guide for client evaluation on macOS.
 - [`doc/SONNA_EDITOR_BUILD_SPEC.md`](doc/SONNA_EDITOR_BUILD_SPEC.md): Task-by-task build specification.
-- [`doc/MAC_SETUP.md`](doc/MAC_SETUP.md): Step-by-step setup and operation guide for macOS.
-- [`session.md`](session.md): Real-time change log tracking repository tasks and refactoring.
 
 Runtime working folders are now created automatically from the project root on
 backend or CLI startup, including `data/training_sources/`, `data/raw/`,

@@ -943,3 +943,17 @@ uv run python scripts\finetune_profile.py `
 
 The fine-tuned checkpoint is versioned under `v1_learning/`, so it becomes visible in the frontend after profile refresh.
 
+## 11. Package App For Client Testing (macOS)
+
+Build a self-contained distribution bundle zip for Darshil:
+
+```powershell
+uv run python scripts\package_for_client.py
+```
+
+Options:
+- `--output dist\saha-mac-client-bundle.zip`: Custom destination zip path.
+- `--include-node-modules`: Include `saha-app\node_modules` (default is excluded to keep zip size at ~106MB; launcher auto-installs npm dependencies on first run).
+
+On macOS, Darshil unzips `saha-mac-client-bundle.zip` and double-clicks `start_saha_mac.command`. Detailed instructions live in `doc/MAC_CLIENT_TESTING.md`.
+

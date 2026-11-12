@@ -7,7 +7,17 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
-import rawpy
+try:
+    import rawpy
+    _RAWPY_THUMB_JPEG: Any = getattr(getattr(rawpy, "ThumbFormat", None), "JPEG", None)
+    _RAWPY_NO_THUMBNAIL_ERROR: type[BaseException] = getattr(
+        rawpy, "LibRawNoThumbnailError", Exception
+    )
+except Exception:
+    rawpy = None  # type: ignore[assignment]
+    _RAWPY_THUMB_JPEG = None
+    _RAWPY_NO_THUMBNAIL_ERROR = Exception
+
 from PIL import Image
 from PIL.ExifTags import TAGS
 import lxml.etree as etree
@@ -36,10 +46,6 @@ _TIFF_NS = "http://ns.adobe.com/tiff/1.0/"
 _AUX_NS = "http://ns.adobe.com/exif/1.0/aux/"
 _EXIF_EX_NS = "http://cipa.jp/exif/1.0/"
 _RDF_NS = "http://www.w3.org/1999/02/22-rdf-syntax-ns#"
-_RAWPY_THUMB_JPEG: Any = getattr(getattr(rawpy, "ThumbFormat"), "JPEG")
-_RAWPY_NO_THUMBNAIL_ERROR: type[BaseException] = getattr(
-    rawpy, "LibRawNoThumbnailError", Exception
-)
 
 
 # -----------------------------------------------------------------------

@@ -13,6 +13,21 @@ const HEALTH_URL = `http://127.0.0.1:${PORT}/api/health`;
 const HEALTH_PROBE_TIMEOUT_MS = 1000;
 const HEALTH_RETRY_INTERVAL_MS = 250;
 
+// Ensure standard macOS binary locations (uv, Python, Homebrew) are on process.env.PATH
+// even when launched from macOS Finder / double-clicking Saha.app.
+if (process.platform === 'darwin') {
+  const home = process.env.HOME || '';
+  const extraPaths = [
+    path.join(home, '.local', 'bin'),
+    path.join(home, 'bin'),
+    '/opt/homebrew/bin',
+    '/opt/homebrew/sbin',
+    '/usr/local/bin',
+  ];
+  const currentPath = process.env.PATH || '';
+  process.env.PATH = `${extraPaths.join(':')}:${currentPath}`;
+}
+
 function backendStartupTimeoutMs() {
   const value = Number(process.env.SAHA_BACKEND_STARTUP_TIMEOUT_MS || 30000);
   return Number.isFinite(value) && value > 0 ? value : 30000;

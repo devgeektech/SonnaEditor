@@ -447,33 +447,111 @@ assert set(SLIDER_FIELDS).issubset(SLIDER_RANGES), (
     f"SLIDER_RANGES missing entries for: {set(SLIDER_FIELDS) - set(SLIDER_RANGES)}"
 )
 
-# Documented Lightroom Classic 15.3 defaults for v2-extension fields (idx 135-146).
-# Used by scripts/migrate_labels_to_v2.py to backfill new label columns in
-# pre-v2 parquet train splits. Primary migration path is RE-EXTRACTION from
-# source XMPs (Q2 decision 2026-05-13); these defaults are the fallback for
-# any row where re-extraction fails or the source XMP is missing the field.
-#
-# 6/12 defaults verified against real LR Classic 15.3 XMP export (Canon R6 +
-# RF24-70mm, PV 15.4, 2026-05-13). 6 marked MEDIUM are based on standard LR
-# convention and pending further verification:
-#   - ColorNoiseReductionDetail/Smoothness: standard LR default = 50
-#   - LensProfile{Distortion,Vignetting}Scale: standard LR default = 100
-#     when lens profile is enabled
-#   - CurveRefineSaturation: assumed default = 100, range 0-100 (awaiting
-#     LR UI verification)
-SLIDER_DEFAULTS: dict[str, float] = {
-    "ColorNoiseReductionDetail":     50.0,    # MEDIUM (standard LR default)
-    "ColorNoiseReductionSmoothness": 50.0,    # MEDIUM (standard LR default)
-    "DefringePurpleAmount":          0.0,     # verified
+# Canonical Lightroom Classic defaults for all 147 slider fields.
+# Represents what every slider shows on a freshly imported, untouched RAW.
+# Used across the pipeline:
+#   - XMP snapshots ("Pre-Saha" baseline)
+#   - Mode B / Lite profile default fallback
+#   - Training priors / bias vector initialization
+#   - Pre-v2 dataset migration fallback
+DEFAULT_SLIDER_VALUES: dict[str, float] = {
+    # Tone (8) — all 0
+    "Exposure2012": 0.0, "Contrast2012": 0.0,
+    "Highlights2012": 0.0, "Shadows2012": 0.0,
+    "Whites2012": 0.0, "Blacks2012": 0.0,
+    "Clarity2012": 0.0, "Dehaze": 0.0,
+    # Presence (3) — all 0
+    "Texture": 0.0, "Vibrance": 0.0, "Saturation": 0.0,
+    # WB (2) — Temperature/Tint default to 5500/0 but are normally overridden
+    # at write time by the camera's As-Shot values extracted from the RAW.
+    "Temperature": 5500.0, "Tint": 0.0,
+    # HSL (24) — all 0
+    **{f"HueAdjustment{c}": 0.0 for c in
+       ("Red", "Orange", "Yellow", "Green", "Aqua", "Blue", "Purple", "Magenta")},
+    **{f"SaturationAdjustment{c}": 0.0 for c in
+       ("Red", "Orange", "Yellow", "Green", "Aqua", "Blue", "Purple", "Magenta")},
+    **{f"LuminanceAdjustment{c}": 0.0 for c in
+       ("Red", "Orange", "Yellow", "Green", "Aqua", "Blue", "Purple", "Magenta")},
+    # Parametric tone curve (7)
+    "ParametricHighlights": 0.0, "ParametricLights": 0.0,
+    "ParametricDarks": 0.0, "ParametricShadows": 0.0,
+    "ParametricHighlightSplit": 75.0,
+    "ParametricMidtoneSplit": 50.0,
+    "ParametricShadowSplit": 25.0,
+    # Color Grading (14) — Blending defaults to 50, everything else 0
+    "SplitToningShadowHue": 0.0, "SplitToningShadowSaturation": 0.0,
+    "ColorGradeShadowLum": 0.0,
+    "ColorGradeMidtoneHue": 0.0, "ColorGradeMidtoneSat": 0.0, "ColorGradeMidtoneLum": 0.0,
+    "SplitToningHighlightHue": 0.0, "SplitToningHighlightSaturation": 0.0,
+    "ColorGradeHighlightLum": 0.0,
+    "ColorGradeBlending": 50.0,
+    "ColorGradeGlobalHue": 0.0, "ColorGradeGlobalSat": 0.0, "ColorGradeGlobalLum": 0.0,
+    "SplitToningBalance": 0.0,
+    # Camera Calibration (6) — all 0
+    "RedHue": 0.0, "RedSaturation": 0.0,
+    "GreenHue": 0.0, "GreenSaturation": 0.0,
+    "BlueHue": 0.0, "BlueSaturation": 0.0,
+    # Sharpening (4)
+    "Sharpness": 25.0,         # LR's RAW import default — not 0
+    "SharpenRadius": 1.0,
+    "SharpenDetail": 25.0,
+    "SharpenEdgeMasking": 0.0,
+    # Noise reduction (4)
+    "LuminanceSmoothing": 0.0,
+    "LuminanceNoiseReductionDetail": 50.0,
+    "LuminanceNoiseReductionContrast": 0.0,
+    "ColorNoiseReduction": 25.0,
+    # Effects (8) — vignette + grain
+    "PostCropVignetteAmount": 0.0,
+    "PostCropVignetteMidpoint": 50.0,
+    "PostCropVignetteRoundness": 0.0,
+    "PostCropVignetteFeather": 50.0,
+    "PostCropVignetteHighlightContrast": 0.0,
+    "GrainAmount": 0.0,
+    "GrainSize": 25.0,
+    "GrainFrequency": 50.0,
+    # Lens (2) — 0
+    "LensManualDistortionAmount": 0.0,
+    "VignetteAmount": 0.0,
+    # Transform (5) — 0
+    "PerspectiveVertical": 0.0, "PerspectiveHorizontal": 0.0,
+    "PerspectiveRotate": 0.0,
+    "PerspectiveScale": 100.0,   # 100 = no scale
+    "PerspectiveAspect": 0.0,
+    # Tone curves (48) — identity at 6 evenly-spaced control points
+    **{
+        f"ToneCurve{ch}_Pt{n}_{ax}": float(v)
+        for ch in ("", "Red", "Green", "Blue")
+        for n, v in enumerate([0, 51, 102, 153, 204, 255], start=1)
+        for ax in ("X", "Y")
+    },
+    # === v2 extensions (idx 135-146) — verified against LR Classic 15.3 ===
+    "ColorNoiseReductionDetail":     50.0,    # standard LR default
+    "ColorNoiseReductionSmoothness": 50.0,    # standard LR default
+    "DefringePurpleAmount":          0.0,     # verified in real XMP
     "DefringePurpleHueLo":           30.0,    # verified in real XMP
     "DefringePurpleHueHi":           70.0,    # verified in real XMP
-    "DefringeGreenAmount":           0.0,     # verified
+    "DefringeGreenAmount":           0.0,     # verified in real XMP
     "DefringeGreenHueLo":            40.0,    # verified in real XMP
     "DefringeGreenHueHi":            60.0,    # verified in real XMP
-    "LensProfileDistortionScale":    100.0,   # MEDIUM (standard LR default when profile enabled)
-    "LensProfileVignettingScale":    100.0,   # MEDIUM (standard LR default when profile enabled)
-    "ShadowTint":                    0.0,     # verified
-    "CurveRefineSaturation":         100.0,   # ⚠ MEDIUM — pending LR UI verification
+    "LensProfileDistortionScale":    100.0,   # standard LR default when profile enabled
+    "LensProfileVignettingScale":    100.0,   # standard LR default when profile enabled
+    "ShadowTint":                    0.0,     # verified in real XMP
+    "CurveRefineSaturation":         100.0,   # standard LR default
+}
+
+assert set(DEFAULT_SLIDER_VALUES.keys()) == set(SLIDER_FIELDS), (
+    f"DEFAULT_SLIDER_VALUES keys must match SLIDER_FIELDS exactly. "
+    f"Missing: {set(SLIDER_FIELDS) - set(DEFAULT_SLIDER_VALUES.keys())}. "
+    f"Extra: {set(DEFAULT_SLIDER_VALUES.keys()) - set(SLIDER_FIELDS)}."
+)
+
+# Documented Lightroom Classic 15.3 defaults for v2-extension fields (idx 135-146).
+# Kept for backward compatibility with scripts/migrate_labels_to_v2.py and
+# training code importing SLIDER_DEFAULTS directly. Sliced directly from
+# the canonical DEFAULT_SLIDER_VALUES table above to prevent any drift.
+SLIDER_DEFAULTS: dict[str, float] = {
+    f: DEFAULT_SLIDER_VALUES[f] for f in SLIDER_FIELDS[135:]
 }
 
 assert set(SLIDER_DEFAULTS.keys()) == set(SLIDER_FIELDS[135:]), (

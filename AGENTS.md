@@ -12,24 +12,33 @@ Not for sale. Not competing with Imagen. Internal tooling for cost savings, IP c
 
 For any non-trivial task, read these before proposing or executing changes:
 
-1. **doc/HANDOVER.md** and **doc/SESSION_STATE.md** (or **session.md**) - current project status, active risks, recent decisions, and next-step context
+1. **session.md** and **doc/HANDOVER.md** (alongside **doc/SESSION_STATE.md**) - current project status, active tasks, change history, model lineage, and next-step context
 2. **doc/project_knowledge.md** - source map and behavior notes for the current codebase
 3. **doc/SONNA_EDITOR_BUILD_SPEC.md** - task-by-task build spec with workflow guidance per task
-4. **doc/CLI_COMMANDS.md**, **doc/FOUNDATION_TRAINING.md**, and **doc/RUN.md** when touching setup, runtime, training, inference, frontend startup, foundation training, or operator commands
+4. **doc/CLI_COMMANDS.md**, **doc/FOUNDATION_TRAINING.md**, **doc/RUN.md**, and **doc/MAC_CLIENT_TESTING.md** when touching setup, runtime, training, inference, frontend startup, foundation training, macOS testing, or operator commands
 
 If you have not read the relevant files in the current session and the user asks you to implement anything beyond a trivial fix, read them now before executing commands or editing files.
 
-## Documentation update rule
+## Documentation update rule and mandatory change recording flow
 
-After every non-trivial execution, update the Markdown file that owns the changed truth:
+Whenever ANY change is made to the codebase (code optimization, bug fix, feature, refactoring, test update, or documentation consolidation):
 
-- **session.md** and **doc/SESSION_STATE.md**: always update after meaningful work so the next session starts from reality.
-- **doc/HANDOVER.md**: update when status, architecture, model lineage, training recipe, known risks, or environment assumptions change.
-- **doc/project_knowledge.md**: update when source files, source-map responsibilities, APIs, scripts, or behavior notes change.
-- **doc/CLI_COMMANDS.md**: update when dataset, Personal AI, Lite, inference, diagnostics, or fine-tune commands change.
-- **doc/FOUNDATION_TRAINING.md**: update when foundation dataset, training, resume, retrain, promotion, or foundation checkpoint assumptions change.
-- **doc/RUN.md** and **README.md**: update when setup, runtime verification, backend/frontend startup, or user-facing quick-start behavior changes.
-- **doc/SONNA_EDITOR_BUILD_SPEC.md**: update only when the planned build workflow itself changes. Do not rewrite historical task specs for minor implementation notes.
+1. **Record in session.md (MANDATORY)**:
+   - `session.md` at the project root is the single authoritative chronological tracker of all tasks, code changes, and verification runs across sessions.
+   - Every change must be recorded in `session.md` with:
+     - Clear task description and rationale
+     - Specific files modified, added, or deleted
+     - Exact test, lint, and build verification outputs (pytest, ruff, vite build)
+2. **Update the Markdown file that owns the changed domain truth**:
+   - **session.md**: master chronological task ledger and verification log.
+   - **doc/SESSION_STATE.md**: high-level architecture status, model checkpoint pointers, and runtime behavior reference.
+   - **doc/HANDOVER.md**: update when architecture, model lineage, training recipe, known risks, or environment assumptions change.
+   - **doc/project_knowledge.md**: update when source files, source-map responsibilities, APIs, scripts, or behavior notes change.
+   - **doc/CLI_COMMANDS.md**: update when dataset, Personal AI, Lite, inference, diagnostics, or fine-tune commands change.
+   - **doc/FOUNDATION_TRAINING.md**: update when foundation dataset, training, resume, retrain, promotion, or foundation checkpoint assumptions change.
+   - **doc/RUN.md** and **README.md**: update when setup, runtime verification, backend/frontend startup, or user-facing quick-start behavior changes.
+   - **doc/MAC_CLIENT_TESTING.md**: update when client test bundle steps, macOS launcher, or Lightroom plugin instructions change.
+   - **doc/SONNA_EDITOR_BUILD_SPEC.md**: update only when the planned build workflow itself changes. Do not rewrite historical task specs for minor implementation notes.
 
 Do not modify generated diagnostic reports under `scripts/output/` unless the task is specifically to rerun or revise that report.
 
@@ -47,6 +56,7 @@ User is Darshil, founder of Sonna Studios. Hamilton, NZ. Direct, action-oriented
 - pytest for tests, ruff for linting, mypy for type checking
 - Run tests after every change to non-trivial code
 - Commit small: 1-3 commits per task, not 20
+- **Mandatory Session Recording**: Always record all changes and verification results in `session.md`.
 
 ### ML-specific
 

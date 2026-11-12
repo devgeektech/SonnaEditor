@@ -38,7 +38,7 @@ This checkout is a Windows development/training workspace at `C:\Users\vikas.DES
   `HasCrop=True`, and `AlreadyApplied=False`. Angle-only XMP is ignored;
   neutral full-frame bounds are not Lightroom's manual-angle shape.
 - **Dataset timestamp handling:** RAW+XMP dataset shoot bucketing now normalizes timezone-aware capture timestamps to naive UTC before computing 12-hour shoot IDs, preventing Mac builds from failing on offset-aware ISO timestamps with `can't subtract offset-naive and offset-aware datetimes`.
-- **Production profile UX boundary:** the frontend currently exposes Lite profile creation from preset plus the six-question survey. Personal AI profile creation from RAW+XMP remains implemented behind the API/wizard code path but the Profile screen tile is disabled and labelled "Coming soon". Foundation model training is CLI-only with `scripts/train_foundation_model.py`.
+- **Production profile UX boundary:** the frontend exposes both Lite profile creation (preset plus six-question survey) and Personal AI profile creation (RAW + XMP sidecars via the 4-step `PersonalProfileWizard`). Foundation model training remains CLI-only with `scripts/train_foundation_model.py`.
 - **Catalog processing source:** the Process UI can now add a Lightroom
   `.lrcat` catalog as a separate source type beside RAW folders. Catalog
   processing opens the `.lrcat` read-only to discover accessible RAW paths,
@@ -245,7 +245,7 @@ Trained model checkpoints follow `model-v{MAJOR}.{MINOR}.{ATTEMPT}[-{suffix}].ck
 
 ### Before starting each session
 
-At the start of a new session, read `SESSION_STATE.md` alongside this document, `project_knowledge.md`, and `SONNA_EDITOR_BUILD_SPEC.md` for instant context. At the end of meaningful work, update `SESSION_STATE.md` and any other Markdown file whose facts changed.
+At the start of a new session, read `session.md` and `doc/SESSION_STATE.md` alongside this document, `project_knowledge.md`, and `SONNA_EDITOR_BUILD_SPEC.md` for instant context. At the end of meaningful work, record all changes in `session.md` and update `doc/SESSION_STATE.md` and any other Markdown file whose facts changed.
 
 ---
 

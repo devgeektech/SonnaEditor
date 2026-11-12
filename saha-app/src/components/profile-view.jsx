@@ -20,6 +20,7 @@ import SONNA from '../tokens.js';
 import { AppShell } from './shell.jsx';
 import { ErrorBanner } from './error-banner.jsx';
 import { LiteProfileWizard } from './lite-wizard.jsx';
+import { PersonalProfileWizard } from './personal-wizard.jsx';
 import { useJob, isTerminal } from '../hooks/useJob.js';
 import { useCaptures } from '../hooks/useCaptures.js';
 import { deleteProfile, startFineTune } from '../api/client.js';
@@ -620,7 +621,7 @@ function FinetuneComplete({ snapshot, onActivate, onReset }) {
 
 // ── ProfileView — top-level component ────────────────────
 // ── Section 1 — Create new profile (top bar) ─────────────
-function CreateProfileBar({ onCreateLite }) {
+function CreateProfileBar({ onCreateLite, onCreatePersonal }) {
   return (
     <div style={{
       padding: '16px 24px',
@@ -632,22 +633,20 @@ function CreateProfileBar({ onCreateLite }) {
       <div style={{ display: 'flex', gap: 12 }}>
         <button
           type="button"
-          disabled
-          title="Personal AI profile training is coming soon."
+          onClick={onCreatePersonal}
           style={{
-          flex: 1, padding: '14px 16px',
-          background: SONNA.bgPanel,
-          border: `1px solid ${SONNA.lineSoft}`,
-          borderRadius: 4,
-          cursor: 'not-allowed',
-          textAlign: 'left',
-          fontFamily: F,
-          color: SONNA.fgMute,
-          minWidth: 0,
-          opacity: 0.68,
-        }}>
+            flex: 1, padding: '14px 16px',
+            background: SONNA.bgPanel,
+            border: `1px solid ${SONNA.line}`,
+            borderRadius: 4,
+            cursor: 'pointer',
+            textAlign: 'left',
+            fontFamily: F,
+            color: SONNA.fg,
+            minWidth: 0,
+          }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <span style={{ fontSize: 13, fontWeight: 600, color: SONNA.fgMute }}>
+            <span style={{ fontSize: 13, fontWeight: 600, color: SONNA.fg }}>
               Personal AI profile
             </span>
             <span style={{
@@ -658,10 +657,10 @@ function CreateProfileBar({ onCreateLite }) {
               border: `1px solid ${SONNA.ochreSoft}`,
               borderRadius: 2,
               flexShrink: 0,
-            }}>Coming soon</span>
+            }}>Trained</span>
           </div>
           <div style={{ marginTop: 5, fontSize: 11.5, color: SONNA.fgMute, lineHeight: 1.5 }}>
-            Train from RAW files and matching Lightroom XMP sidecars.
+            Train personalized AI model from RAW files and matching Lightroom XMP sidecars.
           </div>
         </button>
 
@@ -781,6 +780,7 @@ export function ProfileView({
   const captures = useCaptures();
   const [error, setError] = useState(null);
   const [liteWizardOpen, setLiteWizardOpen] = useState(false);
+  const [personalWizardOpen, setPersonalWizardOpen] = useState(false);
   const [appPaths, setAppPaths] = useState(null);
 
   useEffect(() => {
@@ -847,6 +847,20 @@ export function ProfileView({
     onProfilesChanged?.();
   }, [onProfilesChanged]);
 
+  const handleCreatePersonal = useCallback(() => {
+    setError(null);
+    setPersonalWizardOpen(true);
+  }, []);
+
+  const handlePersonalWizardClose = useCallback(() => {
+    setPersonalWizardOpen(false);
+  }, []);
+
+  const handlePersonalWizardCreated = useCallback(() => {
+    setPersonalWizardOpen(false);
+    onProfilesChanged?.();
+  }, [onProfilesChanged]);
+
   const handleDeleteProfile = useCallback(async (profile) => {
     if (!profile?.id) return;
     const label = profile.display_name || `${profile.name} ${profile.version}`;
@@ -877,6 +891,7 @@ export function ProfileView({
       }}>
         <CreateProfileBar
           onCreateLite={handleCreateLite}
+          onCreatePersonal={handleCreatePersonal}
         />
         <div style={{ flex: 1, display: 'flex', minHeight: 0 }}>
           <ProfileList
@@ -905,6 +920,12 @@ export function ProfileView({
         <LiteProfileWizard
           onClose={handleLiteWizardClose}
           onCreated={handleLiteWizardCreated}
+        />
+      )}
+      {personalWizardOpen && (
+        <PersonalProfileWizard
+          onClose={handlePersonalWizardClose}
+          onCreated={handlePersonalWizardCreated}
         />
       )}
     </AppShell>

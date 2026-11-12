@@ -8,7 +8,7 @@ from typing import Any, Mapping
 
 import lxml.etree as etree
 
-from sonna_editor.config import SLIDER_FIELDS
+from sonna_editor.config import DEFAULT_SLIDER_VALUES, SLIDER_FIELDS
 
 _logger = logging.getLogger(__name__)
 
@@ -58,101 +58,9 @@ COLOR_WHEEL_PAIRS: tuple[tuple[str, str], ...] = (
 )
 
 # Lightroom RAW-import defaults — what every slider shows on a freshly imported,
-# untouched RAW. Used to build the "Pre-Saha" snapshot so clicking it in LR's
-# Snapshots panel reverts the photo to its pre-edit visual state.
-#
-# Most adjustment sliders default to 0. Non-zero defaults are LR's own
-# documented baselines for sharpening, noise reduction, parametric tone curve
-# split points, vignette, grain, and colour grading blending.
-LR_DEFAULTS: dict[str, float] = {
-    # Tone (8) — all 0
-    "Exposure2012": 0.0, "Contrast2012": 0.0,
-    "Highlights2012": 0.0, "Shadows2012": 0.0,
-    "Whites2012": 0.0, "Blacks2012": 0.0,
-    "Clarity2012": 0.0, "Dehaze": 0.0,
-    # Presence (3) — all 0
-    "Texture": 0.0, "Vibrance": 0.0, "Saturation": 0.0,
-    # WB (2) — Temperature/Tint default to 5500/0 but are normally overridden
-    # at write time by the camera's As-Shot values extracted from the RAW.
-    "Temperature": 5500.0, "Tint": 0.0,
-    # HSL (24) — all 0
-    **{f"HueAdjustment{c}": 0.0 for c in
-       ("Red", "Orange", "Yellow", "Green", "Aqua", "Blue", "Purple", "Magenta")},
-    **{f"SaturationAdjustment{c}": 0.0 for c in
-       ("Red", "Orange", "Yellow", "Green", "Aqua", "Blue", "Purple", "Magenta")},
-    **{f"LuminanceAdjustment{c}": 0.0 for c in
-       ("Red", "Orange", "Yellow", "Green", "Aqua", "Blue", "Purple", "Magenta")},
-    # Parametric tone curve (7)
-    "ParametricHighlights": 0.0, "ParametricLights": 0.0,
-    "ParametricDarks": 0.0, "ParametricShadows": 0.0,
-    "ParametricHighlightSplit": 75.0,
-    "ParametricMidtoneSplit": 50.0,
-    "ParametricShadowSplit": 25.0,
-    # Color Grading (14) — Blending defaults to 50, everything else 0
-    "SplitToningShadowHue": 0.0, "SplitToningShadowSaturation": 0.0,
-    "ColorGradeShadowLum": 0.0,
-    "ColorGradeMidtoneHue": 0.0, "ColorGradeMidtoneSat": 0.0, "ColorGradeMidtoneLum": 0.0,
-    "SplitToningHighlightHue": 0.0, "SplitToningHighlightSaturation": 0.0,
-    "ColorGradeHighlightLum": 0.0,
-    "ColorGradeBlending": 50.0,
-    "ColorGradeGlobalHue": 0.0, "ColorGradeGlobalSat": 0.0, "ColorGradeGlobalLum": 0.0,
-    "SplitToningBalance": 0.0,
-    # Camera Calibration (6) — all 0
-    "RedHue": 0.0, "RedSaturation": 0.0,
-    "GreenHue": 0.0, "GreenSaturation": 0.0,
-    "BlueHue": 0.0, "BlueSaturation": 0.0,
-    # Sharpening (4)
-    "Sharpness": 25.0,         # LR's RAW import default — not 0
-    "SharpenRadius": 1.0,
-    "SharpenDetail": 25.0,
-    "SharpenEdgeMasking": 0.0,
-    # Noise reduction (4)
-    "LuminanceSmoothing": 0.0,
-    "LuminanceNoiseReductionDetail": 50.0,
-    "LuminanceNoiseReductionContrast": 0.0,
-    "ColorNoiseReduction": 25.0,
-    # Effects (8) — vignette + grain
-    "PostCropVignetteAmount": 0.0,
-    "PostCropVignetteMidpoint": 50.0,
-    "PostCropVignetteRoundness": 0.0,
-    "PostCropVignetteFeather": 50.0,
-    "PostCropVignetteHighlightContrast": 0.0,
-    "GrainAmount": 0.0,
-    "GrainSize": 25.0,
-    "GrainFrequency": 50.0,
-    # Lens (2) — 0
-    "LensManualDistortionAmount": 0.0,
-    "VignetteAmount": 0.0,
-    # Transform (5) — 0
-    "PerspectiveVertical": 0.0, "PerspectiveHorizontal": 0.0,
-    "PerspectiveRotate": 0.0,
-    "PerspectiveScale": 100.0,   # 100 = no scale
-    "PerspectiveAspect": 0.0,
-    # === v2 extensions (idx 135-146) — added 2026-05-13 ===
-    # Values match config.SLIDER_DEFAULTS exactly. These two tables serve
-    # different purposes (LR_DEFAULTS for snapshots/XMP-read defaults;
-    # SLIDER_DEFAULTS for migration backfill) and the duplication is a known
-    # smell flagged for future consolidation.
-    "ColorNoiseReductionDetail": 50.0,
-    "ColorNoiseReductionSmoothness": 50.0,
-    "DefringePurpleAmount": 0.0,
-    "DefringePurpleHueLo": 30.0,
-    "DefringePurpleHueHi": 70.0,
-    "DefringeGreenAmount": 0.0,
-    "DefringeGreenHueLo": 40.0,
-    "DefringeGreenHueHi": 60.0,
-    "LensProfileDistortionScale": 100.0,
-    "LensProfileVignettingScale": 100.0,
-    "ShadowTint": 0.0,
-    "CurveRefineSaturation": 100.0,
-    # Tone curves (48) — identity at 6 evenly-spaced control points
-    **{
-        f"ToneCurve{ch}_Pt{n}_{ax}": float(v)
-        for ch in ("", "Red", "Green", "Blue")
-        for n, v in enumerate([0, 51, 102, 153, 204, 255], start=1)
-        for ax in ("X", "Y")
-    },
-}
+# untouched RAW. Canonical source of truth lives in sonna_editor.config.DEFAULT_SLIDER_VALUES.
+# Re-exported here as LR_DEFAULTS for backward compatibility.
+LR_DEFAULTS: dict[str, float] = DEFAULT_SLIDER_VALUES
 
 # Sanity check at import time — if a slider is added to SLIDER_FIELDS without
 # a matching default, the snapshot would silently misrepresent it.
