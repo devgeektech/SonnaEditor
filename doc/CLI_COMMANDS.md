@@ -27,8 +27,8 @@ training, resume, and retrain commands live in `FOUNDATION_TRAINING.md`.
   with a matching sidecar. `uv run python scripts\rollback_foundation.py
   --list` should show that version as active.
 - Runtime directories are now created automatically from the project root. A fresh clone will bootstrap repo-local `data\training_sources\`, `data\raw\`, `data\raw\sonna_training\`, `v1_learning\`, and `.saha\` on backend or CLI startup.
-- App startup is now wrapped by a one-command launcher. Use `.\start_saha_windows.bat`
-  on Windows and `./start_saha_mac.command` on macOS/Linux. The old two-terminal
+- App startup is now wrapped by a one-command launcher. Use `.\DOUBLE_CLICK_WIN_START_SAHA.bat`
+  on Windows and `./DOUBLE_CLICK_MAC_START_SAHA.command` on macOS/Linux. The old two-terminal
   backend/frontend commands remain below as a debugging reference. Electron's
   backend readiness wait is 30s by default and can be overridden with
   `SAHA_BACKEND_STARTUP_TIMEOUT_MS` for unusually slow cold starts.
@@ -174,8 +174,8 @@ Do not reuse a previous --version-stem; old checkpoints are never overwritten.
    - The training script saves the full run under your `--output-dir` and publishes a versioned checkpoint into `v1_learning/` by default so `/api/profiles` and the Electron frontend can see it.
 
 4. Run the app.
-   - Preferred one-command launcher: `.\start_saha_windows.bat` on Windows or
-     `./start_saha_mac.command` on macOS/Linux.
+   - Preferred one-command launcher: `.\DOUBLE_CLICK_WIN_START_SAHA.bat` on Windows or
+     `./DOUBLE_CLICK_MAC_START_SAHA.command` on macOS/Linux.
    - Backend scans `v1_learning/model-v*.ckpt`.
    - Frontend calls `GET /api/profiles` and shows those profiles.
 
@@ -831,13 +831,13 @@ uv run python scripts\train_profile.py `
 Preferred client command from the repo root:
 
 ```powershell
-.\start_saha_windows.bat
+.\DOUBLE_CLICK_WIN_START_SAHA.bat
 ```
 
 macOS/Linux:
 
 ```bash
-./start_saha_mac.command
+./DOUBLE_CLICK_MAC_START_SAHA.command
 ```
 
 Equivalent explicit command:
@@ -952,5 +952,5 @@ Options:
 - `--output dist\saha-mac-client-bundle.zip`: Custom destination zip path.
 - `--include-node-modules`: Include `saha-app\node_modules` (default is excluded to keep zip size at ~106MB; launcher auto-installs npm dependencies on first run).
 
-On macOS, Darshil unzips `saha-mac-client-bundle.zip` and double-clicks `start_saha_mac.command`. Detailed instructions live in `doc/MAC_CLIENT_TESTING.md`.
+On macOS, Darshil unzips `saha-mac-client-bundle.zip` and double-clicks `DOUBLE_CLICK_MAC_START_SAHA.command`. Detailed instructions live in `doc/MAC_CLIENT_TESTING.md`.
 

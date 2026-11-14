@@ -17,8 +17,8 @@ Current local workspace state as of 2026-07-01:
 - Hidden foundation state is present and tracked in this branch. `SonnaEditorFoundation/foundation_manifest.json` has active version `foundation-sonna-raw-xmp-004-visual`, pointing at `SonnaEditorFoundation/checkpoints/foundation-sonna-raw-xmp-004-visual.ckpt` and matching `.json` sidecar. The sidecar records `profile_type=mode_a_trained`, `slider_set_version=v2`, `arch_version=3`, `resolution=512`, `train_rows=5021`, and `val_loss=0.02533668652176857`.
 - Historical diagnostics from the previous 189-photo local dataset remain useful for collapse analysis context, but do not assume those local Parquet/checkpoint files are present in this checkout.
 - Supported RAW extension scanning is centralised in `config.SUPPORTED_RAW_EXTENSIONS` and currently covers `.cr2`, `.cr3`, `.nef`, `.arw`, `.raf`, `.orf`, `.rw2`, `.pef`, `.dng`, `.x3f`, `.rwl`, and `.srw` across dataset building, folder/API scans, preset processing, model inference, and fine-tune capture. Decode/conversion still depends on `rawpy`/LibRaw or Adobe DNG Converter supporting the specific camera file.
-- Preferred app startup is now one command: `.\start_saha_windows.bat` on Windows and
-  `./start_saha_mac.command` on macOS/Linux. The legacy two-terminal backend/frontend
+- Preferred app startup is now one command: `.\DOUBLE_CLICK_WIN_START_SAHA.bat` on Windows and
+  `./DOUBLE_CLICK_MAC_START_SAHA.command` on macOS/Linux. The legacy two-terminal backend/frontend
   commands are still documented as a debugging reference. Electron's backend
   readiness guard waits up to 30s with 1s `/api/health` probes, configurable
   via `SAHA_BACKEND_STARTUP_TIMEOUT_MS`, to avoid false failures during cold
@@ -47,7 +47,7 @@ The core inference flow is:
   `saha-app/node_modules` is missing, then runs the Electron dev app. Electron
   starts or reuses the FastAPI backend on port 8765; `saha-app/electron/main.js`
   owns the backend health wait, process reuse, and shutdown behavior.
-- `start_saha_windows.bat` / `start_saha_mac.command`: root-level client-friendly
+- `DOUBLE_CLICK_WIN_START_SAHA.bat` / `DOUBLE_CLICK_MAC_START_SAHA.command`: root-level client-friendly
   double-click launchers wrapping `uv run python scripts/run_app.py` with automatic
   dependency bootstrapping for Windows and macOS.
 - `data/`: gitignored local learning area. `data/training_sources/` stores source RAW/XMP inputs in separate child folders per dataset or run; `data/training_workspace/` stores generated datasets and training runs, including catalog-derived FiveK splits. Fresh clones auto-create this tree at runtime.
@@ -352,8 +352,8 @@ This section tracks what each backend source file/folder does. Keep it updated w
 - `scripts/audit_catalog.py`: catalog consistency audits
 - `scripts/verify_environment.py`: environment checks
 - `scripts/package_for_client.py`: creates a self-contained client test bundle as a compressed zip (`dist/saha-mac-client-bundle.zip`) containing the foundation model checkpoint, Lightroom Classic bridge, macOS launcher, frontend, backend, and quick-start instructions for client testing without Git.
-- `start_saha_mac.command`: double-clickable macOS launcher for client testing; detects Homebrew PATH, bootstraps `uv`, auto-downloads portable Node.js LTS for `darwin-arm64` if needed, and launches the app.
-- `start_saha_windows.bat`: one-click launcher for Windows workstations.
+- `DOUBLE_CLICK_MAC_START_SAHA.command`: double-clickable macOS launcher for client testing; detects Homebrew PATH, bootstraps `uv`, auto-downloads portable Node.js LTS for `darwin-arm64` if needed, and launches the app.
+- `DOUBLE_CLICK_WIN_START_SAHA.bat`: one-click launcher for Windows workstations.
 
 ## Preset / Mode B Flow
 

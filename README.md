@@ -63,7 +63,7 @@ Windows:
 ```powershell
 uv sync --extra dev
 uv run python scripts/verify_environment.py
-.\start_saha_windows.bat
+.\DOUBLE_CLICK_WIN_START_SAHA.bat
 ```
 
 macOS/Linux:
@@ -71,7 +71,7 @@ macOS/Linux:
 ```bash
 uv sync --extra dev
 uv run python scripts/verify_environment.py
-./start_saha_mac.command
+./DOUBLE_CLICK_MAC_START_SAHA.command
 ```
 
 The project requires Python `3.11.*`; do not create the uv environment with

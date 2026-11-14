@@ -9,7 +9,7 @@ This document describes how to package, distribute, and run **Sonna Editor (Saha
 Saha is designed as a local-first, cross-platform AI photo editing engine. On macOS:
 - **PyTorch Acceleration:** Runs natively on Apple Silicon GPU using Metal Performance Shaders (`mps`) with fp32 (`32-true`) precision for rock-solid stability and zero numerical drift.
 - **Unified Frontend/Backend:** Desktop UI is built in Electron + React; backend runs a local FastAPI engine on port 8765.
-- **Zero-Setup Launcher:** `start_saha_mac.command` automatically configures the environment on Darshil's Mac, including `uv`, portable Node.js LTS, and model checkpoints.
+- **Zero-Setup Launcher:** `DOUBLE_CLICK_MAC_START_SAHA.command` automatically configures the environment on Darshil's Mac, including `uv`, portable Node.js LTS, and model checkpoints.
 
 ---
 
@@ -28,7 +28,7 @@ uv run python scripts/package_for_client.py
   - Complete desktop frontend (`saha-app/`) with both Lite Profile and Personal AI Wizards.
   - Pre-trained foundation AI checkpoint (`SonnaEditorFoundation/checkpoints/foundation-sonna-raw-xmp-004-visual.ckpt`).
   - Lightroom Classic bridge plugin (`lightroom/SahaBridge.lrplugin`).
-  - Double-clickable Mac launcher (`start_saha_mac.command`).
+  - Double-clickable Mac launcher (`DOUBLE_CLICK_MAC_START_SAHA.command`).
   - Quick-start instructions (`QUICK_START.txt`).
 - Excludes: Git history (`.git`), virtual environments (`.venv`), temporary test caches, and node_modules, keeping the zip lightweight and fast to transfer via Google Drive, Dropbox, or AirDrop.
 
@@ -42,11 +42,11 @@ Darshil does not need to manually configure Python versions or command lines.
 Extract `saha-mac-client-bundle.zip` anywhere on the Mac (e.g., in `~/Applications/` or `~/Desktop/`).
 
 ### Step 2: Launch
-Double-click `start_saha_mac.command`.
+Double-click `DOUBLE_CLICK_MAC_START_SAHA.command`.
 
 > [!NOTE] macOS Gatekeeper First-Launch Prompt
 > If macOS displays a warning ("developer cannot be verified"):
-> 1. Right-click (or Control-click) `start_saha_mac.command` in Finder.
+> 1. Right-click (or Control-click) `DOUBLE_CLICK_MAC_START_SAHA.command` in Finder.
 > 2. Click **Open**, then confirm **Open** in the dialog.
 > This only needs to be done once.
 
@@ -96,4 +96,4 @@ Before sending any build to the client, verify:
 - [x] Slider defaults unified in `src/sonna_editor/config.py`.
 - [x] Personal AI profile creation wizard enabled in `saha-app/src/components/profile-view.jsx`.
 - [x] Preview memory throttling enabled in `src/sonna_editor/inference/pipeline.py`.
-- [x] `start_saha_mac.command` has Unix LF line endings and executable permissions.
+- [x] `DOUBLE_CLICK_MAC_START_SAHA.command` has Unix LF line endings and executable permissions.

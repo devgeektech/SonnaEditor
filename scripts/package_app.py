@@ -1,15 +1,18 @@
 #!/usr/bin/env python
-"""Create a clean, self-contained production distribution zip of Saha.
+"""Create a clean, versioned, self-contained production distribution zip of Saha.
 
-Excludes all developer caches, unit/integration tests, one-time testing/audit scripts,
-and dev-only files while keeping everything required to run the full application
-locally on Windows and macOS.
+Features:
+- Versioning support: names output saha-vX.Y.zip (e.g. saha-v1.0.zip, saha-v1.1.zip).
+- Auto-increment: automatically detects previous versions in dist/ and increments minor version.
+- Cleanup: automatically deletes all previous zip packages from dist/ so only the latest remains.
+- Exclusions: strips developer caches, tests, test fixtures, audit/diagnostic scripts, and git artifacts.
 """
 
 from __future__ import annotations
 
 import argparse
 import os
+import re
 import shutil
 import sys
 import zipfile
@@ -27,8 +30,8 @@ INCLUDE_PATHS = [
     "uv.lock",
     ".python-version",
     "README.md",
-    "start_saha_mac.command",
-    "start_saha_windows.bat",
+    "DOUBLE_CLICK_MAC_START_SAHA.command",
+    "DOUBLE_CLICK_WIN_START_SAHA.bat",
     "package.bat",
     "package.sh",
 ]
@@ -85,14 +88,16 @@ EXCLUDE_FILES = {
 }
 
 EXECUTABLE_EXTENSIONS = {".command", ".sh"}
-EXECUTABLE_NAMES = {"start_saha_mac.command", "package.sh"}
+EXECUTABLE_NAMES = {"DOUBLE_CLICK_MAC_START_SAHA.command", "package.sh"}
 
-README_CONTENT = """===================================================
- Saha - Internal AI Photo Editing Tool
+
+def get_readme_content(version: str) -> str:
+    return f"""===================================================
+ Saha v{version} - Internal AI Photo Editing Tool
  Sonna Studios
 ===================================================
 
-Welcome! This bundle contains the complete, local Saha desktop editor
+Welcome! This bundle contains the complete, local Saha desktop editor (v{version})
 with the foundation AI model, trained Lite / Personal AI profiles, and
 the Lightroom Classic bridge plugin.
 
@@ -102,16 +107,16 @@ and edits are stored on your local disk.
 ---------------------------------------------------
 QUICK START (macOS):
 ---------------------------------------------------
-1. Double-click `start_saha_mac.command` in this folder.
+1. Double-click `DOUBLE_CLICK_MAC_START_SAHA.command` in this folder.
    - If macOS Gatekeeper prompts on first launch: Right-click -> Open.
-   - Or open Terminal in this folder and run: bash start_saha_mac.command
+   - Or open Terminal in this folder and run: bash DOUBLE_CLICK_MAC_START_SAHA.command
 2. The launcher will automatically configure local dependencies,
    enable Apple Silicon MPS GPU acceleration, and open the Saha desktop application.
 
 ---------------------------------------------------
 QUICK START (Windows):
 ---------------------------------------------------
-1. Double-click `start_saha_windows.bat` in this folder.
+1. Double-click `DOUBLE_CLICK_WIN_START_SAHA.bat` in this folder.
 2. The launcher will automatically configure local dependencies,
    enable CUDA GPU acceleration if an NVIDIA GPU is present, and open the Saha desktop application.
 
@@ -136,7 +141,6 @@ def clean_local_caches(repo_root: Path) -> int:
     """Remove cache directories and files across the repository."""
     removed_count = 0
 
-    # Cache directories
     top_caches = [
         repo_root / ".mypy_cache",
         repo_root / ".pytest_cache",
@@ -149,13 +153,11 @@ def clean_local_caches(repo_root: Path) -> int:
             shutil.rmtree(cdir, ignore_errors=True)
             removed_count += 1
 
-    # __pycache__ directories outside .venv
     for p in repo_root.glob("**/__pycache__"):
         if ".venv" not in p.parts:
             shutil.rmtree(p, ignore_errors=True)
             removed_count += 1
 
-    # Stray cache files
     for ext in ("*.pyc", "*.pyo", "*.DS_Store"):
         for f in repo_root.glob(f"**/{ext}"):
             if ".venv" not in f.parts:
@@ -166,6 +168,59 @@ def clean_local_caches(repo_root: Path) -> int:
                     pass
 
     return removed_count
+
+
+def resolve_next_version(dist_dir: Path, requested_version: str | None = None) -> str:
+    """Resolve package version.
+
+    If requested_version is provided, uses it.
+    Otherwise, inspects dist/ for existing saha-vX.Y.zip files and increments minor version.
+    If none found, defaults to 1.0.
+    """
+    if requested_version:
+        clean = requested_version.strip().lstrip("v").lstrip("V")
+        return clean
+
+    version_pattern = re.compile(r"^saha-v(\d+)\.(\d+)\.zip$", re.IGNORECASE)
+    existing_versions: list[tuple[int, int]] = []
+
+    if dist_dir.exists():
+        for item in dist_dir.glob("saha-v*.zip"):
+            m = version_pattern.match(item.name)
+            if m:
+                existing_versions.append((int(m.group(1)), int(m.group(2))))
+
+    if not existing_versions:
+        repo_root = dist_dir.parent
+        for candidate in [dist_dir / "version.txt", repo_root / ".saha" / "version.txt"]:
+            if candidate.exists():
+                content = candidate.read_text(encoding="utf-8").strip().lstrip("v").lstrip("V")
+                if content:
+                    return content
+        return "1.0"
+
+    existing_versions.sort()
+    latest_major, latest_minor = existing_versions[-1]
+    return f"{latest_major}.{latest_minor + 1}"
+
+
+def delete_old_packages(dist_dir: Path, exclude_file: Path | None = None) -> int:
+    """Delete all older package zip files in dist/."""
+    deleted_count = 0
+    if not dist_dir.exists():
+        return 0
+
+    for item in dist_dir.glob("*.zip"):
+        if exclude_file and item.resolve() == exclude_file.resolve():
+            continue
+        try:
+            item.unlink()
+            print(f"[clean] Deleted old package: {item.name}")
+            deleted_count += 1
+        except Exception as e:
+            print(f"[warning] Could not delete {item.name}: {e}")
+
+    return deleted_count
 
 
 def is_path_excluded(path: Path, root: Path) -> bool:
@@ -184,7 +239,6 @@ def is_path_excluded(path: Path, root: Path) -> bool:
             return True
         if path.suffix in EXCLUDE_EXTS:
             return True
-        # If file is inside scripts/, only include essential runtime scripts
         if len(parts) >= 2 and parts[0] == "scripts" and path.name not in ESSENTIAL_SCRIPTS:
             return True
 
@@ -202,22 +256,45 @@ def _write_zip_entry(zf: zipfile.ZipFile, file_path: Path, arcname: str) -> None
         zf.write(file_path, arcname=arcname)
 
 
-def build_package(output_zip: Path) -> None:
+def build_package(version: str | None = None, output_path: Path | None = None) -> Path:
     repo_root = Path(__file__).resolve().parent.parent
-    output_zip.parent.mkdir(parents=True, exist_ok=True)
+    dist_dir = repo_root / "dist"
+    dist_dir.mkdir(parents=True, exist_ok=True)
 
+    # 1. Clean local caches across workspace
     print("[clean] Cleaning local caches before packaging...")
     cleaned = clean_local_caches(repo_root)
     print(f"[clean] Removed {cleaned} cache directories/files.")
 
-    print(f"[package] Building clean production bundle: {output_zip}")
+    # 2. Resolve version and output filename
+    v_str = resolve_next_version(dist_dir, requested_version=version)
+    if output_path is None:
+        target_zip = dist_dir / f"saha-v{v_str}.zip"
+    else:
+        target_zip = output_path
+
+    # 3. Delete old zip packages from dist/
+    print("[clean] Removing older packages from dist/...")
+    removed_old = delete_old_packages(dist_dir, exclude_file=target_zip)
+    if removed_old > 0:
+        print(f"[clean] Successfully cleared {removed_old} older package(s).")
+
+    # 4. Record current version in dist/version.txt
+    version_file = dist_dir / "version.txt"
+    try:
+        version_file.write_text(v_str, encoding="utf-8")
+    except Exception:
+        pass
+
+    # 5. Build clean zip package
+    print(f"[package] Building Saha v{v_str}: {target_zip.name}...")
     file_count = 0
     total_bytes = 0
 
-    with zipfile.ZipFile(output_zip, "w", compression=zipfile.ZIP_DEFLATED) as zf:
-        zf.writestr("QUICK_START.txt", README_CONTENT)
+    with zipfile.ZipFile(target_zip, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr("QUICK_START.txt", get_readme_content(v_str))
 
-        # 1. Add top-level included entries
+        # Add top-level included entries
         for entry in INCLUDE_PATHS:
             entry_path = repo_root / entry
             if not entry_path.exists():
@@ -244,7 +321,7 @@ def build_package(output_zip: Path) -> None:
                         file_count += 1
                         total_bytes += f_path.stat().st_size
 
-        # 2. Add essential scripts from scripts/
+        # Add essential scripts from scripts/
         scripts_dir = repo_root / "scripts"
         if scripts_dir.exists():
             for script_name in sorted(ESSENTIAL_SCRIPTS):
@@ -256,24 +333,31 @@ def build_package(output_zip: Path) -> None:
                     total_bytes += script_path.stat().st_size
 
     mb = total_bytes / (1024 * 1024)
-    zip_mb = output_zip.stat().st_size / (1024 * 1024)
+    zip_mb = target_zip.stat().st_size / (1024 * 1024)
     print(f"[package] Done! Packaged {file_count} files ({mb:.1f} MB uncompressed, {zip_mb:.1f} MB zip)")
-    print(f"[package] Destination: {output_zip.resolve()}")
+    print(f"[package] Output file: {target_zip.resolve()}")
+    return target_zip
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Package Saha for clean, minimal production distribution."
+        description="Package Saha into a clean, versioned production zip."
+    )
+    parser.add_argument(
+        "version",
+        nargs="?",
+        default=None,
+        help="Optional explicit version string (e.g. 1.0, 1.1). If omitted, auto-increments.",
     )
     parser.add_argument(
         "--output",
         "-o",
         type=Path,
-        default=Path("dist/saha-production-bundle.zip"),
-        help="Destination path for the production zip archive",
+        default=None,
+        help="Optional custom destination path for the zip archive",
     )
     args = parser.parse_args()
-    build_package(args.output)
+    build_package(version=args.version, output_path=args.output)
 
 
 if __name__ == "__main__":

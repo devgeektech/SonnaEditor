@@ -50,7 +50,7 @@ git lfs pull
 ```
 
 > [!NOTE]
-> For client or non-developer testing on macOS (Darshil at Sonna Studios), see [MAC_CLIENT_TESTING.md](MAC_CLIENT_TESTING.md) or double-click `start_saha_mac.command` directly without manual command-line setup.
+> For client or non-developer testing on macOS (Darshil at Sonna Studios), see [MAC_CLIENT_TESTING.md](MAC_CLIENT_TESTING.md) or double-click `DOUBLE_CLICK_MAC_START_SAHA.command` directly without manual command-line setup.
 
 If `uv` is not installed yet:
 
@@ -105,13 +105,13 @@ From the repo root, use the one-command launcher.
 Windows:
 
 ```powershell
-.\start_saha_windows.bat
+.\DOUBLE_CLICK_WIN_START_SAHA.bat
 ```
 
 macOS/Linux:
 
 ```bash
-./start_saha_mac.command
+./DOUBLE_CLICK_MAC_START_SAHA.command
 ```
 
 The launcher creates the repo-local runtime folders, installs frontend npm

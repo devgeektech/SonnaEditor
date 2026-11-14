@@ -65,7 +65,7 @@
    - In `src/sonna_editor/inference/pipeline.py`, bounded sliding-window execution prevents memory spikes when extracting previews across large shoots (5,000+ photos).
 
 7. **Zero-Touch macOS Launcher:**
-   - `start_saha_mac.command` automatically discovers Apple Silicon Homebrew (`/opt/homebrew/bin`), auto-installs `uv`, and auto-bootstraps portable Node.js LTS for `darwin-arm64` if needed.
+   - `DOUBLE_CLICK_MAC_START_SAHA.command` automatically discovers Apple Silicon Homebrew (`/opt/homebrew/bin`), auto-installs `uv`, and auto-bootstraps portable Node.js LTS for `darwin-arm64` if needed.
    - Electron main process augments `process.env.PATH` to ensure Python and `uv` work seamlessly when opened from Finder.
 
 ---

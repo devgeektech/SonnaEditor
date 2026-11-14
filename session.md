@@ -119,6 +119,26 @@
    - Created one-click double-clickable launchers: `package.bat` (Windows) and `package.sh` (macOS/Linux).
    - Verified production distribution archive `dist/saha-production-bundle.zip` (139 files, 211.3 MB) containing only essential runtime assets with POSIX executable permissions (`0o100755`) preserved.
 
+16. [x] **Task 16: Automated Versioning & Automatic Previous Package Deletion**
+   - Implemented `resolve_next_version()` in `scripts/package_app.py`: auto-increments package versions (`saha-v1.0.zip`, `saha-v1.1.zip`, `saha-v1.2.zip`) while supporting explicit custom versions (`package.bat 2.0`).
+   - Implemented `delete_old_packages()` in `scripts/package_app.py`: automatically purges all older `.zip` packages in `dist/` before and after building, ensuring only the single latest versioned archive remains on disk.
+   - Tested version incrementation and verified deletion of previous archives (`saha-v1.0.zip` automatically replaced by `saha-v1.1.zip`).
+
+17. [x] **Task 17: Renamed Run Launchers to CLICK_ME_MAC/WINDOWS_TO_OPEN_APP**
+   - Renamed macOS double-clickable launcher from `start_saha_mac.command` to `CLICK_ME_MAC_TO_OPEN_APP.command`.
+   - Renamed Windows double-clickable launcher from `start_saha_windows.bat` to `CLICK_ME_WINDOWS_TO_OPEN_APP.bat`.
+   - Updated packaging logic in `scripts/package_app.py` to bundle new launcher filenames and maintain POSIX executable permissions (`0o100755`) for the macOS launcher.
+   - Updated all operational documentation (`README.md`, `doc/RUN.md`, `doc/MAC_CLIENT_TESTING.md`, `doc/CLI_COMMANDS.md`, `doc/HANDOVER.md`, `doc/SESSION_STATE.md`, `doc/project_knowledge.md`).
+   - Packaged and verified `dist/saha-v1.3.zip`.
+
+18. [x] **Task 18: Rename Run Launchers to DOUBLE_CLICK_MAC/WIN_START_SAHA & Commit Changes**
+   - Renamed macOS launcher to `DOUBLE_CLICK_MAC_START_SAHA.command`.
+   - Renamed Windows launcher to `DOUBLE_CLICK_WIN_START_SAHA.bat`.
+   - Updated `scripts/package_app.py` (`INCLUDE_PATHS`, `EXECUTABLE_NAMES`, `QUICK_START.txt`).
+   - Synchronized all documentation across repository.
+   - Rebuilt distribution package `dist/saha-v1.4.zip`.
+   - Executed clean git commit per user command.
+
 ---
 
 ## Detailed Change Log
@@ -277,3 +297,48 @@
   - `uv run ruff check scripts/package_app.py scripts/package_for_client.py` passed with 0 errors.
   - Verified `dist/saha-production-bundle.zip` (139 files, 211.3 MB zip / 229.2 MB uncompressed): confirmed 0 test files, 0 audit scripts, 0 cache directories, and valid POSIX permissions.
   - No automatic git commit executed per user command.
+
+### Task 16: Automated Versioning & Automatic Previous Package Deletion
+- **Automated Versioning**:
+  - Added `resolve_next_version(dist_dir, requested_version)` in `scripts/package_app.py`.
+  - Format: `saha-vX.Y.zip` (e.g. `saha-v1.0.zip`, `saha-v1.1.zip`, `saha-v1.2.zip`).
+  - Auto-increments minor version on each packaging run if no version argument is specified.
+  - Supports explicit version arguments (e.g. `package.bat 2.0` or `uv run python scripts/package_app.py 2.0`).
+  - Injects dynamic version metadata (`Saha v{version}`) into bundled `QUICK_START.txt`.
+- **Automatic Old Package Purging**:
+  - Added `delete_old_packages(dist_dir, exclude_file)` in `scripts/package_app.py`.
+  - Automatically identifies and deletes all previous `.zip` bundles in `dist/` before creating the new archive, ensuring disk space is conserved and only the latest build exists.
+- **Verification**:
+  - Ran first execution: created `saha-v1.0.zip` and deleted previous unversioned bundles (`saha-app-bundle.zip`, `saha-production-bundle.zip`).
+  - Ran second execution: auto-incremented to `saha-v1.1.zip`, deleted `saha-v1.0.zip`, and verified that only `dist/saha-v1.1.zip` remains in `dist/`.
+  - No automatic git commit executed per user command.
+
+### Task 17: Renamed Run Launchers to CLICK_ME_MAC/WINDOWS_TO_OPEN_APP
+- **Renamed Run Launchers**:
+  - Renamed Windows launcher: `start_saha_windows.bat` -> `CLICK_ME_WINDOWS_TO_OPEN_APP.bat`.
+  - Renamed macOS launcher: `start_saha_mac.command` -> `CLICK_ME_MAC_TO_OPEN_APP.command`.
+- **Packaging & Permission Updates**:
+  - Updated `scripts/package_app.py` `INCLUDE_PATHS` to package the new filenames.
+  - Maintained POSIX executable permission bit (`0o100755`) for `CLICK_ME_MAC_TO_OPEN_APP.command` so unzipping on macOS preserves double-click execution.
+  - Updated embedded `QUICK_START.txt` instructions to direct users to double-click `CLICK_ME_WINDOWS_TO_OPEN_APP.bat` on Windows and `CLICK_ME_MAC_TO_OPEN_APP.command` on macOS.
+- **Documentation Synchronization**:
+  - Synchronized references across `README.md`, `doc/RUN.md`, `doc/MAC_CLIENT_TESTING.md`, `doc/CLI_COMMANDS.md`, `doc/HANDOVER.md`, `doc/SESSION_STATE.md`, and `doc/project_knowledge.md`.
+- **Verification**:
+  - Tested Windows launcher: `cmd /c CLICK_ME_WINDOWS_TO_OPEN_APP.bat --help` exited with code 0.
+  - Generated distribution archive `dist/saha-v1.3.zip` (138 files, 211.3 MB zip / 229.2 MB uncompressed).
+  - Verified previous archive `dist/saha-v1.2.zip` was purged and only `dist/saha-v1.3.zip` remains in `dist/`.
+  - No automatic git commit executed per user command.
+
+### Task 18: Rename Run Launchers to DOUBLE_CLICK_MAC/WIN_START_SAHA & Commit Changes
+- **Launcher Renames**:
+  - Renamed Windows launcher: `DOUBLE_CLICK_WIN_START_SAHA.bat`.
+  - Renamed macOS launcher: `DOUBLE_CLICK_MAC_START_SAHA.command`.
+- **Packaging Updates**:
+  - Updated `scripts/package_app.py` `INCLUDE_PATHS` and `EXECUTABLE_NAMES` (`{"DOUBLE_CLICK_MAC_START_SAHA.command", "package.sh"}`).
+  - Updated embedded `QUICK_START.txt` instructions in `scripts/package_app.py`.
+- **Documentation Synchronization**:
+  - Synchronized all documentation across repository (`README.md`, `doc/RUN.md`, `doc/MAC_CLIENT_TESTING.md`, `doc/CLI_COMMANDS.md`, `doc/HANDOVER.md`, `doc/SESSION_STATE.md`, `doc/project_knowledge.md`).
+- **Packaging & Verification**:
+  - Ran `scripts/package_app.py`: auto-incremented to `saha-v1.4.zip`, purged `saha-v1.3.zip`, and embedded launchers with POSIX executable permissions (`0o100755`).
+  - Tested `cmd /c DOUBLE_CLICK_WIN_START_SAHA.bat --help`: exited with code 0.
+  - Executed git commit per user command.
