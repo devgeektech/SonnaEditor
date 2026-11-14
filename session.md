@@ -88,6 +88,14 @@
    - Copied and sequentially organized 40 reference screenshots covering Imagen's onboarding, project creation, profile selection, preset upload, visual style survey steps (Exposure, Temperature, and Tint comparisons across different scenes), building/ready confirmation modals, catalog/folder ingestion choices, profile settings fine-tuning overrides, Personal AI profile training wizard steps, genre categorization, supported RAW formats, Denoise strength side-by-side controls, and active project processing states.
    - Authored comprehensive `references/README.md` indexing all 40 screenshots across 10 functional workflow groups with instructions for adding future reference assets.
 
+11. [x] **Task 11: Fix Windows App Startup, Node.js PATH Detection & Double-Click Launchers**
+   - Diagnosed startup failure when clicking launcher scripts on Windows: `C:\Program Files\nodejs` was missing from user/machine PATH registry, causing `start_saha_windows.bat` to fail with `[saha] Node.js not found on PATH.` and `scripts/run_app.py` to raise `RuntimeError: Node.js was not found on PATH.`. Additionally, clicking `start_saha_mac.command` on Windows failed because `.command` is a macOS shell script.
+   - Permanently registered `C:\Program Files\nodejs` and `%USERPROFILE%\.local\bin` into Windows User PATH registry.
+   - Enhanced `start_saha_windows.bat` and `run_saha.cmd` with automatic fallback path injection for Node.js, `uv`, and Python, falling back directly to `.venv\Scripts\python.exe` if `uv` is absent.
+   - Updated `scripts/run_app.py` with `_ensure_windows_paths()` fallback discovery and environment injection so child processes (`npm`, `vite`, `electron`) inherit the Node directory on Windows.
+   - Augmented `process.env.PATH` on `win32` in `saha-app/electron/main.js` so Electron finds local binaries without relying on inherited system PATH.
+   - Created root convenience aliases `start.bat` and `START_SAHA.bat`.
+
 ---
 
 ## Detailed Change Log
@@ -166,3 +174,21 @@
   - 9. Mode A Profile Creation & Catalog Ingestion (`31` - `35`)
   - 10. Project Creation & Advanced AI Tools (`36` - `40`)
 - Authored `references/README.md` cataloging each screenshot with descriptions, core UX patterns, and instructions for adding future references.
+
+### Task 11: Fix Windows App Startup, Node.js PATH Detection & Double-Click Launchers
+- **Root Cause Analysis**:
+  - The installed Node.js binary was located at `C:\Program Files\nodejs\node.exe`, but neither the Windows User PATH nor System PATH in registry contained this directory.
+  - When double-clicking `start_saha_windows.bat`, `where node` failed with exit code 1, displaying `[saha] Node.js not found on PATH.` and pausing.
+  - When running `scripts/run_app.py`, `_node_command()` raised `RuntimeError: Node.js was not found on PATH.`
+  - Double-clicking `start_saha_mac.command` on Windows failed because `.command` is a macOS-only file association.
+- **Fixes Applied**:
+  - Permanently added `C:\Program Files\nodejs` and `%USERPROFILE%\.local\bin` to User PATH in registry (`HKCU\Environment`).
+  - Updated `start_saha_windows.bat` to auto-detect and prepend standard paths (`C:\Program Files\nodejs`, `%USERPROFILE%\.local\bin`, `%APPDATA%\npm`, Python) and fall back directly to `.venv\Scripts\python.exe` if `uv` is not present. Added exit error pause for debugging visibility.
+  - Updated `run_saha.cmd` with the same PATH injection and fallback logic.
+  - Added `_ensure_windows_paths()` and fallback path searches in `scripts/run_app.py` for both `_node_command()` and `_npm_command()`, and injected `C:\Program Files\nodejs` into `os.environ["PATH"]` for child process execution (`npm`, `vite`, `electron`).
+  - Augmented `process.env.PATH` on Windows in `saha-app/electron/main.js` matching macOS behavior.
+  - Created root-level double-clickable convenience scripts `start.bat` and `START_SAHA.bat`.
+- **Verification**:
+  - `start_saha_windows.bat --help`, `start.bat --help`, `START_SAHA.bat --help`, and `run_saha.cmd --help` all execute cleanly with zero errors.
+  - `uv run ruff check scripts/run_app.py` passed with 0 errors.
+  - Pytest regression suite (`test_config.py`, `test_xmp.py`) passed 100% (95 passed, 10 skipped in 11.74s).

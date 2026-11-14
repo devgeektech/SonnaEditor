@@ -13,8 +13,8 @@ const HEALTH_URL = `http://127.0.0.1:${PORT}/api/health`;
 const HEALTH_PROBE_TIMEOUT_MS = 1000;
 const HEALTH_RETRY_INTERVAL_MS = 250;
 
-// Ensure standard macOS binary locations (uv, Python, Homebrew) are on process.env.PATH
-// even when launched from macOS Finder / double-clicking Saha.app.
+// Ensure standard binary locations (uv, Python, Homebrew / Windows node, local bin)
+// are on process.env.PATH even when launched via GUI / double-clicking Saha.app or batch files.
 if (process.platform === 'darwin') {
   const home = process.env.HOME || '';
   const extraPaths = [
@@ -26,6 +26,17 @@ if (process.platform === 'darwin') {
   ];
   const currentPath = process.env.PATH || '';
   process.env.PATH = `${extraPaths.join(':')}:${currentPath}`;
+} else if (process.platform === 'win32') {
+  const userProfile = process.env.USERPROFILE || '';
+  const extraPaths = [
+    'C:\\Program Files\\nodejs',
+    path.join(userProfile, '.local', 'bin'),
+    path.join(userProfile, 'AppData', 'Roaming', 'npm'),
+    path.join(userProfile, 'AppData', 'Local', 'Programs', 'Python', 'Python311'),
+    path.join(userProfile, 'AppData', 'Local', 'Programs', 'Python', 'Python311', 'Scripts'),
+  ].filter(p => fs.existsSync(p));
+  const currentPath = process.env.PATH || '';
+  process.env.PATH = `${extraPaths.join(';')};${currentPath}`;
 }
 
 function backendStartupTimeoutMs() {

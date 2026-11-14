@@ -18,9 +18,39 @@ from pathlib import Path
 from sonna_editor import config
 
 
+def _ensure_windows_paths() -> None:
+    """Add standard Windows installation directories to PATH if missing."""
+    if sys.platform != "win32":
+        return
+    candidates = [
+        Path(os.environ.get("PROGRAMFILES", r"C:\Program Files")) / "nodejs",
+        Path(r"C:\Program Files\nodejs"),
+        Path(os.environ.get("PROGRAMFILES(X86)", r"C:\Program Files (x86)")) / "nodejs",
+        Path(os.environ.get("LOCALAPPDATA", "")) / "Programs" / "nodejs",
+        Path(os.environ.get("USERPROFILE", "")) / ".local" / "bin",
+        Path(os.environ.get("APPDATA", "")) / "npm",
+    ]
+    current_path = os.environ.get("PATH", "")
+    current_parts = [p.lower() for p in current_path.split(";") if p.strip()]
+    to_add: list[str] = []
+    for candidate in candidates:
+        if candidate.exists() and str(candidate).lower() not in current_parts:
+            to_add.append(str(candidate))
+    if to_add:
+        os.environ["PATH"] = ";".join(to_add) + ";" + current_path
+
+
 def _npm_command() -> str:
+    _ensure_windows_paths()
     command = "npm.cmd" if sys.platform == "win32" else "npm"
     resolved = shutil.which(command)
+    if resolved is None and sys.platform == "win32":
+        for fallback in [
+            Path(r"C:\Program Files\nodejs\npm.cmd"),
+            Path(os.environ.get("PROGRAMFILES", r"C:\Program Files")) / "nodejs" / "npm.cmd",
+        ]:
+            if fallback.exists():
+                return str(fallback)
     if resolved is None:
         raise RuntimeError(
             "npm was not found on PATH. Install Node.js, then rerun this launcher."
@@ -29,8 +59,16 @@ def _npm_command() -> str:
 
 
 def _node_command() -> str:
+    _ensure_windows_paths()
     command = "node.exe" if sys.platform == "win32" else "node"
     resolved = shutil.which(command)
+    if resolved is None and sys.platform == "win32":
+        for fallback in [
+            Path(r"C:\Program Files\nodejs\node.exe"),
+            Path(os.environ.get("PROGRAMFILES", r"C:\Program Files")) / "nodejs" / "node.exe",
+        ]:
+            if fallback.exists():
+                return str(fallback)
     if resolved is None:
         raise RuntimeError(
             "Node.js was not found on PATH. Install Node.js LTS, then rerun this launcher."
