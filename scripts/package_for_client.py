@@ -27,14 +27,10 @@ INCLUDE_PATHS = [
     "pyproject.toml",
     "uv.lock",
     ".python-version",
+    ".cursorrules",
     "README.md",
     "start_saha_mac.command",
     "start_saha_windows.bat",
-    "start.bat",
-    "START_SAHA.bat",
-    "run_saha.cmd",
-    "run_saha.ps1",
-    "run_saha.sh",
 ]
 
 # Patterns or directory names to exclude
@@ -61,7 +57,7 @@ EXCLUDE_EXTS = {
 }
 
 EXECUTABLE_EXTENSIONS = {".command", ".sh"}
-EXECUTABLE_NAMES = {"start_saha_mac.command", "run_saha.sh"}
+EXECUTABLE_NAMES = {"start_saha_mac.command"}
 
 README_CONTENT = """===================================================
  Saha - Internal AI Photo Editing Tool
@@ -87,7 +83,7 @@ QUICK START (macOS):
 ---------------------------------------------------
 QUICK START (Windows):
 ---------------------------------------------------
-1. Double-click `start.bat` (or `START_SAHA.bat` / `start_saha_windows.bat`).
+1. Double-click `start_saha_windows.bat` in this folder.
 2. The launcher will automatically configure local dependencies,
    enable CUDA GPU acceleration if an NVIDIA GPU is present, and open the Saha desktop application.
 

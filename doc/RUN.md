@@ -102,16 +102,16 @@ frontend-visible Personal AI or Lite profiles.
 
 From the repo root, use the one-command launcher.
 
-Windows PowerShell:
+Windows:
 
 ```powershell
-.\run_saha.cmd
+.\start_saha_windows.bat
 ```
 
-macOS/Linux shell:
+macOS/Linux:
 
 ```bash
-bash run_saha.sh
+./start_saha_mac.command
 ```
 
 The launcher creates the repo-local runtime folders, installs frontend npm
@@ -122,9 +122,8 @@ readiness waits up to 30s by default, which avoids false failures on cold
 Windows/CUDA startup; set `SAHA_BACKEND_STARTUP_TIMEOUT_MS` only if a slower
 machine needs a longer wait.
 
-Prerequisites for both Windows and macOS: `uv` and Node.js LTS must be on
-`PATH`. If either is missing, the launcher prints a setup message instead of
-failing deep inside the app startup.
+Prerequisites for both Windows and macOS: `uv` and Node.js LTS. If missing, the
+launchers automatically bootstrap or provide one-click setup.
 
 For a fully explicit command, the wrappers call:
 
@@ -134,10 +133,6 @@ uv run python scripts/run_app.py
 
 Pass `--skip-install` if you want the launcher to fail instead of running
 `npm install` when frontend dependencies are missing.
-
-PowerShell users can also run `.\run_saha.ps1`; the `.cmd` wrapper is the
-lowest-friction Windows option because it avoids script execution-policy
-prompts.
 
 ## 4. Manual Backend API
 

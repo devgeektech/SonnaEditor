@@ -101,6 +101,18 @@
    - Enhanced `scripts/package_for_client.py` to bundle all local model weights (`SonnaEditorFoundation/checkpoints/` and `v1_learning/`), Lightroom bridge plugin, documentation, and launchers with POSIX executable permissions (`0o100755`) for macOS `.command` scripts.
    - Added root one-click packaging utility `package.bat` and verified 213.6 MB universal distribution bundle `dist/saha-app-bundle.zip`.
 
+13. [x] **Task 13: Windows Batch Script Direct Path Discovery & Delayed Expansion Fix**
+   - Diagnosed root cause for `[saha] Node.js not found on PATH.` remaining in cmd.exe: `setlocal enabledelayedexpansion` mangled `PATH` when `!PATH!` contained parentheses (`C:\Program Files (x86)`).
+   - Replaced `where node` with direct path verification (`if exist "C:\Program Files\nodejs\node.exe"`) and cmd built-in path resolution (`for %%i in (node.exe) do if not "%%~$PATH:i"==""`), eliminating reliance on external `where.exe`.
+   - Removed delayed expansion mangling, prepending all standard paths cleanly before launching.
+
+14. [x] **Task 14: Launcher Redundancy Elimination, CLAUDE.md Removal, Cursor Integration & Explicit Commit Control**
+   - Eliminated redundant root launch wrappers (`START_SAHA.bat`, `start.bat`, `run_saha.cmd`, `run_saha.ps1`, `run_saha.sh`).
+   - Retained a single canonical pair: `start_saha_windows.bat` for Windows and `start_saha_mac.command` for macOS.
+   - Removed `CLAUDE.md` and created `.cursorrules` pointing directly to `AGENTS.md` for seamless Cursor IDE integration alongside Antigravity.
+   - Enforced the user rule in `AGENTS.md`: "DO NOT commit or push to git automatically. Only commit or push when explicitly commanded by the user."
+   - Updated documentation (`README.md`, `doc/RUN.md`, `doc/CLI_COMMANDS.md`, `doc/HANDOVER.md`, `doc/project_knowledge.md`) and `scripts/package_for_client.py`.
+
 ---
 
 ## Detailed Change Log
@@ -220,3 +232,20 @@
 - Removed delayed expansion mangling, prepending all standard paths cleanly before launching.
 - Verified: `start.bat --help`, `START_SAHA.bat --help`, `start_saha_windows.bat --help`, and `run_saha.cmd --help` all succeed with returncode 0 and zero stderr.
 - Rebuilt `dist/saha-app-bundle.zip`.
+
+### Task 14: Launcher Redundancy Elimination, CLAUDE.md Removal, Cursor Integration & Explicit Commit Control
+- **Eliminated Redundant Launchers**:
+  - Deleted duplicate wrappers: `START_SAHA.bat`, `start.bat`, `run_saha.cmd`, `run_saha.ps1`, `run_saha.sh`.
+  - Standardized on a single, clear pair:
+    - Windows: `start_saha_windows.bat`
+    - macOS: `start_saha_mac.command`
+- **Removed CLAUDE.md & Added Cursor Support**:
+  - Deleted `CLAUDE.md` per user directive to focus exclusively on Antigravity and Cursor.
+  - Added `.cursorrules` pointing Cursor directly to `AGENTS.md` as the single authoritative source of project instructions and rules.
+- **Enforced Explicit Git Commit Control**:
+  - Updated `AGENTS.md`: "DO NOT commit or push to git automatically. Only create git commits or push to remote when explicitly commanded by the user."
+  - Updated all documentation references in `README.md`, `doc/RUN.md`, `doc/CLI_COMMANDS.md`, `doc/HANDOVER.md`, `doc/project_knowledge.md`, and `scripts/package_for_client.py`.
+- **Verification**:
+  - `start_saha_windows.bat --help` executed with code 0.
+  - `uv run ruff check scripts/package_for_client.py` passed with 0 errors.
+  - No automatic git commit executed per user command.

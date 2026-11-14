@@ -55,7 +55,7 @@ User is Darshil, founder of Sonna Studios. Hamilton, NZ. Direct, action-oriented
 - `pathlib.Path` for file paths, never `os.path` strings
 - pytest for tests, ruff for linting, mypy for type checking
 - Run tests after every change to non-trivial code
-- Commit small: 1-3 commits per task, not 20
+- **Git Commits**: DO NOT commit or push to git automatically. Only create git commits or push to remote when explicitly commanded by the user.
 - **Mandatory Session Recording**: Always record all changes and verification results in `session.md`.
 
 ### ML-specific

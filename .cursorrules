@@ -1,0 +1,6 @@
+# Cursor Rules - Sonna Editor
+
+All coding rules, architecture standards, model lineage, and documentation rules are centralized in AGENTS.md.
+Always consult and adhere strictly to AGENTS.md for every task, implementation, and verification step.
+Always record all changes and verification outputs in session.md.
+Do not commit changes to git automatically unless explicitly commanded by the user.

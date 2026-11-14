@@ -17,8 +17,8 @@ Current local workspace state as of 2026-07-01:
 - Hidden foundation state is present and tracked in this branch. `SonnaEditorFoundation/foundation_manifest.json` has active version `foundation-sonna-raw-xmp-004-visual`, pointing at `SonnaEditorFoundation/checkpoints/foundation-sonna-raw-xmp-004-visual.ckpt` and matching `.json` sidecar. The sidecar records `profile_type=mode_a_trained`, `slider_set_version=v2`, `arch_version=3`, `resolution=512`, `train_rows=5021`, and `val_loss=0.02533668652176857`.
 - Historical diagnostics from the previous 189-photo local dataset remain useful for collapse analysis context, but do not assume those local Parquet/checkpoint files are present in this checkout.
 - Supported RAW extension scanning is centralised in `config.SUPPORTED_RAW_EXTENSIONS` and currently covers `.cr2`, `.cr3`, `.nef`, `.arw`, `.raf`, `.orf`, `.rw2`, `.pef`, `.dng`, `.x3f`, `.rwl`, and `.srw` across dataset building, folder/API scans, preset processing, model inference, and fine-tune capture. Decode/conversion still depends on `rawpy`/LibRaw or Adobe DNG Converter supporting the specific camera file.
-- Preferred app startup is now one command: `.\run_saha.cmd` on Windows and
-  `bash run_saha.sh` on macOS/Linux. The legacy two-terminal backend/frontend
+- Preferred app startup is now one command: `.\start_saha_windows.bat` on Windows and
+  `./start_saha_mac.command` on macOS/Linux. The legacy two-terminal backend/frontend
   commands are still documented as a debugging reference. Electron's backend
   readiness guard waits up to 30s with 1s `/api/health` probes, configurable
   via `SAHA_BACKEND_STARTUP_TIMEOUT_MS`, to avoid false failures during cold
@@ -47,9 +47,9 @@ The core inference flow is:
   `saha-app/node_modules` is missing, then runs the Electron dev app. Electron
   starts or reuses the FastAPI backend on port 8765; `saha-app/electron/main.js`
   owns the backend health wait, process reuse, and shutdown behavior.
-- `run_saha.cmd` / `run_saha.ps1` / `run_saha.sh`: root-level client-friendly
-  wrappers around `uv run python scripts/run_app.py`; use `bash run_saha.sh`
-  on macOS/Linux so the wrapper does not depend on executable file mode.
+- `start_saha_windows.bat` / `start_saha_mac.command`: root-level client-friendly
+  double-click launchers wrapping `uv run python scripts/run_app.py` with automatic
+  dependency bootstrapping for Windows and macOS.
 - `data/`: gitignored local learning area. `data/training_sources/` stores source RAW/XMP inputs in separate child folders per dataset or run; `data/training_workspace/` stores generated datasets and training runs, including catalog-derived FiveK splits. Fresh clones auto-create this tree at runtime.
 - `v1_learning/`: frontend-visible published profile checkpoints plus sidecar/preset/survey files only. Generated datasets do not belong here.
 - `.saha/`: repo-local runtime state for active-profile selection, recent folders, job snapshots, Personal AI training scratch runs, and fine-tune scratch runs. Auto-created at runtime and gitignored.

@@ -27,8 +27,8 @@ training, resume, and retrain commands live in `FOUNDATION_TRAINING.md`.
   with a matching sidecar. `uv run python scripts\rollback_foundation.py
   --list` should show that version as active.
 - Runtime directories are now created automatically from the project root. A fresh clone will bootstrap repo-local `data\training_sources\`, `data\raw\`, `data\raw\sonna_training\`, `v1_learning\`, and `.saha\` on backend or CLI startup.
-- App startup is now wrapped by a one-command launcher. Use `.\run_saha.cmd`
-  on Windows and `bash run_saha.sh` on macOS/Linux. The old two-terminal
+- App startup is now wrapped by a one-command launcher. Use `.\start_saha_windows.bat`
+  on Windows and `./start_saha_mac.command` on macOS/Linux. The old two-terminal
   backend/frontend commands remain below as a debugging reference. Electron's
   backend readiness wait is 30s by default and can be overridden with
   `SAHA_BACKEND_STARTUP_TIMEOUT_MS` for unusually slow cold starts.
@@ -174,8 +174,8 @@ Do not reuse a previous --version-stem; old checkpoints are never overwritten.
    - The training script saves the full run under your `--output-dir` and publishes a versioned checkpoint into `v1_learning/` by default so `/api/profiles` and the Electron frontend can see it.
 
 4. Run the app.
-   - Preferred one-command launcher: `.\run_saha.cmd` on Windows or
-     `bash run_saha.sh` on macOS/Linux.
+   - Preferred one-command launcher: `.\start_saha_windows.bat` on Windows or
+     `./start_saha_mac.command` on macOS/Linux.
    - Backend scans `v1_learning/model-v*.ckpt`.
    - Frontend calls `GET /api/profiles` and shows those profiles.
 
@@ -831,13 +831,13 @@ uv run python scripts\train_profile.py `
 Preferred client command from the repo root:
 
 ```powershell
-.\run_saha.cmd
+.\start_saha_windows.bat
 ```
 
 macOS/Linux:
 
 ```bash
-bash run_saha.sh
+./start_saha_mac.command
 ```
 
 Equivalent explicit command:
@@ -851,10 +851,7 @@ The launcher creates runtime folders, runs `npm install` only when
 The Electron main process starts or reuses the backend on port `8765`. It waits
 up to 30s for `/api/health` before showing a backend startup error, with the
 deadline configurable through `SAHA_BACKEND_STARTUP_TIMEOUT_MS`.
-PowerShell users can also run `.\run_saha.ps1`; `.\run_saha.cmd` is usually
-smoother on client machines because it avoids execution-policy prompts.
-Both machines need `uv` and Node.js LTS on `PATH`; missing tools are reported
-with a clear setup message.
+Missing tools are automatically bootstrapped with clear setup messages.
 
 Manual two-terminal startup remains useful for debugging.
 
