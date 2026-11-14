@@ -13,14 +13,30 @@ echo "================================================="
 echo " Starting Sonna Editor (Saha) for macOS"
 echo "================================================="
 
-# 1. Ensure uv is installed (auto-installs if missing)
+# 1. Clean up cross-platform virtual environments (e.g. unzipped from Windows archive)
+if [ -d ".venv" ]; then
+    if [ ! -f ".venv/bin/python" ]; then
+        echo "[saha] Detected non-macOS virtual environment (from Windows zip). Resetting .venv for macOS..."
+        rm -rf .venv
+    fi
+fi
+
+# 2. Clean up cross-platform node_modules (e.g. unzipped from Windows archive with .exe binaries)
+if [ -d "saha-app/node_modules" ]; then
+    if [ ! -d "saha-app/node_modules/electron/dist/Electron.app" ]; then
+        echo "[saha] Detected non-macOS frontend binaries (from Windows zip). Resetting node_modules for macOS..."
+        rm -rf saha-app/node_modules
+    fi
+fi
+
+# 3. Ensure uv is installed (auto-installs if missing)
 if ! command -v uv >/dev/null 2>&1; then
     echo "[saha] Installing uv package manager..."
     curl -LsSf https://astral.sh/uv/install.sh | sh
     export PATH="$HOME/.local/bin:$PATH"
 fi
 
-# 2. Check Node.js (auto-installs portable Node.js LTS if missing)
+# 4. Check Node.js (auto-installs portable Node.js LTS if missing)
 if ! command -v node >/dev/null 2>&1; then
     echo "[saha] Node.js not detected on system PATH. Bootstrapping portable Node.js LTS..."
     ARCH="$(uname -m)"
@@ -42,12 +58,11 @@ if ! command -v node >/dev/null 2>&1; then
     echo "[saha] Node.js $(node -v) successfully configured."
 fi
 
-# 3. Pull Git LFS models if they are still pointer files
+# 5. Pull Git LFS models if they are still pointer files
 if command -v git-lfs >/dev/null 2>&1; then
     git lfs pull 2>/dev/null || true
 fi
 
-# 4. Launch Saha (syncs python environment and boots Electron)
+# 6. Launch Saha (syncs python environment and boots Electron)
 echo "[saha] Starting desktop application..."
 uv run python scripts/run_app.py "$@"
-

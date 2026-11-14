@@ -76,6 +76,23 @@ def _node_command() -> str:
     return resolved
 
 
+def _is_node_modules_valid_for_platform(app_dir: Path) -> bool:
+    """Check if node_modules has binary assets matching the current OS."""
+    node_modules = app_dir / "node_modules"
+    if not node_modules.exists():
+        return False
+    electron_dist = node_modules / "electron" / "dist"
+    if not electron_dist.exists():
+        return False
+    if sys.platform == "win32":
+        return (electron_dist / "electron.exe").exists()
+    if sys.platform == "darwin":
+        return (electron_dist / "Electron.app").exists()
+    if sys.platform.startswith("linux"):
+        return (electron_dist / "electron").exists()
+    return True
+
+
 def _run(command: list[str], cwd: Path) -> int:
     print(f"[saha] {' '.join(command)}", flush=True)
     return subprocess.run(command, cwd=cwd).returncode
@@ -106,11 +123,16 @@ def main() -> None:
     if sys.platform == "darwin" and os.environ.get("ELECTRON_DISABLE_GPU") is None:
         os.environ["ELECTRON_DISABLE_GPU"] = "0"
 
-    if not node_modules.exists():
+    if not node_modules.exists() or not _is_node_modules_valid_for_platform(app_dir):
+        if node_modules.exists():
+            print(
+                "[saha] Detected node_modules from a different operating system. Reinstalling...",
+                flush=True,
+            )
+            shutil.rmtree(node_modules, ignore_errors=True)
         if args.skip_install:
-            
             raise SystemExit(
-                "saha-app/node_modules is missing. Run without --skip-install "
+                "saha-app/node_modules is missing or built for another OS. Run without --skip-install "
                 "or install frontend dependencies manually."
             )
         install_code = _run([npm, "install"], app_dir)

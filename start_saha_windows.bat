@@ -6,7 +6,23 @@ echo =================================================
 echo  Starting Sonna Editor (Saha) for Windows
 echo =================================================
 
-REM Prepend standard directories for nodejs, uv, and python to PATH
+REM 1. Clean up cross-platform virtual environment (e.g. unzipped from macOS archive)
+if exist ".venv" (
+    if not exist ".venv\Scripts\python.exe" (
+        echo [saha] Detected non-Windows virtual environment (from macOS zip). Resetting .venv for Windows...
+        rmdir /s /q ".venv"
+    )
+)
+
+REM 2. Clean up cross-platform node_modules (e.g. unzipped from macOS archive)
+if exist "saha-app\node_modules" (
+    if not exist "saha-app\node_modules\electron\dist\electron.exe" (
+        echo [saha] Detected non-Windows frontend binaries (from macOS zip). Resetting node_modules for Windows...
+        rmdir /s /q "saha-app\node_modules"
+    )
+)
+
+REM 3. Prepend standard directories for nodejs, uv, and python to PATH
 if exist "C:\Program Files\nodejs" set "PATH=C:\Program Files\nodejs;!PATH!"
 if exist "%USERPROFILE%\.local\bin" set "PATH=%USERPROFILE%\.local\bin;!PATH!"
 if exist "%APPDATA%\npm" set "PATH=%APPDATA%\npm;!PATH!"

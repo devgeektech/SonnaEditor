@@ -96,6 +96,11 @@
    - Augmented `process.env.PATH` on `win32` in `saha-app/electron/main.js` so Electron finds local binaries without relying on inherited system PATH.
    - Created root convenience aliases `start.bat` and `START_SAHA.bat`.
 
+12. [x] **Task 12: Cross-Platform Zip Portability & Local Disk Self-Healing Architecture**
+   - Implemented self-healing cross-platform environment resets in `start_saha_mac.command`, `start_saha_windows.bat`, and `scripts/run_app.py`: when the project is zipped on Windows and unzipped on macOS (or vice versa), the launchers automatically detect OS binary mismatches in `.venv` and `node_modules`, cleanly reset them, and build native binaries for the host OS.
+   - Enhanced `scripts/package_for_client.py` to bundle all local model weights (`SonnaEditorFoundation/checkpoints/` and `v1_learning/`), Lightroom bridge plugin, documentation, and launchers with POSIX executable permissions (`0o100755`) for macOS `.command` scripts.
+   - Added root one-click packaging utility `package.bat` and verified 213.6 MB universal distribution bundle `dist/saha-app-bundle.zip`.
+
 ---
 
 ## Detailed Change Log
@@ -192,3 +197,17 @@
   - `start_saha_windows.bat --help`, `start.bat --help`, `START_SAHA.bat --help`, and `run_saha.cmd --help` all execute cleanly with zero errors.
   - `uv run ruff check scripts/run_app.py` passed with 0 errors.
   - Pytest regression suite (`test_config.py`, `test_xmp.py`) passed 100% (95 passed, 10 skipped in 11.74s).
+
+### Task 12: Cross-Platform Zip Portability & Local Disk Self-Healing Architecture
+- **Cross-Platform Mismatch Detection & Self-Healing**:
+  - `start_saha_mac.command`: Automatically detects if `.venv` or `saha-app/node_modules` was copied from a Windows machine (e.g. presence of `.venv\Scripts` instead of `.venv/bin/python` or missing `Electron.app` Mach-O bundle). Cleans up foreign binaries so `uv` and `npm` build native macOS binaries.
+  - `start_saha_windows.bat`: Automatically detects if `.venv` or `saha-app/node_modules` was copied from a Mac (missing `python.exe` or `electron.exe`) and resets them for Windows.
+  - `scripts/run_app.py`: Implemented `_is_node_modules_valid_for_platform(app_dir)` to inspect Electron binaries across Windows (`electron.exe`), macOS (`Electron.app`), and Linux (`electron`), automatically reinstalling if a mismatch is found.
+- **Complete Local Asset Bundling**:
+  - Updated `scripts/package_for_client.py` `INCLUDE_PATHS` to include `v1_learning/` (contains trained model `model-v0.1.0.ckpt`), `SonnaEditorFoundation/checkpoints/` (contains foundation model `foundation-sonna-raw-xmp-004-visual.ckpt`), `references/`, `.python-version`, and all double-click launchers.
+  - Preserved POSIX executable bit `0o100755` (`-rwxr-xr-x`) for `start_saha_mac.command` and `run_saha.sh` inside the zip archive, guaranteeing double-click execution on macOS upon unzipping.
+  - Created root one-click packaging utility `package.bat`.
+  - Built universal client test bundle `dist/saha-app-bundle.zip` (213.6 MB, 195 entries).
+- **Verification**:
+  - `uv run ruff check scripts/run_app.py scripts/package_for_client.py` passed with 0 errors.
+  - Verified `dist/saha-app-bundle.zip` entries: confirmed `QUICK_START.txt`, foundation weights, v1 learning weights, and POSIX `0o100755` attribute on `start_saha_mac.command`.

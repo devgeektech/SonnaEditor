@@ -1,8 +1,9 @@
 #!/usr/bin/env python
-"""Package Saha for client distribution and testing.
+"""Package Saha for cross-platform local distribution and testing.
 
-Builds a self-contained client test bundle as a .zip file that Darshil can
-extract on macOS and run with a single click via `start_saha_mac.command`.
+Builds a self-contained client test bundle as a .zip file that can be
+extracted on macOS or Windows and run with a single click via
+`start_saha_mac.command` (macOS) or `start.bat` / `START_SAHA.bat` (Windows).
 """
 
 from __future__ import annotations
@@ -19,13 +20,21 @@ INCLUDE_PATHS = [
     "scripts",
     "saha-app",
     "SonnaEditorFoundation",
+    "v1_learning",
     "lightroom",
     "doc",
+    "references",
     "pyproject.toml",
     "uv.lock",
+    ".python-version",
     "README.md",
     "start_saha_mac.command",
     "start_saha_windows.bat",
+    "start.bat",
+    "START_SAHA.bat",
+    "run_saha.cmd",
+    "run_saha.ps1",
+    "run_saha.sh",
 ]
 
 # Patterns or directory names to exclude
@@ -51,26 +60,47 @@ EXCLUDE_EXTS = {
     ".DS_Store",
 }
 
+EXECUTABLE_EXTENSIONS = {".command", ".sh"}
+EXECUTABLE_NAMES = {"start_saha_mac.command", "run_saha.sh"}
+
 README_CONTENT = """===================================================
- Saha - Internal AI Photo Editing Tool (Client Test Bundle)
+ Saha - Internal AI Photo Editing Tool
  Sonna Studios
 ===================================================
 
-Welcome! This bundle contains the Saha desktop editor with the
-foundation AI model, Lite profile calibration, and the Lightroom Classic bridge.
+Welcome! This bundle contains the complete, local Saha desktop editor
+with the foundation AI model, trained Lite / Personal AI profiles, and
+the Lightroom Classic bridge plugin.
 
+Everything runs 100% locally on your computer. All files, model weights,
+and edits are stored on your local disk.
+
+---------------------------------------------------
 QUICK START (macOS):
+---------------------------------------------------
 1. Double-click `start_saha_mac.command` in this folder.
-   (If macOS Gatekeeper asks on first launch: Right-click -> Open).
-2. The launcher will automatically ensure `uv` and Node.js are available,
-   sync dependencies, and open the Saha desktop application.
+   - If macOS Gatekeeper prompts on first launch: Right-click -> Open.
+   - Or open Terminal in this folder and run: bash start_saha_mac.command
+2. The launcher will automatically configure local dependencies,
+   enable Apple Silicon MPS GPU acceleration, and open the Saha desktop application.
 
+---------------------------------------------------
+QUICK START (Windows):
+---------------------------------------------------
+1. Double-click `start.bat` (or `START_SAHA.bat` / `start_saha_windows.bat`).
+2. The launcher will automatically configure local dependencies,
+   enable CUDA GPU acceleration if an NVIDIA GPU is present, and open the Saha desktop application.
+
+---------------------------------------------------
 LIGHTROOM CLASSIC PLUGIN:
-- Open Lightroom Classic -> File -> Plug-in Manager -> Add.
-- Select the `lightroom/SahaBridge.lrplugin` folder.
+---------------------------------------------------
+1. Open Lightroom Classic -> File -> Plug-in Manager -> Add.
+2. Select the `lightroom/SahaBridge.lrplugin` folder.
 
-FEATURES READY TO TEST:
-- Lite Profiles: Create a preset-anchored profile calibrated to your camera WB.
+---------------------------------------------------
+FEATURES READY TO USE:
+---------------------------------------------------
+- Lite Profiles: Preset-anchored profiles calibrated to your camera WB.
 - Personal AI Profiles: Train a personalized model from your RAW + XMP edits.
 - Batch Inference: Process shoot folders and output XMP sidecars.
 - Lightroom Bridge: One-click export and import of predicted settings.
@@ -85,11 +115,23 @@ def is_excluded(path: Path, root: Path, include_node_modules: bool = False) -> b
             if part == "node_modules" and include_node_modules:
                 continue
             return True
-        if part.startswith(".") and part not in {".gitattributes", ".gitignore"}:
+        if part.startswith(".") and part not in {".gitattributes", ".gitignore", ".python-version"}:
             return True
     if path.suffix in EXCLUDE_EXTS:
         return True
     return False
+
+
+def _write_zip_entry(zf: zipfile.ZipFile, file_path: Path, arcname: str) -> None:
+    """Write file to zip, preserving POSIX executable permissions for scripts."""
+    if file_path.suffix in EXECUTABLE_EXTENSIONS or file_path.name in EXECUTABLE_NAMES:
+        zinfo = zipfile.ZipInfo.from_file(file_path, arcname=arcname)
+        # Set POSIX permissions to 0755 (-rwxr-xr-x): (0o100755 << 16)
+        zinfo.external_attr = 0o100755 << 16
+        with open(file_path, "rb") as f:
+            zf.writestr(zinfo, f.read())
+    else:
+        zf.write(file_path, arcname=arcname)
 
 
 def build_package(output_zip: Path, include_node_modules: bool = False) -> None:
@@ -112,7 +154,7 @@ def build_package(output_zip: Path, include_node_modules: bool = False) -> None:
 
             if entry_path.is_file():
                 arcname = entry_path.relative_to(repo_root).as_posix()
-                zf.write(entry_path, arcname=arcname)
+                _write_zip_entry(zf, entry_path, arcname=arcname)
                 file_count += 1
                 total_bytes += entry_path.stat().st_size
             else:
@@ -126,13 +168,15 @@ def build_package(output_zip: Path, include_node_modules: bool = False) -> None:
                         if is_excluded(f_path, repo_root, include_node_modules):
                             continue
                         arcname = f_path.relative_to(repo_root).as_posix()
-                        zf.write(f_path, arcname=arcname)
+                        _write_zip_entry(zf, f_path, arcname=arcname)
                         file_count += 1
                         total_bytes += f_path.stat().st_size
 
     mb = total_bytes / (1024 * 1024)
     zip_mb = output_zip.stat().st_size / (1024 * 1024)
-    print(f"[package] Done! Added {file_count} files ({mb:.1f} MB uncompressed, {zip_mb:.1f} MB zip)")
+    print(
+        f"[package] Done! Added {file_count} files ({mb:.1f} MB uncompressed, {zip_mb:.1f} MB zip)"
+    )
     print(f"[package] Output file: {output_zip.resolve()}")
 
 
@@ -142,7 +186,7 @@ def main() -> None:
         "--output",
         "-o",
         type=Path,
-        default=Path("dist/saha-mac-client-bundle.zip"),
+        default=Path("dist/saha-app-bundle.zip"),
         help="Destination path for the zip archive",
     )
     parser.add_argument(
