@@ -83,6 +83,11 @@
    - Codified the **Mandatory Change Recording Flow** in `AGENTS.md`: every code modification, optimization, bug fix, and doc change MUST be recorded in `session.md`.
    - Updated `README.md`, `doc/project_knowledge.md`, `doc/HANDOVER.md`, and `doc/SESSION_STATE.md` to form a cohesive, unbloated documentation hierarchy.
 
+10. [x] **Task 10: Store UI Reference Images & Directory Setup**
+   - Created `references/` directory at the project root for UI and workflow reference assets.
+   - Copied and sequentially organized all 15 reference screenshots covering Imagen's onboarding, project creation, profile selection, preset upload, and visual style survey steps (Exposure and Temperature comparisons).
+   - Created `references/README.md` indexing each screenshot with descriptions and instructions for adding future reference assets.
+
 ---
 
 ## Detailed Change Log
