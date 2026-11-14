@@ -85,8 +85,8 @@
 
 10. [x] **Task 10: Store UI Reference Images & Directory Setup**
    - Created `references/` directory at the project root for UI and workflow reference assets.
-   - Copied and sequentially organized all 15 reference screenshots covering Imagen's onboarding, project creation, profile selection, preset upload, and visual style survey steps (Exposure and Temperature comparisons).
-   - Created `references/README.md` indexing each screenshot with descriptions and instructions for adding future reference assets.
+   - Copied and sequentially organized 30 reference screenshots covering Imagen's onboarding, project creation, profile selection, preset upload, visual style survey steps (Exposure, Temperature, and Tint comparisons across different scenes), building/ready confirmation modals, catalog/folder ingestion choices, profile settings fine-tuning overrides, and Personal AI profile training wizard steps.
+   - Authored comprehensive `references/README.md` indexing all 30 screenshots across 8 functional workflow groups with instructions for adding future reference assets.
 
 ---
 
