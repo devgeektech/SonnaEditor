@@ -113,6 +113,12 @@
    - Enforced the user rule in `AGENTS.md`: "DO NOT commit or push to git automatically. Only commit or push when explicitly commanded by the user."
    - Updated documentation (`README.md`, `doc/RUN.md`, `doc/CLI_COMMANDS.md`, `doc/HANDOVER.md`, `doc/project_knowledge.md`) and `scripts/package_for_client.py`.
 
+15. [x] **Task 15: Cache Purge, Dev/Test Exclusion Filtering & One-Click Production Packaging Tool**
+   - Cleaned all workspace caches (`.mypy_cache`, `.pytest_cache`, `.ruff_cache`, `saha-app/node_modules/.vite`, 18 `__pycache__` directories outside `.venv`).
+   - Authored `scripts/package_app.py` with automatic cache pre-cleaning and production filtering: excludes `tests/`, test fixtures, 10 one-time testing/audit scripts, UI references, development caches, and `.git`, while bundling all core backend libraries, Electron frontend, foundation weights, trained profile weights, Lightroom plugin, and launchers.
+   - Created one-click double-clickable launchers: `package.bat` (Windows) and `package.sh` (macOS/Linux).
+   - Verified production distribution archive `dist/saha-production-bundle.zip` (139 files, 211.3 MB) containing only essential runtime assets with POSIX executable permissions (`0o100755`) preserved.
+
 ---
 
 ## Detailed Change Log
@@ -248,4 +254,26 @@
 - **Verification**:
   - `start_saha_windows.bat --help` executed with code 0.
   - `uv run ruff check scripts/package_for_client.py` passed with 0 errors.
+  - No automatic git commit executed per user command.
+
+### Task 15: Cache Purge, Dev/Test Exclusion Filtering & One-Click Production Packaging Tool
+- **Cache Purge**:
+  - Removed `.mypy_cache`, `.pytest_cache`, `.ruff_cache`, and `saha-app/node_modules/.vite`.
+  - Removed 18 `__pycache__` directories across `src/`, `scripts/`, `tests/` outside `.venv`.
+- **Production Packaging Tool (`scripts/package_app.py`)**:
+  - Implemented pre-packaging cache purge (`clean_local_caches`).
+  - Strict production filtering (`is_path_excluded`):
+    - Excludes `tests/`, test fixtures, and test caches.
+    - Excludes 10 one-time test/audit/diagnostic scripts: `analyse_backbone_drift.py`, `analyse_prediction_collapse.py`, `audit_all_sliders_v1.2.3.py`, `audit_catalog.py`, `audit_dataset_diversity.py`, `quick_diagnostic.py`, `run_v1_pilot.py`, `train_v1_2_0_full_production.py`, `migrate_labels_to_v2.py`, `rollback_foundation.py`.
+    - Excludes `references/` (UI reference screenshots).
+    - Excludes `.git`, `.venv`, `node_modules`, `scratch`, `dist`, `dist-app`.
+    - Preserves POSIX executable bit (`0o100755`) for macOS `.command` and `.sh` scripts.
+  - Retains all core runtime code (`src/sonna_editor/`), full frontend (`saha-app/`), foundation weights, v1 learning profile weights, Lightroom plugin, essential runtime scripts, and launchers.
+- **One-Click Distribution Launchers**:
+  - Updated `package.bat` for Windows (one-click double-click builder).
+  - Created `package.sh` for macOS/Linux (`bash package.sh`).
+  - Updated `scripts/package_for_client.py` as a seamless alias to `scripts/package_app.py`.
+- **Verification**:
+  - `uv run ruff check scripts/package_app.py scripts/package_for_client.py` passed with 0 errors.
+  - Verified `dist/saha-production-bundle.zip` (139 files, 211.3 MB zip / 229.2 MB uncompressed): confirmed 0 test files, 0 audit scripts, 0 cache directories, and valid POSIX permissions.
   - No automatic git commit executed per user command.

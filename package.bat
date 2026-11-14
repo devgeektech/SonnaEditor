@@ -3,24 +3,23 @@ setlocal
 cd /d "%~dp0"
 
 echo =================================================
-echo  Packaging Saha for Distribution (Mac + Windows)
+echo  Packaging Saha (Clean Production Distribution)
 echo =================================================
 
-REM Prepend standard directories for nodejs, uv, and python to PATH
+REM Add local and standard tools to PATH
 if exist "%USERPROFILE%\.local\bin" set "PATH=%USERPROFILE%\.local\bin;%PATH%"
 
-where uv >nul 2>&1
-if %ERRORLEVEL% equ 0 (
-    uv run python scripts\package_for_client.py --output dist\saha-app-bundle.zip
+if exist "%USERPROFILE%\.local\bin\uv.exe" (
+    uv run python scripts\package_app.py %*
 ) else if exist ".venv\Scripts\python.exe" (
-    .venv\Scripts\python.exe scripts\package_for_client.py --output dist\saha-app-bundle.zip
+    .venv\Scripts\python.exe scripts\package_app.py %*
 ) else (
-    python scripts\package_for_client.py --output dist\saha-app-bundle.zip
+    python scripts\package_app.py %*
 )
 
 if %ERRORLEVEL% equ 0 (
     echo.
-    echo [saha] Package created successfully at: dist\saha-app-bundle.zip
+    echo [saha] Package created successfully!
 ) else (
     echo.
     echo [saha] Packaging encountered an error.
