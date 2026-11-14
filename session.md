@@ -211,3 +211,12 @@
 - **Verification**:
   - `uv run ruff check scripts/run_app.py scripts/package_for_client.py` passed with 0 errors.
   - Verified `dist/saha-app-bundle.zip` entries: confirmed `QUICK_START.txt`, foundation weights, v1 learning weights, and POSIX `0o100755` attribute on `start_saha_mac.command`.
+
+### Task 13: Windows Batch Script Direct Path Discovery & Delayed Expansion Fix
+- Diagnosed root cause for `[saha] Node.js not found on PATH.` remaining in cmd.exe:
+  - `setlocal enabledelayedexpansion` in `start_saha_windows.bat` mangled `PATH` when `!PATH!` contained parentheses like `C:\Program Files (x86)` or `%PATH%`.
+  - Nested `if exist` parenthesis blocks triggered a syntax parser error (`. was unexpected at this time.`).
+- Replaced `where node` with direct path verification (`if exist "C:\Program Files\nodejs\node.exe"`) and cmd built-in path resolution (`for %%i in (node.exe) do if not "%%~$PATH:i"==""`), eliminating reliance on external `where.exe`.
+- Removed delayed expansion mangling, prepending all standard paths cleanly before launching.
+- Verified: `start.bat --help`, `START_SAHA.bat --help`, `start_saha_windows.bat --help`, and `run_saha.cmd --help` all succeed with returncode 0 and zero stderr.
+- Rebuilt `dist/saha-app-bundle.zip`.
