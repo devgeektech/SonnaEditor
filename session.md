@@ -85,8 +85,8 @@
 
 10. [x] **Task 10: Store UI Reference Images & Directory Setup**
    - Created `references/` directory at the project root for UI and workflow reference assets.
-   - Copied and sequentially organized 30 reference screenshots covering Imagen's onboarding, project creation, profile selection, preset upload, visual style survey steps (Exposure, Temperature, and Tint comparisons across different scenes), building/ready confirmation modals, catalog/folder ingestion choices, profile settings fine-tuning overrides, and Personal AI profile training wizard steps.
-   - Authored comprehensive `references/README.md` indexing all 30 screenshots across 8 functional workflow groups with instructions for adding future reference assets.
+   - Copied and sequentially organized 40 reference screenshots covering Imagen's onboarding, project creation, profile selection, preset upload, visual style survey steps (Exposure, Temperature, and Tint comparisons across different scenes), building/ready confirmation modals, catalog/folder ingestion choices, profile settings fine-tuning overrides, Personal AI profile training wizard steps, genre categorization, supported RAW formats, Denoise strength side-by-side controls, and active project processing states.
+   - Authored comprehensive `references/README.md` indexing all 40 screenshots across 10 functional workflow groups with instructions for adding future reference assets.
 
 ---
 
@@ -151,3 +151,18 @@
   - `ruff check .` passed with 0 errors.
   - Regression pytest suites passed with 100%.
   - Re-generated client package `dist/saha-mac-client-bundle.zip` with the pruned, clean documentation.
+
+### Task 10: Store UI Reference Images & Directory Setup (40 Screenshots)
+- Created `references/` directory at project root to house reference screenshots and UX workflow patterns from Imagen.
+- Organized 40 reference images into 10 structured functional workflow categories:
+  - 1. Onboarding & Core Views (`01` - `03`)
+  - 2. Profile Selection & Qualification Wizard (`04` - `07`)
+  - 3. Mode B (Lite Profile) Setup (`08` - `10`)
+  - 4. Mode B (Lite Profile) Style Survey (`11` - `19`)
+  - 5. Profile Generation & Ready States (`20` - `21`)
+  - 6. Project Ingestion & Workflow Sources (`22` - `23`)
+  - 7. Profile Management & Tuning Overrides (`24` - `26`)
+  - 8. Mode A Training Wizard Setup (`27` - `30`)
+  - 9. Mode A Profile Creation & Catalog Ingestion (`31` - `35`)
+  - 10. Project Creation & Advanced AI Tools (`36` - `40`)
+- Authored `references/README.md` cataloging each screenshot with descriptions, core UX patterns, and instructions for adding future references.

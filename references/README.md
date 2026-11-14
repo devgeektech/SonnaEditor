@@ -6,7 +6,7 @@ You can drop additional reference images directly into this folder at any time.
 
 ---
 
-## Reference Index (30 Screenshots)
+## Reference Index (40 Screenshots)
 
 ### 1. Onboarding & Core Views
 | File | Description | Core UX Pattern |
@@ -70,10 +70,28 @@ You can drop additional reference images directly into this folder at any time.
 | `29_imagen_full_profile_wizard_format_raw_or_jpeg.jpg` | File format selection | RAW vs JPEG\TIFF training targets |
 | `30_imagen_full_profile_wizard_color_or_bw.jpg` | Color profile type | Color vs Black & White target profile |
 
+### 9. Mode A Profile Creation & Catalog Ingestion
+| File | Description | Core UX Pattern |
+|---|---|---|
+| `31_imagen_create_profile_naming.jpg` | Create profile naming modal | Initial profile naming input with step indicator for Personal AI Profile |
+| `32_imagen_photography_type_selection.png` | Photography type selection grid | 9-genre selection grid (+ Other) to customize AI evaluation and model defaults |
+| `33_imagen_train_profile_source_catalog.png` | Train profile: Lightroom catalog source | Catalog picker with recent catalog dropdown, file browser, and drag-and-drop zone |
+| `34_imagen_train_profile_source_folder_raw_formats.png` | Train profile: Folder source with RAW support | Folder picker displaying tooltip of all accepted RAW formats (.cr2, .arw, .dng, .nef, .cr3, etc.) |
+| `35_imagen_train_profile_catalog_browse.png` | Train profile: Browse catalog view | Alternative view for browsing local catalog files |
+
+### 10. Project Creation & Advanced AI Tools
+| File | Description | Core UX Pattern |
+|---|---|---|
+| `36_imagen_project_creation_basic_info.png` | New project: Basic info step | Shoot path, photo count validation (e.g. 21 photos), profile selection, and genre assignment |
+| `37_imagen_project_ai_tools_denoise_flyout.png` | AI tools: Denoise configuration flyout | Intelligent tool toggles with contextual parameter flyouts (Automatic per photo vs ISO-gated) |
+| `38_imagen_denoise_settings_side_by_side.jpg` | Denoise settings modal | 4-tier strength selection (Subtle, Moderate, Strong, Stronger) with side-by-side preview and ISO thresholding |
+| `39_imagen_project_dashboard_processing_card.png` | Projects dashboard: Active processing card | Project card with dynamic status chip (Processing), photo count, and background upload progress bar |
+| `40_imagen_project_dashboard_choose_source_modal.png` | Project dashboard: Source selection modal | Modal prompt to select between catalog or folder ingestion when initiating a new project |
+
 ---
 
 ## Adding More References
 
 1. Save new reference screenshots or assets into `references/`.
-2. Follow sequential descriptive naming (e.g. `31_culling_view.png`, `32_export_xmp_dialog.png`).
+2. Follow sequential descriptive naming (e.g. `41_culling_view.png`, `42_export_xmp_dialog.png`).
 3. We can reference these directly when designing or updating UI components, survey interactions, and onboarding flows.
