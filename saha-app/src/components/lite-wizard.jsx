@@ -1,35 +1,26 @@
-// Lite profile creation wizard — multi-step modal (4 visible steps; survey
-// step paginates internally through the AI-edited Lite parameters).
-//
-// Step 1 — Profile name
-// Step 2 — Preset upload (.xmp)
-// Step 3 — style survey (one question per screen)
-// Step 4 — Confirmation summary + submit
-//
-// Modal is non-dismissable via backdrop click to protect partially-entered
-// progress. Escape and the explicit Cancel button trigger a native confirm
-// when state has been entered.
+// Lite profile creation wizard
+// Reference: media_1794857986217_96aa8a28.png (Lite profile creation matching Imagen reference)
+// - Header: "Lite profile creation" with Stepper: "① Set up > ② Style survey"
+// - Step 1: Two panels side-by-side
+//   - Left panel: "Name this profile" input + supported formats checklist
+//   - Right panel: "Upload preset" with XMP icon + drag-and-drop dropzone + "My presets ⌵" button + browse
+// - Step 2: "Style survey" with visual slider questions (Exposure, Temperature, Tint)
+// - Full Light and Dark theme support
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-
 import SONNA from '../tokens.js';
 import { createLiteProfile } from '../api/client.js';
+import { ConfirmModal } from './confirm-modal.jsx';
 
 const F = SONNA.font;
 const M = SONNA.mono;
 
-const Tlabel = {
-  fontSize: 10, fontWeight: 600, color: SONNA.fgDim,
-  textTransform: 'uppercase', letterSpacing: 0.6,
-};
 const Tnum = { fontFamily: M, fontVariantNumeric: 'tabular-nums' };
 
-// The Lite initial profile path only adapts Exposure, Temperature, and Tint
-// per photo; remaining legacy survey keys are submitted as neutral defaults
-// for backend sidecar compatibility.
 const SURVEY_QUESTIONS = [
   {
-    key: 'exposure', title: 'Exposure',
+    key: 'exposure',
+    title: 'Exposure',
     prompt: 'How bright are your edits relative to the preset baseline?',
     description: 'Controls overall image brightness. Affects Exposure2012.',
     options: [
@@ -41,7 +32,8 @@ const SURVEY_QUESTIONS = [
     ],
   },
   {
-    key: 'temperature', title: 'Temperature',
+    key: 'temperature',
+    title: 'Temperature',
     prompt: "What's your typical white-balance bias?",
     description: 'Shifts the image cooler (blue) or warmer (yellow). Affects Temperature.',
     options: [
@@ -53,7 +45,8 @@ const SURVEY_QUESTIONS = [
     ],
   },
   {
-    key: 'tint', title: 'Tint',
+    key: 'tint',
+    title: 'Tint',
     prompt: "What's your typical green/magenta colour cast?",
     description: 'Global green/magenta cast across the whole image. Affects Tint.',
     options: [
@@ -66,7 +59,6 @@ const SURVEY_QUESTIONS = [
   },
 ];
 
-const STEPS = ['name', 'preset', 'survey', 'confirm'];
 const LEGACY_NEUTRAL_SURVEY_ANSWERS = {
   contrast: 0,
   saturation: 0,
@@ -75,15 +67,8 @@ const LEGACY_NEUTRAL_SURVEY_ANSWERS = {
 
 function basenameOf(p) {
   if (!p) return '';
-  const segs = p.split('/').filter(Boolean);
+  const segs = p.replace(/\\/g, '/').split('/').filter(Boolean);
   return segs[segs.length - 1] || p;
-}
-
-function labelForAnswer(questionKey, answer) {
-  const q = SURVEY_QUESTIONS.find((x) => x.key === questionKey);
-  if (!q) return String(answer);
-  const opt = q.options.find(([v]) => v === answer);
-  return opt ? opt[1] : String(answer);
 }
 
 function previewSvg(questionKey, answer) {
@@ -99,11 +84,11 @@ function previewSvg(questionKey, answer) {
     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 84">
       <defs>
         <linearGradient id="sky" x1="0" x2="0" y1="0" y2="1">
-          <stop offset="0" stop-color="${sky}"/>
+          <stop offset="0%" stop-color="${sky}"/>
           <stop offset="1" stop-color="${mid}"/>
         </linearGradient>
         <linearGradient id="field" x1="0" x2="1" y1="0" y2="1">
-          <stop offset="0" stop-color="${land}"/>
+          <stop offset="0%" stop-color="${land}"/>
           <stop offset="1" stop-color="#9a8467"/>
         </linearGradient>
       </defs>
@@ -129,239 +114,77 @@ function SurveyPreview({ questionKey, answer }) {
         width: '100%',
         aspectRatio: '1.42 / 1',
         objectFit: 'cover',
-        borderRadius: 3,
+        borderRadius: 4,
         display: 'block',
       }}
     />
   );
 }
 
-// ── Step container chrome ────────────────────────────────
-function StepHeader({ stepKind, surveyIndex }) {
-  const stepIndex = STEPS.indexOf(stepKind);
+// XMP Document Icon matching reference media_1794857986217_96aa8a28.png
+function XmpDocIcon() {
   return (
-    <div style={{
-      padding: '14px 22px 12px',
-      borderBottom: `1px solid ${SONNA.lineSoft}`,
-    }}>
-      <div style={{ ...Tlabel, marginBottom: 8 }}>
-        New Lite profile · Step {stepIndex + 1} of {STEPS.length}
-      </div>
-      {/* Step dots */}
-      <div style={{ display: 'flex', gap: 4 }}>
-        {STEPS.map((k, i) => (
-          <div key={k} style={{
-            flex: 1, height: 3, borderRadius: 2,
-            background: i <= stepIndex ? SONNA.ochre : SONNA.bgLifted,
-          }} />
-        ))}
-      </div>
-      {stepKind === 'survey' && (
-        <div style={{
-          marginTop: 8,
-          ...Tnum, fontSize: 10.5, color: SONNA.fgFaint,
-        }}>
-          Question {surveyIndex + 1} of {SURVEY_QUESTIONS.length}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function StepNameInput({ value, onChange, onNext }) {
-  const inputRef = useRef(null);
-
-  useEffect(() => {
-    const id = window.setTimeout(() => inputRef.current?.focus(), 0);
-    return () => window.clearTimeout(id);
-  }, []);
-
-  return (
-    <div style={{ padding: '20px 22px', flex: 1, minHeight: 0, overflow: 'auto' }}>
-      <div style={{ fontSize: 13, color: SONNA.fg, marginBottom: 8 }}>Profile name</div>
-      <input
-        ref={inputRef}
-        type="text"
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter' && value.trim()) {
-            e.preventDefault();
-            onNext();
-          }
-        }}
-        placeholder="e.g. Wedding Lite, Brand Campaign"
-        style={{
-          width: '100%', height: 38, padding: '0 12px',
-          background: SONNA.bgPanel,
-          border: `1px solid ${SONNA.line}`, borderRadius: 3,
-          color: SONNA.fg, fontFamily: F, fontSize: 13,
-          outline: 'none',
-        }}
+    <svg width="48" height="56" viewBox="0 0 44 52" fill="none" style={{ overflow: 'visible' }}>
+      {/* File body with folded top-right corner */}
+      <path
+        d="M4 6C4 3.79086 5.79086 2 8 2H28L40 14V46C40 48.2091 38.2091 50 36 50H8C5.79086 50 4 48.2091 4 46V6Z"
+        fill="#4A5568"
       />
-      <div style={{ marginTop: 10, fontSize: 11.5, color: SONNA.fgFaint, lineHeight: 1.5 }}>
-        Used as the profile's display name throughout Saha. You can rename it later.
-      </div>
-    </div>
-  );
-}
-
-function StepPresetUpload({ presetPath, onPick }) {
-  return (
-    <div style={{ padding: '20px 22px', flex: 1, minHeight: 0, overflow: 'auto' }}>
-      <div style={{ fontSize: 13, color: SONNA.fg, marginBottom: 12 }}>Lightroom preset</div>
-      <button
-        type="button"
-        onClick={onPick}
-        style={{
-          height: 38, padding: '0 16px',
-          background: SONNA.bgLifted,
-          border: `1px solid ${SONNA.line}`, borderRadius: 3,
-          color: SONNA.fg, fontFamily: F, fontSize: 13, fontWeight: 500,
-          cursor: 'pointer',
-          display: 'inline-flex', alignItems: 'center', gap: 10,
-        }}
+      {/* Folded corner flap */}
+      <path
+        d="M28 2V14H40L28 2Z"
+        fill="#2D3748"
+      />
+      {/* XMP text label */}
+      <text
+        x="22"
+        y="33"
+        fill="#FFFFFF"
+        fontSize="9.5"
+        fontWeight="700"
+        fontFamily="sans-serif"
+        textAnchor="middle"
+        letterSpacing="0.8"
       >
-        <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
-          <path d="M2 7v3h8V7M6 2v6M3.5 4.5L6 2l2.5 2.5"
-            stroke={SONNA.fgMute} strokeWidth="1.2"
-            strokeLinecap="round" strokeLinejoin="round" />
-        </svg>
-        <span>{presetPath ? 'Choose a different preset' : 'Choose preset (.xmp)'}</span>
-      </button>
-      {presetPath && (
-        <div style={{
-          marginTop: 12, padding: '10px 12px',
-          background: SONNA.bgPanel,
-          border: `1px solid ${SONNA.lineSoft}`, borderRadius: 3,
-          ...Tnum, fontSize: 12, color: SONNA.fg,
-        }}>
-          {basenameOf(presetPath)}
-        </div>
-      )}
-      <div style={{ marginTop: 12, fontSize: 11.5, color: SONNA.fgFaint, lineHeight: 1.5 }}>
-        Pick a Lightroom develop preset exported as .xmp. Saha reads only its
-        slider values; the original file is copied next to the new profile
-        for provenance.
-      </div>
-    </div>
+        XMP
+      </text>
+      {/* Blue upload badge at bottom-right */}
+      <circle cx="34" cy="42" r="8" fill="#3182CE" />
+      <path
+        d="M34 38V46M30 42H38"
+        stroke="#FFFFFF"
+        strokeWidth="1.6"
+        strokeLinecap="round"
+      />
+    </svg>
   );
 }
 
-function StepSurveyQuestion({ question, value, onChange }) {
-  return (
-    <div style={{ padding: '20px 22px', flex: 1, minHeight: 0, overflow: 'auto' }}>
-      <div style={{ ...Tlabel, marginBottom: 4 }}>{question.title}</div>
-      <div style={{ fontSize: 13, color: SONNA.fg, lineHeight: 1.5 }}>
-        {question.prompt}
-      </div>
-      <div style={{
-        marginTop: 6, fontSize: 11.5, color: SONNA.fgFaint, lineHeight: 1.5,
-      }}>
-        {question.description}
-      </div>
+export function LiteProfileWizard({ onClose, onCreated, theme = 'dark' }) {
+  const isLight = theme === 'light';
 
-      <div style={{
-        marginTop: 16,
-        display: 'grid',
-        gridTemplateColumns: 'repeat(5, minmax(0, 1fr))',
-        gap: 8,
-      }}>
-        {question.options.map(([ans, label]) => {
-          const selected = value === ans;
-          return (
-            <label key={ans} style={{
-              padding: 4,
-              background: selected ? SONNA.bgLifted : SONNA.bgPanel,
-              border: `1px solid ${selected ? SONNA.ochre : SONNA.lineSoft}`,
-              borderRadius: 3,
-              cursor: 'pointer',
-              display: 'flex', flexDirection: 'column', gap: 6,
-              transition: 'border-color 100ms, background 100ms',
-            }}>
-              <input
-                type="radio"
-                name={`survey-${question.key}`}
-                checked={selected}
-                onChange={() => onChange(ans)}
-                aria-label={label}
-                style={{ position: 'absolute', opacity: 0, pointerEvents: 'none' }}
-              />
-              <SurveyPreview questionKey={question.key} answer={ans} />
-              <span style={{
-                ...Tnum,
-                height: 18,
-                borderRadius: 2,
-                background: selected ? SONNA.ochreTint : 'transparent',
-                color: selected ? SONNA.fg : SONNA.fgMute,
-                fontSize: 11,
-                fontWeight: selected ? 600 : 500,
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-              }}>
-                {ans > 0 ? `+${ans}` : ans}
-              </span>
-            </label>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
-function StepConfirm({ profileName, presetPath, surveyAnswers, submitError }) {
-  return (
-    <div style={{ padding: '20px 22px', flex: 1, minHeight: 0, overflow: 'auto' }}>
-      <div style={{ ...Tlabel, marginBottom: 12 }}>Review</div>
-
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-        <div>
-          <div style={{ fontSize: 10.5, color: SONNA.fgDim, marginBottom: 2 }}>Name</div>
-          <div style={{ fontSize: 13, color: SONNA.fg }}>{profileName}</div>
-        </div>
-        <div>
-          <div style={{ fontSize: 10.5, color: SONNA.fgDim, marginBottom: 2 }}>Preset</div>
-          <div style={{ ...Tnum, fontSize: 12, color: SONNA.fg }}>{basenameOf(presetPath)}</div>
-        </div>
-        <div>
-          <div style={{ fontSize: 10.5, color: SONNA.fgDim, marginBottom: 6 }}>Style survey</div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-            {SURVEY_QUESTIONS.map((q) => (
-              <div key={q.key} style={{
-                display: 'grid', gridTemplateColumns: '90px 1fr', gap: 12,
-                fontSize: 12, lineHeight: 1.45,
-              }}>
-                <span style={{ color: SONNA.fgMute }}>{q.title}</span>
-                <span style={{ color: SONNA.fg }}>
-                  {labelForAnswer(q.key, surveyAnswers[q.key])}
-                </span>
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
-
-      {submitError && (
-        <div style={{
-          marginTop: 16, padding: '10px 12px',
-          background: 'rgba(156, 84, 84, 0.16)',
-          border: `1px solid ${SONNA.red}`,
-          borderRadius: 3,
-          fontSize: 12, color: SONNA.fg, lineHeight: 1.5,
-        }}>{submitError}</div>
-      )}
-    </div>
-  );
-}
-
-// ── Top-level wizard ─────────────────────────────────────
-export function LiteProfileWizard({ onClose, onCreated }) {
-  const [stepKind, setStepKind] = useState('name');
+  // Steps: 'setup' (Name + Preset) | 'survey' (Style Survey)
+  const [currentStep, setCurrentStep] = useState('setup');
   const [surveyIndex, setSurveyIndex] = useState(0);
+
   const [profileName, setProfileName] = useState('');
   const [presetPath, setPresetPath] = useState(null);
   const [surveyAnswers, setSurveyAnswers] = useState({});
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState(null);
+  const [isDragging, setIsDragging] = useState(false);
+  const [confirmLeaveOpen, setConfirmLeaveOpen] = useState(false);
+
+  const fileInputRef = useRef(null);
+  const nameInputRef = useRef(null);
+
+  // Auto-focus name input on mount
+  useEffect(() => {
+    if (currentStep === 'setup') {
+      const t = setTimeout(() => nameInputRef.current?.focus(), 50);
+      return () => clearTimeout(t);
+    }
+  }, [currentStep]);
 
   const hasAnyState = useMemo(() => (
     profileName.trim().length > 0
@@ -372,15 +195,13 @@ export function LiteProfileWizard({ onClose, onCreated }) {
   const requestClose = useCallback(() => {
     if (submitting) return;
     if (hasAnyState) {
-      const ok = window.confirm('Discard your progress and close?');
-      if (!ok) return;
+      setConfirmLeaveOpen(true);
+      return;
     }
     onClose();
   }, [hasAnyState, onClose, submitting]);
 
-  // Escape triggers Cancel (with discard confirmation if state entered).
-  // Backdrop click is intentionally NOT wired to close — protects mid-flow
-  // progress from one accidental click.
+  // Escape key handler
   useEffect(() => {
     const handler = (e) => {
       if (e.key === 'Escape') {
@@ -392,202 +213,710 @@ export function LiteProfileWizard({ onClose, onCreated }) {
     return () => window.removeEventListener('keydown', handler);
   }, [requestClose]);
 
+  // File Picker
   const pickPreset = useCallback(async () => {
-    if (!window.saha?.pickFile) {
-      setSubmitError('File picker unavailable (run via Electron)');
-      return;
+    if (window.saha?.pickFile) {
+      const path = await window.saha.pickFile({
+        title: 'Choose a Lightroom preset (.xmp)',
+        filters: [{ name: 'Lightroom preset', extensions: ['xmp'] }],
+      });
+      if (path) setPresetPath(path);
+    } else {
+      fileInputRef.current?.click();
     }
-    const path = await window.saha.pickFile({
-      title: 'Choose a Lightroom preset',
-      filters: [{ name: 'Lightroom preset', extensions: ['xmp'] }],
-    });
-    if (path) setPresetPath(path);
   }, []);
+
+  const handleNativeFileInput = (e) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      setPresetPath(file.path || file.name);
+    }
+  };
+
+  const handleDrop = (e) => {
+    e.preventDefault();
+    setIsDragging(false);
+    const file = e.dataTransfer?.files?.[0];
+    if (file) {
+      if (file.name.toLowerCase().endsWith('.xmp')) {
+        setPresetPath(file.path || file.name);
+      } else {
+        alert('Please select an XMP preset file (.xmp).');
+      }
+    }
+  };
 
   const setAnswer = useCallback((key, value) => {
     setSurveyAnswers((s) => ({ ...s, [key]: value }));
   }, []);
 
-  const canAdvance = (() => {
-    if (stepKind === 'name') return profileName.trim().length > 0;
-    if (stepKind === 'preset') return presetPath !== null;
-    if (stepKind === 'survey') {
+  const canAdvance = useMemo(() => {
+    if (currentStep === 'setup') {
+      return profileName.trim().length > 0 && presetPath !== null;
+    }
+    if (currentStep === 'survey') {
       const q = SURVEY_QUESTIONS[surveyIndex];
       return q.key in surveyAnswers;
     }
-    if (stepKind === 'confirm') return true;
     return false;
-  })();
+  }, [currentStep, profileName, presetPath, surveyIndex, surveyAnswers]);
 
   const advance = useCallback(() => {
     if (!canAdvance || submitting) return;
-    if (stepKind === 'name') { setStepKind('preset'); return; }
-    if (stepKind === 'preset') { setStepKind('survey'); setSurveyIndex(0); return; }
-    if (stepKind === 'survey') {
-      if (surveyIndex < SURVEY_QUESTIONS.length - 1) {
-        setSurveyIndex((i) => i + 1);
-      } else {
-        setStepKind('confirm');
-      }
+
+    if (currentStep === 'setup') {
+      setCurrentStep('survey');
+      setSurveyIndex(0);
       return;
     }
-    // 'confirm' → submit
-    setSubmitting(true);
-    setSubmitError(null);
-    createLiteProfile({
-      profile_name: profileName.trim(),
-      preset_path: presetPath,
-      survey_answers: {
-        ...LEGACY_NEUTRAL_SURVEY_ANSWERS,
-        ...surveyAnswers,
-      },
-    }).then((res) => {
-      setSubmitting(false);
-      onCreated(res);
-    }).catch((e) => {
-      setSubmitting(false);
-      setSubmitError(e.message || 'Failed to create profile');
-    });
-  }, [canAdvance, submitting, stepKind, surveyIndex, profileName, presetPath, surveyAnswers, onCreated]);
+
+    if (currentStep === 'survey') {
+      if (surveyIndex < SURVEY_QUESTIONS.length - 1) {
+        setSurveyIndex((i) => i + 1);
+        return;
+      }
+
+      // Survey complete → Submit
+      setSubmitting(true);
+      setSubmitError(null);
+      createLiteProfile({
+        profile_name: profileName.trim(),
+        preset_path: presetPath,
+        survey_answers: {
+          ...LEGACY_NEUTRAL_SURVEY_ANSWERS,
+          ...surveyAnswers,
+        },
+      }).then((res) => {
+        setSubmitting(false);
+        onCreated(res);
+      }).catch((e) => {
+        setSubmitting(false);
+        setSubmitError(e.message || 'Failed to create profile');
+      });
+    }
+  }, [canAdvance, submitting, currentStep, surveyIndex, profileName, presetPath, surveyAnswers, onCreated]);
 
   const goBack = useCallback(() => {
     if (submitting) return;
-    if (stepKind === 'preset') { setStepKind('name'); return; }
-    if (stepKind === 'survey') {
-      if (surveyIndex > 0) setSurveyIndex((i) => i - 1);
-      else setStepKind('preset');
-      return;
+    if (currentStep === 'survey') {
+      if (surveyIndex > 0) {
+        setSurveyIndex((i) => i - 1);
+      } else {
+        setCurrentStep('setup');
+      }
     }
-    if (stepKind === 'confirm') {
-      setStepKind('survey');
-      setSurveyIndex(SURVEY_QUESTIONS.length - 1);
-    }
-  }, [stepKind, surveyIndex, submitting]);
+  }, [currentStep, surveyIndex, submitting]);
 
-  // Body content per step.
-  let body;
-  if (stepKind === 'name') {
-    body = (
-      <StepNameInput
-        value={profileName}
-        onChange={setProfileName}
-        onNext={advance}
-      />
-    );
-  } else if (stepKind === 'preset') {
-    body = <StepPresetUpload presetPath={presetPath} onPick={pickPreset} />;
-  } else if (stepKind === 'survey') {
-    const q = SURVEY_QUESTIONS[surveyIndex];
-    body = (
-      <StepSurveyQuestion
-        question={q}
-        value={surveyAnswers[q.key]}
-        onChange={(v) => setAnswer(q.key, v)}
-      />
-    );
-  } else {
-    body = (
-      <StepConfirm
-        profileName={profileName.trim()}
-        presetPath={presetPath}
-        surveyAnswers={surveyAnswers}
-        submitError={submitError}
-      />
-    );
-  }
-
-  const showBack = stepKind !== 'name';
-  const nextLabel = stepKind === 'confirm' ? 'Create profile' : 'Next';
+  // Theming colors
+  const modalBg = isLight ? '#FFFFFF' : '#1B1E22';
+  const modalBorder = isLight ? 'rgba(0, 0, 0, 0.12)' : 'rgba(255, 255, 255, 0.08)';
+  const panelBg = isLight ? '#FBF9F5' : '#202328';
+  const panelBorder = isLight ? 'rgba(0, 0, 0, 0.1)' : 'rgba(255, 255, 255, 0.08)';
+  const titleColor = isLight ? '#1c1917' : '#FFFFFF';
+  const subtextColor = isLight ? '#78716c' : '#8E95A2';
+  const inputBg = isLight ? '#FFFFFF' : '#16181B';
+  const inputBorder = isLight ? 'rgba(0, 0, 0, 0.15)' : 'rgba(255, 255, 255, 0.14)';
+  const accentColor = '#D4F49C'; // lime green from Imagen reference
 
   return (
-    <div style={{
-      position: 'fixed', inset: 0, zIndex: 100,
-      background: 'rgba(0, 0, 0, 0.55)',
-      display: 'flex', alignItems: 'center', justifyContent: 'center',
-      padding: 24,
-    }}>
+    <div
+      style={{
+        position: 'fixed',
+        inset: 0,
+        zIndex: 1100,
+        background: 'rgba(0, 0, 0, 0.75)',
+        backdropFilter: 'blur(5px)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: 24,
+      }}
+    >
       <div
         role="dialog"
         aria-modal="true"
-        aria-labelledby="lite-wizard-title"
+        aria-labelledby="lite-profile-creation-title"
         style={{
-          width: 560, maxWidth: '100%', maxHeight: '85vh',
-          background: SONNA.bgPanel,
-          border: `1px solid ${SONNA.line}`,
-          borderRadius: 4,
-          boxShadow: '0 10px 32px rgba(0, 0, 0, 0.55)',
-          display: 'flex', flexDirection: 'column',
+          width: '100%',
+          maxWidth: 880,
+          background: modalBg,
+          border: `1px solid ${modalBorder}`,
+          borderRadius: 10,
+          boxShadow: isLight
+            ? '0 24px 60px rgba(0, 0, 0, 0.18)'
+            : '0 28px 70px rgba(0, 0, 0, 0.75)',
+          overflow: 'hidden',
+          display: 'flex',
+          flexDirection: 'column',
+          transition: 'all 0.2s ease',
         }}
       >
-        {/* Title bar */}
+        {/* Hidden native file input fallback for browser dev mode */}
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept=".xmp"
+          style={{ display: 'none' }}
+          onChange={handleNativeFileInput}
+        />
+
+        {/* Header Bar */}
         <div style={{
-          padding: '14px 22px 0',
-          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          padding: '18px 24px 14px',
+          borderBottom: `1px solid ${isLight ? 'rgba(0,0,0,0.08)' : 'rgba(255, 255, 255, 0.08)'}`,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
         }}>
-          <div id="lite-wizard-title" style={{
-            fontSize: 14, fontWeight: 600, color: SONNA.fg, letterSpacing: 0,
-          }}>Create Lite profile</div>
+          <h2
+            id="lite-profile-creation-title"
+            style={{
+              fontSize: 16,
+              fontWeight: 600,
+              color: titleColor,
+              margin: 0,
+              letterSpacing: -0.2,
+            }}
+          >
+            Lite profile creation
+          </h2>
           <button
             type="button"
             onClick={requestClose}
             disabled={submitting}
-            aria-label="Cancel"
+            aria-label="Close"
             style={{
-              width: 22, height: 22, padding: 0,
-              background: 'transparent', border: 'none',
+              width: 30,
+              height: 30,
+              background: 'transparent',
+              border: 'none',
+              color: isLight ? 'rgba(0,0,0,0.5)' : 'rgba(255, 255, 255, 0.6)',
               cursor: submitting ? 'not-allowed' : 'pointer',
-              opacity: submitting ? 0.4 : 0.7,
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              borderRadius: 6,
+              transition: 'all 0.15s ease',
             }}
           >
-            <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
-              <path d="M2.5 2.5l7 7M9.5 2.5l-7 7"
-                stroke={SONNA.fgMute} strokeWidth="1.3" strokeLinecap="round" />
+            <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+              <line x1="2" y1="2" x2="14" y2="14" />
+              <line x1="14" y1="2" x2="2" y2="14" />
             </svg>
           </button>
         </div>
 
-        <StepHeader stepKind={stepKind} surveyIndex={surveyIndex} />
-        {body}
-
-        {/* Footer: Back + Next/Create */}
+        {/* Stepper Navigation: ① Set up > ② Style survey */}
         <div style={{
-          padding: 14,
-          borderTop: `1px solid ${SONNA.lineSoft}`,
-          display: 'flex', justifyContent: 'space-between', gap: 10,
-          flexShrink: 0,
+          padding: '12px 24px',
+          borderBottom: `1px solid ${isLight ? 'rgba(0,0,0,0.06)' : 'rgba(255, 255, 255, 0.06)'}`,
+          background: isLight ? '#FAF8F4' : '#191B1F',
+          display: 'flex',
+          alignItems: 'center',
+          gap: 12,
         }}>
-          {showBack ? (
+          {/* Step 1: Set up */}
+          <div
+            onClick={() => {
+              if (currentStep === 'survey') setCurrentStep('setup');
+            }}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+              cursor: currentStep === 'survey' ? 'pointer' : 'default',
+            }}
+          >
+            <span style={{
+              width: 18,
+              height: 18,
+              borderRadius: '50%',
+              border: `1.5px solid ${currentStep === 'setup' ? accentColor : (isLight ? '#16A34A' : '#4ADE80')}`,
+              color: currentStep === 'setup' ? accentColor : (isLight ? '#16A34A' : '#4ADE80'),
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              fontSize: 10.5,
+              fontWeight: 700,
+            }}>
+              1
+            </span>
+            <span style={{
+              fontSize: 13,
+              fontWeight: currentStep === 'setup' ? 600 : 500,
+              color: currentStep === 'setup' ? titleColor : subtextColor,
+            }}>
+              Set up
+            </span>
+          </div>
+
+          <span style={{ color: isLight ? 'rgba(0,0,0,0.3)' : 'rgba(255,255,255,0.25)', fontSize: 13 }}>
+            ›
+          </span>
+
+          {/* Step 2: Style survey */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span style={{
+              width: 18,
+              height: 18,
+              borderRadius: '50%',
+              border: `1.5px solid ${currentStep === 'survey' ? accentColor : (isLight ? 'rgba(0,0,0,0.25)' : 'rgba(255,255,255,0.25)')}`,
+              color: currentStep === 'survey' ? accentColor : (isLight ? 'rgba(0,0,0,0.4)' : 'rgba(255,255,255,0.35)'),
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              fontSize: 10.5,
+              fontWeight: 700,
+            }}>
+              2
+            </span>
+            <span style={{
+              fontSize: 13,
+              fontWeight: currentStep === 'survey' ? 600 : 500,
+              color: currentStep === 'survey' ? titleColor : subtextColor,
+            }}>
+              Style survey
+            </span>
+          </div>
+        </div>
+
+        {/* Modal Body */}
+        <div style={{ padding: '24px 28px' }}>
+          {currentStep === 'setup' ? (
+            /* STEP 1: Two Side-by-Side Panels */
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: '1fr 1.35fr',
+              gap: 20,
+              alignItems: 'stretch',
+            }}>
+              {/* Left Panel: Name this profile & Capabilities */}
+              <div style={{
+                background: panelBg,
+                border: `1px solid ${panelBorder}`,
+                borderRadius: 8,
+                padding: '24px',
+                display: 'flex',
+                flexDirection: 'column',
+                justifyContent: 'space-between',
+              }}>
+                <div>
+                  <div style={{
+                    fontSize: 13.5,
+                    fontWeight: 600,
+                    color: titleColor,
+                    marginBottom: 10,
+                  }}>
+                    Name this profile
+                  </div>
+                  <input
+                    ref={nameInputRef}
+                    type="text"
+                    value={profileName}
+                    onChange={(e) => setProfileName(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && canAdvance) {
+                        e.preventDefault();
+                        advance();
+                      }
+                    }}
+                    placeholder="e.g. Wedding style 1"
+                    style={{
+                      width: '100%',
+                      height: 38,
+                      padding: '0 12px',
+                      background: inputBg,
+                      border: `1px solid ${inputBorder}`,
+                      borderRadius: 4,
+                      color: titleColor,
+                      fontFamily: F,
+                      fontSize: 13,
+                      outline: 'none',
+                      transition: 'border-color 0.15s ease',
+                      boxSizing: 'border-box',
+                    }}
+                    onFocus={(e) => {
+                      e.currentTarget.style.borderColor = SONNA.ochre;
+                    }}
+                    onBlur={(e) => {
+                      e.currentTarget.style.borderColor = inputBorder;
+                    }}
+                  />
+                </div>
+
+                {/* Divider Line */}
+                <div style={{
+                  height: 1,
+                  background: isLight ? 'rgba(0, 0, 0, 0.1)' : 'rgba(255, 255, 255, 0.1)',
+                  margin: '24px 0 20px',
+                }} />
+
+                {/* Information bullet checklist */}
+                <div>
+                  <div style={{
+                    fontSize: 12.5,
+                    fontWeight: 600,
+                    color: isLight ? '#292524' : '#E2E8F0',
+                    marginBottom: 12,
+                    lineHeight: 1.4,
+                  }}>
+                    You can use this AI Profile to edit photos that are both
+                  </div>
+
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 18 }}>
+                    <div style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 8,
+                      fontSize: 12.5,
+                      fontWeight: 600,
+                      color: titleColor,
+                    }}>
+                      <span style={{ fontSize: 14 }}>•</span>
+                      <span>RAW files</span>
+                    </div>
+                    <div style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 8,
+                      fontSize: 12.5,
+                      fontWeight: 600,
+                      color: titleColor,
+                    }}>
+                      <span style={{ fontSize: 14 }}>•</span>
+                      <span>Color photos</span>
+                    </div>
+                  </div>
+
+                  <div style={{
+                    fontSize: 11.5,
+                    color: subtextColor,
+                    lineHeight: 1.5,
+                  }}>
+                    To edit JPEG, TIFF, or black and white photos, you'll need to create a Personal AI Profile
+                  </div>
+                </div>
+              </div>
+
+              {/* Right Panel: Upload Preset & Dropzone */}
+              <div style={{
+                background: panelBg,
+                border: `1px solid ${panelBorder}`,
+                borderRadius: 8,
+                padding: '24px',
+                display: 'flex',
+                flexDirection: 'column',
+              }}>
+                {/* Header row */}
+                <div style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  marginBottom: 14,
+                }}>
+                  <div style={{ fontSize: 13.5, fontWeight: 600, color: titleColor }}>
+                    Upload preset
+                  </div>
+                </div>
+
+                {/* Dropzone container */}
+                <div
+                  onDragOver={(e) => {
+                    e.preventDefault();
+                    setIsDragging(true);
+                  }}
+                  onDragLeave={() => setIsDragging(false)}
+                  onDrop={handleDrop}
+                  style={{
+                    flex: 1,
+                    minHeight: 250,
+                    borderRadius: 6,
+                    border: `1.5px dashed ${isDragging ? (isLight ? '#16A34A' : accentColor) : (isLight ? 'rgba(0,0,0,0.2)' : 'rgba(255, 255, 255, 0.18)')}`,
+                    background: isDragging
+                      ? (isLight ? 'rgba(22, 163, 74, 0.05)' : 'rgba(212, 244, 156, 0.05)')
+                      : (isLight ? 'rgba(0, 0, 0, 0.02)' : 'rgba(0, 0, 0, 0.2)'),
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    padding: '24px 20px',
+                    textAlign: 'center',
+                    transition: 'all 0.15s ease',
+                  }}
+                >
+                  {presetPath ? (
+                    /* Preset selected state */
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                      <div style={{
+                        width: 44,
+                        height: 44,
+                        borderRadius: '50%',
+                        background: 'rgba(34, 197, 94, 0.15)',
+                        color: isLight ? '#16A34A' : '#22C55E',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        fontSize: 22,
+                        marginBottom: 12,
+                      }}>
+                        ✓
+                      </div>
+                      <div style={{
+                        fontSize: 14,
+                        fontWeight: 600,
+                        color: titleColor,
+                        marginBottom: 4,
+                      }}>
+                        {basenameOf(presetPath)}
+                      </div>
+                      <div style={{
+                        fontSize: 12,
+                        color: subtextColor,
+                        marginBottom: 16,
+                      }}>
+                        Preset loaded successfully
+                      </div>
+                      <button
+                        type="button"
+                        onClick={pickPreset}
+                        style={{
+                          height: 32,
+                          padding: '0 16px',
+                          background: isLight ? '#FFFFFF' : 'rgba(255, 255, 255, 0.08)',
+                          border: `1px solid ${isLight ? 'rgba(0,0,0,0.2)' : 'rgba(255, 255, 255, 0.18)'}`,
+                          borderRadius: 4,
+                          color: titleColor,
+                          fontFamily: F,
+                          fontSize: 12,
+                          fontWeight: 500,
+                          cursor: 'pointer',
+                        }}
+                      >
+                        Change preset (.xmp)
+                      </button>
+                    </div>
+                  ) : (
+                    /* Empty Dropzone matching reference */
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                      <XmpDocIcon />
+
+                      <button
+                        type="button"
+                        onClick={pickPreset}
+                        style={{
+                          height: 32,
+                          padding: '0 16px',
+                          background: isLight ? '#FFFFFF' : 'rgba(255, 255, 255, 0.08)',
+                          border: `1px solid ${isLight ? 'rgba(0,0,0,0.18)' : 'rgba(255, 255, 255, 0.14)'}`,
+                          borderRadius: 6,
+                          color: titleColor,
+                          fontFamily: F,
+                          fontSize: 12.5,
+                          fontWeight: 500,
+                          cursor: 'pointer',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: 6,
+                          margin: '14px 0 10px',
+                          transition: 'all 0.15s ease',
+                          boxShadow: isLight ? '0 1px 3px rgba(0,0,0,0.05)' : 'none',
+                        }}
+                      >
+                        <span>My presets</span>
+                        <span style={{ fontSize: 10 }}>▼</span>
+                      </button>
+
+                      <div style={{
+                        fontSize: 11.5,
+                        color: subtextColor,
+                        marginBottom: 6,
+                      }}>
+                        Or
+                      </div>
+
+                      <div style={{
+                        fontSize: 12,
+                        color: subtextColor,
+                        maxWidth: 260,
+                        lineHeight: 1.5,
+                      }}>
+                        Drag & drop or{' '}
+                        <span
+                          onClick={pickPreset}
+                          style={{
+                            color: isLight ? '#16A34A' : accentColor,
+                            textDecoration: 'underline',
+                            cursor: 'pointer',
+                            fontWeight: 600,
+                          }}
+                        >
+                          browse
+                        </span>{' '}
+                        to upload your preset (XMP file format only)
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          ) : (
+            /* STEP 2: Style Survey Questions */
+            <div>
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                marginBottom: 10,
+              }}>
+                <div style={{
+                  fontSize: 11,
+                  fontWeight: 600,
+                  textTransform: 'uppercase',
+                  letterSpacing: 0.5,
+                  color: SONNA.ochre,
+                }}>
+                  Question {surveyIndex + 1} of {SURVEY_QUESTIONS.length} · {SURVEY_QUESTIONS[surveyIndex].title}
+                </div>
+              </div>
+
+              <div style={{ fontSize: 15, fontWeight: 600, color: titleColor, marginBottom: 6 }}>
+                {SURVEY_QUESTIONS[surveyIndex].prompt}
+              </div>
+              <div style={{ fontSize: 12.5, color: subtextColor, marginBottom: 20 }}>
+                {SURVEY_QUESTIONS[surveyIndex].description}
+              </div>
+
+              {/* 5-option Visual Card Grid */}
+              <div style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(5, minmax(0, 1fr))',
+                gap: 12,
+              }}>
+                {SURVEY_QUESTIONS[surveyIndex].options.map(([ans, label]) => {
+                  const selected = surveyAnswers[SURVEY_QUESTIONS[surveyIndex].key] === ans;
+                  return (
+                    <div
+                      key={ans}
+                      onClick={() => setAnswer(SURVEY_QUESTIONS[surveyIndex].key, ans)}
+                      style={{
+                        padding: 6,
+                        background: selected ? (isLight ? '#F5EFE6' : 'rgba(255, 255, 255, 0.08)') : panelBg,
+                        border: `1.5px solid ${selected ? SONNA.ochre : panelBorder}`,
+                        borderRadius: 6,
+                        cursor: 'pointer',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: 8,
+                        transition: 'all 0.15s ease',
+                      }}
+                    >
+                      <SurveyPreview questionKey={SURVEY_QUESTIONS[surveyIndex].key} answer={ans} />
+                      <div style={{
+                        height: 22,
+                        borderRadius: 3,
+                        background: selected ? SONNA.ochre : 'transparent',
+                        color: selected ? '#FFFFFF' : subtextColor,
+                        fontSize: 11.5,
+                        fontWeight: 600,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        ...Tnum,
+                      }}>
+                        {ans > 0 ? `+${ans}` : ans}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {submitError && (
+                <div style={{
+                  marginTop: 18,
+                  padding: '10px 14px',
+                  background: 'rgba(239, 68, 68, 0.12)',
+                  border: `1px solid ${SONNA.red}`,
+                  borderRadius: 4,
+                  fontSize: 12.5,
+                  color: SONNA.red,
+                }}>
+                  {submitError}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Footer Actions */}
+        <div style={{
+          padding: '16px 28px',
+          borderTop: `1px solid ${isLight ? 'rgba(0,0,0,0.08)' : 'rgba(255, 255, 255, 0.08)'}`,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: currentStep === 'survey' ? 'space-between' : 'flex-end',
+          background: isLight ? '#FAF8F4' : '#191B1F',
+        }}>
+          {currentStep === 'survey' && (
             <button
               type="button"
               onClick={goBack}
               disabled={submitting}
               style={{
-                height: 34, padding: '0 16px',
+                height: 36,
+                padding: '0 18px',
                 background: 'transparent',
-                border: `1px solid ${SONNA.line}`, borderRadius: 3,
-                color: submitting ? SONNA.fgFaint : SONNA.fg,
-                fontFamily: F, fontSize: 12.5, fontWeight: 500,
+                border: `1px solid ${isLight ? 'rgba(0,0,0,0.2)' : 'rgba(255, 255, 255, 0.18)'}`,
+                borderRadius: 4,
+                color: titleColor,
+                fontFamily: F,
+                fontSize: 13,
+                fontWeight: 500,
                 cursor: submitting ? 'not-allowed' : 'pointer',
               }}
-            >Back</button>
-          ) : <span />}
+            >
+              Back
+            </button>
+          )}
 
           <button
             type="button"
             onClick={advance}
             disabled={!canAdvance || submitting}
             style={{
-              height: 34, padding: '0 18px',
-              background: (canAdvance && !submitting) ? SONNA.cta : SONNA.bgLifted,
-              border: 'none', borderRadius: 3,
-              color: (canAdvance && !submitting) ? SONNA.onCta : SONNA.fgFaint,
-              fontFamily: F, fontSize: 13, fontWeight: 600, letterSpacing: 0.1,
+              height: 36,
+              padding: '0 24px',
+              background: (canAdvance && !submitting) ? SONNA.cta : (isLight ? '#E5E0D8' : '#2D323A'),
+              border: 'none',
+              borderRadius: 4,
+              color: (canAdvance && !submitting) ? '#FFFFFF' : (isLight ? '#A8A29E' : '#6E7684'),
+              fontFamily: F,
+              fontSize: 13,
+              fontWeight: 600,
               cursor: (canAdvance && !submitting) ? 'pointer' : 'not-allowed',
+              transition: 'all 0.15s ease',
+              boxShadow: (canAdvance && !submitting) ? '0 2px 8px rgba(224, 83, 83, 0.35)' : 'none',
             }}
-          >{submitting ? 'Creating…' : nextLabel}</button>
+          >
+            {submitting ? 'Creating…' : (currentStep === 'survey' && surveyIndex === SURVEY_QUESTIONS.length - 1 ? 'Create profile' : 'Next')}
+          </button>
         </div>
       </div>
+
+      {/* Confirm Discard / Leave Modal matching reference */}
+      <ConfirmModal
+        isOpen={confirmLeaveOpen}
+        title="Are you sure you want to leave?"
+        message="Your progress won't be saved for later"
+        confirmText="Yes, leave"
+        cancelText="Cancel"
+        onConfirm={() => {
+          setConfirmLeaveOpen(false);
+          onClose();
+        }}
+        onCancel={() => setConfirmLeaveOpen(false)}
+        theme={theme}
+      />
     </div>
   );
 }
+
+export default LiteProfileWizard;

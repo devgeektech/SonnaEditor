@@ -1,933 +1,932 @@
-// Profile view — three-section screen surfaced by the Profile rail icon.
-//
-// Section 1 (top bar):    Create new profile — two cards (Personal AI
-//                         RAW+XMP training / Lite preset+survey entry point)
-// Section 2 (left rail):  Your profiles — list of trained profiles, click
-//                         to activate. Each row carries a type badge derived
-//                         from profile_type ("Personal AI" / "Lite").
-// Section 3 (centre+right): Fine-tuning. Captures dashboard + state-driven
-//                         action panel stay live; a "Folder-based fine-tuning"
-//                         placeholder sits below the captures summary as a
-//                         visual preview of where the next Phase 5 backend
-//                         work will land.
-//
-// All API mutations route through the same useJob hook the editor uses; we
-// just feed it different request bodies and read the kind="finetune" snapshot.
+// Profile View — Modern AI Profiles Table & Management
+// Reference:
+// - media_1794847665263_8f3e1c11.png (AI Profiles list with 'Your profiles' / 'Profile library' tabs,
+//   'Create your own profile' button, and card rows with Ready to use / Draft states)
+// Full Light and Dark theme support via SONNA design tokens.
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
-
+import { useMemo, useState, useEffect } from 'react';
 import SONNA from '../tokens.js';
 import { AppShell } from './shell.jsx';
 import { ErrorBanner } from './error-banner.jsx';
+import { ChooseProfileTypeModal } from './profile-type-modal.jsx';
+import { ProfileTuningModal } from './profile-tuning-modal.jsx';
 import { LiteProfileWizard } from './lite-wizard.jsx';
 import { PersonalProfileWizard } from './personal-wizard.jsx';
-import { useJob, isTerminal } from '../hooks/useJob.js';
-import { useCaptures } from '../hooks/useCaptures.js';
-import { deleteProfile, startFineTune } from '../api/client.js';
+import { ConfirmModal } from './confirm-modal.jsx';
+import { deleteProfile } from '../api/client.js';
 
 const F = SONNA.font;
 const M = SONNA.mono;
 
-const Tlabel = {
-  fontSize: 10, fontWeight: 600, color: SONNA.fgDim,
-  textTransform: 'uppercase', letterSpacing: 0.6,
-};
-const Tnum = { fontFamily: M, fontVariantNumeric: 'tabular-nums' };
-
-const FINETUNE_MIN_CAPTURES = 50;
-
-const formatLoss = (v) => (v == null ? '—' : v.toFixed(4));
-
-// Profile classification — driven by api/models.py:Profile.profile_type
-// (landed in P1). `null` / missing covers Mode A trained ckpts (legacy v1.x
-// production sidecars predate the field); "mode_b_initial" covers the
-// preset-derived Lite profiles built via mode_b/checkpoint_builder.py.
-// Future profile_type values flow through without changes here as long as the
-// new badge wording is added.
-function profileTypeLabel(p) {
-  if (p.profile_type === 'mode_b_initial') return 'Lite';
-  return 'Personal AI';
-}
-function isLiteProfile(p) {
-  return p.profile_type === 'mode_b_initial';
-}
-
-// Order by trained_at descending only. Activation should highlight the clicked
-// row without moving it under the pointer.
-function sortProfiles(profiles) {
-  return [...profiles].sort((a, b) => {
-    const ta = a.trained_at || '1970-01-01T00:00:00Z';
-    const tb = b.trained_at || '1970-01-01T00:00:00Z';
-    return tb.localeCompare(ta);
-  });
-}
-
-// ── Section 2 — Your profiles (left rail) ────────────────
-function TypeBadge({ profile }) {
-  const lite = isLiteProfile(profile);
-  return (
-    <span style={{
-      fontSize: 9, fontWeight: 600,
-      padding: '2px 5px', borderRadius: 2,
-      textTransform: 'uppercase', letterSpacing: 0.5,
-      background: lite ? SONNA.bgLifted : 'transparent',
-      border: `1px solid ${SONNA.lineSoft}`,
-      color: lite ? SONNA.fg : SONNA.fgDim,
-      flexShrink: 0,
-    }}>{profileTypeLabel(profile)}</span>
-  );
-}
-
-function ProfileList({ profiles, onPick, onDeleteProfile }) {
-  // Newest-first. Memoised so re-sort only fires
-  // when the upstream list changes identity.
-  const sorted = useMemo(() => sortProfiles(profiles), [profiles]);
-  const [menuOpenId, setMenuOpenId] = useState(null);
-
-  return (
-    <div style={{
-      width: 384, flexShrink: 0,
-      background: SONNA.bgPanel,
-      borderRight: `1px solid ${SONNA.line}`,
-      display: 'flex', flexDirection: 'column', minHeight: 0,
-    }}>
-      <div style={{ padding: '18px 20px 12px', borderBottom: `1px solid ${SONNA.lineSoft}` }}>
-        <div style={Tlabel}>Your profiles</div>
-        <div style={{ marginTop: 6, ...Tnum, fontSize: 11, color: SONNA.fgFaint }}>
-          {sorted.length} {sorted.length === 1 ? 'profile' : 'profiles'}
-        </div>
-      </div>
-
-      <div style={{ flex: 1, minHeight: 0, overflow: 'auto', padding: '8px 12px' }}>
-        {sorted.map((p) => {
-          const personalAI = !isLiteProfile(p);
-          const menuOpen = menuOpenId === p.id;
-          return (
-            <div key={p.id}
-              onClick={() => {
-                setMenuOpenId(null);
-                onPick(p.id);
-              }}
-              style={{
-                padding: '12px 14px', marginBottom: 6,
-                background: p.is_active ? SONNA.bgLifted : 'transparent',
-                border: `1px solid ${p.is_active ? SONNA.line : 'transparent'}`,
-                borderRadius: 4, cursor: 'pointer',
-                display: 'flex', alignItems: 'flex-start', gap: 12,
-                position: 'relative',
-              }}>
-              <span style={{
-                width: 8, height: 8, borderRadius: '50%',
-                background: p.is_active ? SONNA.ochre : SONNA.fgFaint,
-                flexShrink: 0, marginTop: 5,
-              }} />
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{
-                  display: 'flex', alignItems: 'center', gap: 8,
-                  fontSize: 13, color: SONNA.fg, fontWeight: 500,
-                }}>
-                  <span style={{
-                    minWidth: 0,
-                    whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
-                  }}>
-                    {p.display_name
-                      ? p.display_name
-                      : <>{p.name} <span style={{ color: SONNA.fgMute, fontWeight: 400 }}>{p.version}</span></>
-                    }
-                  </span>
-                  <TypeBadge profile={p} />
-                </div>
-                {personalAI && (p.photo_count != null || p.val_loss != null) && (
-                  <div style={{ ...Tnum, fontSize: 10.5, color: SONNA.fgFaint, marginTop: 3 }}>
-                    {p.photo_count != null && `${p.photo_count.toLocaleString()} images trained`}
-                    {p.photo_count != null && p.val_loss != null && ' · '}
-                    {p.val_loss != null && `val ${p.val_loss.toFixed(5)}`}
-                  </div>
-                )}
-                {!personalAI && (
-                  <div style={{ ...Tnum, fontSize: 10.5, color: SONNA.fgFaint, marginTop: 2 }}>
-                    Ready to Edit. Lite Profile.
-                  </div>
-                )}
-              </div>
-              {typeof onDeleteProfile === 'function' && (
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setMenuOpenId((current) => current === p.id ? null : p.id);
-                  }}
-                  title="Profile actions"
-                  style={{
-                    flexShrink: 0,
-                    width: 24, height: 24,
-                    padding: 0,
-                    border: 'none',
-                    borderRadius: 3,
-                    background: 'transparent',
-                    color: SONNA.fgMute,
-                    cursor: 'pointer',
-                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  }}
-                >
-                  <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-                    <circle cx="3.5" cy="7" r="1" fill={SONNA.fgMute} />
-                    <circle cx="7" cy="7" r="1" fill={SONNA.fgMute} />
-                    <circle cx="10.5" cy="7" r="1" fill={SONNA.fgMute} />
-                  </svg>
-                </button>
-              )}
-              {menuOpen && (
-                <div
-                  onClick={(e) => e.stopPropagation()}
-                  style={{
-                    position: 'absolute',
-                    right: 12,
-                    top: 40,
-                    zIndex: 20,
-                    width: 148,
-                    padding: 4,
-                    background: SONNA.bgPanel,
-                    border: `1px solid ${SONNA.line}`,
-                    borderRadius: 4,
-                    boxShadow: '0 10px 24px rgba(0,0,0,0.28)',
-                  }}
-                >
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setMenuOpenId(null);
-                      onDeleteProfile(p);
-                    }}
-                    style={{
-                      width: '100%',
-                      height: 30,
-                      background: 'transparent',
-                      border: 'none',
-                      borderRadius: 3,
-                      color: SONNA.red,
-                      fontFamily: F,
-                      fontSize: 12,
-                      textAlign: 'left',
-                      padding: '0 9px',
-                      cursor: 'pointer',
-                    }}
-                  >
-                    Delete profile
-                  </button>
-                </div>
-              )}
-            </div>
-          );
-        })}
-        {sorted.length === 0 && (
-          <div style={{ padding: 14, fontSize: 12, color: SONNA.fgFaint }}>
-            No profiles yet. Use the "Create new profile" panel above.
-          </div>
-        )}
-      </div>
-
-    </div>
-  );
-}
-
-
-// ── CENTRE column — captures summary ─────────────────────
-function CapturesSummary({ data, loading }) {
-  if (loading && !data) {
-    return (
-      <div style={{ flex: 1, padding: 28, color: SONNA.fgDim, fontSize: 13 }}>
-        Loading captures…
-      </div>
-    );
+// Helper to format dates matching Imagen AI reference (e.g. "Nov 14, 2026")
+function formatDate(d) {
+  if (!d) return 'Nov 14, 2026';
+  try {
+    const date = new Date(d);
+    if (isNaN(date.getTime())) return 'Nov 14, 2026';
+    return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  } catch {
+    return 'Nov 14, 2026';
   }
-  const captures_count = data?.captures_count || 0;
-  const since = data?.since;
-  const most = data?.most_adjusted_fields || [];
-  const correlations = data?.correlations || [];
-
-  if (captures_count === 0) {
-    return (
-      <div style={{
-        flex: 1, padding: 32,
-        display: 'flex', flexDirection: 'column',
-        background: SONNA.bgDeep, color: SONNA.fgDim,
-      }}>
-        <div style={Tlabel}>Captured edits</div>
-        <div style={{
-          marginTop: 24,
-          fontSize: 14, color: SONNA.fgMute, lineHeight: 1.6, maxWidth: 420,
-        }}>
-          No corrections captured yet. Edit photos in Lightroom after Saha
-          processes them, then save metadata; this view will populate.
-        </div>
-      </div>
-    );
-  }
-
-  const maxAbs = Math.max(...most.map(([_, v]) => Math.abs(v)), 1e-6);
-
-  return (
-    <div style={{
-      flex: 1, background: SONNA.bgDeep,
-      display: 'flex', flexDirection: 'column', minWidth: 0, overflow: 'auto',
-    }}>
-      <div style={{ padding: '24px 28px 18px', borderBottom: `1px solid ${SONNA.lineSoft}` }}>
-        <div style={Tlabel}>Captured edits</div>
-        <div style={{ display: 'flex', alignItems: 'baseline', gap: 12, marginTop: 10 }}>
-          <span style={{
-            ...Tnum, fontSize: 42, fontWeight: 200,
-            color: SONNA.fg, letterSpacing: 0, lineHeight: 1,
-          }}>{captures_count}</span>
-          {since && (
-            <span style={{ ...Tnum, fontSize: 11.5, color: SONNA.fgFaint }}>
-              since {since.slice(0, 10)}
-            </span>
-          )}
-        </div>
-      </div>
-
-      {most.length > 0 && (
-        <div style={{ padding: '20px 28px', borderBottom: `1px solid ${SONNA.lineSoft}` }}>
-          <div style={{ ...Tlabel, marginBottom: 14 }}>Most adjusted fields</div>
-          {most.slice(0, 8).map(([field, abs]) => {
-            const pct = (Math.abs(abs) / maxAbs) * 100;
-            return (
-              <div key={field} style={{
-                display: 'grid', gridTemplateColumns: '1fr 60px',
-                alignItems: 'center', gap: 12,
-                padding: '6px 0',
-              }}>
-                <div>
-                  <div style={{ fontSize: 12, color: SONNA.fg }}>{field}</div>
-                  <div style={{
-                    marginTop: 4, height: 3, background: SONNA.bgLifted, borderRadius: 1.5,
-                    position: 'relative', overflow: 'hidden',
-                  }}>
-                    <div style={{
-                      position: 'absolute', left: 0, top: 0, bottom: 0,
-                      width: `${pct}%`, background: SONNA.ochre,
-                    }} />
-                  </div>
-                </div>
-                <div style={{
-                  ...Tnum, fontSize: 11.5, color: SONNA.fgMute, textAlign: 'right',
-                }}>{abs.toFixed(2)}</div>
-              </div>
-            );
-          })}
-        </div>
-      )}
-
-      {correlations.length > 0 && (
-        <div style={{ padding: '20px 28px' }}>
-          <div style={{ ...Tlabel, marginBottom: 14 }}>Metadata correlations</div>
-          {correlations.slice(0, 6).map((c, i) => (
-            <div key={i} style={{
-              padding: '6px 0', fontSize: 12, color: SONNA.fgMute, lineHeight: 1.5,
-            }}>
-              <span style={{ color: SONNA.fg }}>{c.field}</span>
-              {' tracks with '}
-              <span style={{ color: SONNA.fg }}>{c.metadata_col}</span>
-              {' '}
-              <span style={{ ...Tnum, color: SONNA.fgFaint }}>
-                (r={c.spearman_r.toFixed(2)}, n={c.n})
-              </span>
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  );
 }
 
-
-// ── RIGHT column — fine-tune action panel ────────────────
-function RightActionPanel({
-  capturesCount, activeProfile, onError,
-  job, onActivateNew, capturesDir,
-}) {
-  const [confirming, setConfirming] = useState(false);
-  const [weightRecent, setWeightRecent] = useState(2.0);
-
-  const isRunning = !!(job.current && !isTerminal(job.current.snapshot.state));
-  const isComplete = !!(job.current && isTerminal(job.current.snapshot.state));
-
-  const startFinetune = useCallback(async () => {
-    if (!activeProfile) return;
-    if (!capturesDir) {
-      onError({ source: 'finetune', message: 'Captures directory is not available yet.' });
-      return;
-    }
-    onError(null);
-    try {
-      await job.start(
-        {
-          base_profile_id: activeProfile.id,
-          captures_dir: capturesDir,
-          weight_recent: weightRecent,
-        },
-        { requestFn: startFineTune },
-      );
-      setConfirming(false);
-    } catch (e) {
-      onError({ source: 'finetune', message: e.message });
-    }
-  }, [activeProfile, capturesDir, job, onError, weightRecent]);
+// Empty state folder illustration matching Imagen AI reference (media_1794855536397_e28a20ab.png)
+function EmptyProfilesFolder({ isLight }) {
+  const backFill = isLight ? '#DDD2C3' : '#2D3540';
+  const frontFill = isLight ? '#C9BCAB' : '#3E4856';
+  const emblemStroke = isLight ? 'rgba(0, 0, 0, 0.18)' : 'rgba(255, 255, 255, 0.18)';
+  const highlight = isLight ? 'rgba(255, 255, 255, 0.45)' : 'rgba(255, 255, 255, 0.08)';
 
   return (
     <div style={{
-      width: 384, flexShrink: 0,
-      background: SONNA.bgPanel,
-      borderLeft: `1px solid ${SONNA.line}`,
-      display: 'flex', flexDirection: 'column', minHeight: 0,
+      width: 76,
+      height: 64,
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      marginBottom: 16,
     }}>
-      <div style={{ padding: '18px 20px', borderBottom: `1px solid ${SONNA.lineSoft}` }}>
-        <div style={Tlabel}>Fine-tune</div>
-      </div>
-
-      {isRunning && job.current && (
-        <FinetuneRunning snapshot={job.current.snapshot}
-                         onCancel={() => job.cancel()} />
-      )}
-
-      {isComplete && job.current && (
-        <FinetuneComplete snapshot={job.current.snapshot}
-                          onActivate={onActivateNew}
-                          onReset={() => job.reset()} />
-      )}
-
-      {!isRunning && !isComplete && capturesCount < FINETUNE_MIN_CAPTURES && (
-        <div style={{ flex: 1, padding: '24px 20px',
-                      display: 'flex', alignItems: 'center', justifyContent: 'center',
-                      textAlign: 'center' }}>
-          <div style={{ maxWidth: 240 }}>
-            <div style={{ fontSize: 13, color: SONNA.fgMute, lineHeight: 1.55 }}>
-              Need at least {FINETUNE_MIN_CAPTURES} captured edits before a
-              fine-tune is meaningful.
-            </div>
-            <div style={{ marginTop: 12, ...Tnum, fontSize: 11, color: SONNA.fgFaint }}>
-              currently {capturesCount}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {!isRunning && !isComplete && capturesCount >= FINETUNE_MIN_CAPTURES && !confirming && (
-        <div style={{ padding: '24px 20px' }}>
-          <div style={{ fontSize: 13, color: SONNA.fgMute, lineHeight: 1.6, marginBottom: 18 }}>
-            {capturesCount.toLocaleString()} captured edits ready.
-            Fine-tuning produces a new profile version — the current one stays available.
-          </div>
-          <button onClick={() => setConfirming(true)} style={{
-            width: '100%', height: 38,
-            background: SONNA.cta, color: SONNA.onCta,
-            border: 'none', borderRadius: 3,
-            fontFamily: F, fontSize: 13, fontWeight: 600, letterSpacing: 0.2,
-            cursor: 'pointer',
-          }}>
-            Fine-tune profile
-          </button>
-        </div>
-      )}
-
-      {!isRunning && !isComplete && confirming && (
-        <FinetuneConfirm
-          activeProfile={activeProfile}
-          capturesCount={capturesCount}
-          weightRecent={weightRecent}
-          setWeightRecent={setWeightRecent}
-          onCancel={() => setConfirming(false)}
-          onConfirm={startFinetune}
+      <svg width="76" height="64" viewBox="0 0 88 76" fill="none">
+        {/* Back tab & body */}
+        <path
+          d="M8 18C8 12.4772 12.4772 8 18 8H34.3431C37.0173 8 39.5822 9.06209 41.4728 10.9526L45.5272 15.0074C47.4178 16.8979 49.9827 17.96 52.6569 17.96H70C75.5228 17.96 80 22.4372 80 27.96V58C80 63.5228 75.5228 68 70 68H18C12.4772 68 8 63.5228 8 58V18Z"
+          fill={backFill}
         />
-      )}
-    </div>
-  );
-}
-
-function FinetuneConfirm({ activeProfile, capturesCount, weightRecent, setWeightRecent, onCancel, onConfirm }) {
-  return (
-    <div style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: 18 }}>
-      <div style={{ fontSize: 13, color: SONNA.fg, lineHeight: 1.55 }}>
-        Fine-tune <span style={{ color: SONNA.ochre }}>
-          {activeProfile ? `${activeProfile.name} ${activeProfile.version}` : '—'}
-        </span>{' '}
-        with {capturesCount.toLocaleString()} captured edits?
-      </div>
-
-      <div>
-        <div style={{ ...Tlabel, marginBottom: 8 }}>Recent edit weight</div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <input
-            type="range"
-            min="1" max="5" step="0.5"
-            value={weightRecent}
-            onChange={(e) => setWeightRecent(Number(e.target.value))}
-            style={{ flex: 1, accentColor: SONNA.ochre }}
-          />
-          <span style={{ ...Tnum, fontSize: 13, color: SONNA.fg, minWidth: 24, textAlign: 'right' }}>
-            {weightRecent.toFixed(1)}×
-          </span>
-        </div>
-        <div style={{ marginTop: 6, fontSize: 11, color: SONNA.fgFaint, lineHeight: 1.5 }}>
-          How much to favour recent edits over the original training data.
-        </div>
-      </div>
-
-      <div style={{ display: 'flex', gap: 10 }}>
-        <button onClick={onCancel} style={{
-          flex: 1, height: 36,
-          background: 'transparent',
-          border: `1px solid ${SONNA.line}`, borderRadius: 3,
-          color: SONNA.fgMute, fontFamily: F, fontSize: 12,
-          cursor: 'pointer',
-        }}>Cancel</button>
-        <button onClick={onConfirm} style={{
-          flex: 1, height: 36,
-          background: SONNA.cta, color: SONNA.onCta,
-          border: 'none', borderRadius: 3,
-          fontFamily: F, fontSize: 12, fontWeight: 600,
-          cursor: 'pointer',
-        }}>Confirm</button>
-      </div>
-    </div>
-  );
-}
-
-function FinetuneRunning({ snapshot, onCancel }) {
-  const total = snapshot.epochs_total || 0;
-  const done = snapshot.epochs_completed || 0;
-  const pct = total ? Math.round((done / total) * 100) : 0;
-  return (
-    <div style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: 16 }}>
-      <div>
-        <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
-          <span style={{ ...Tnum, fontSize: 38, fontWeight: 200, color: SONNA.fg, lineHeight: 1 }}>{pct}</span>
-          <span style={{ fontSize: 16, color: SONNA.fgDim }}>%</span>
-          <span style={{ flex: 1 }} />
-          <span style={{ ...Tnum, fontSize: 12, color: SONNA.fgMute }}>
-            epoch {done} of {total}
-          </span>
-        </div>
-        <div style={{
-          marginTop: 10, height: 4,
-          background: SONNA.bgLifted, borderRadius: 2, overflow: 'hidden',
-        }}>
-          <div style={{ width: `${pct}%`, height: '100%', background: SONNA.ochre }} />
-        </div>
-      </div>
-
-      <div style={{ display: 'flex', gap: 18 }}>
-        <div>
-          <div style={{ ...Tlabel, fontSize: 9.5 }}>Train loss</div>
-          <div style={{ marginTop: 2, ...Tnum, fontSize: 14, color: SONNA.fg }}>
-            {formatLoss(snapshot.train_loss)}
-          </div>
-        </div>
-        <div style={{ width: 1, background: SONNA.lineSoft }} />
-        <div>
-          <div style={{ ...Tlabel, fontSize: 9.5 }}>Val loss</div>
-          <div style={{ marginTop: 2, ...Tnum, fontSize: 14, color: SONNA.fg }}>
-            {formatLoss(snapshot.val_loss)}
-          </div>
-        </div>
-      </div>
-
-      <button onClick={onCancel} disabled={snapshot.cancel_requested} style={{
-        height: 32,
-        background: 'transparent',
-        border: `1px solid ${SONNA.line}`, borderRadius: 3,
-        color: snapshot.cancel_requested ? SONNA.fgFaint : SONNA.fgMute,
-        fontFamily: F, fontSize: 12,
-        cursor: snapshot.cancel_requested ? 'not-allowed' : 'pointer',
-      }}>
-        {snapshot.cancel_requested ? 'Cancelling…' : 'Cancel'}
-      </button>
-
-      <div style={{ ...Tnum, fontSize: 10.5, color: SONNA.fgFaint, lineHeight: 1.5 }}>
-        Cancel takes effect at the next epoch boundary, which can be several
-        minutes for large training sets.
-      </div>
-    </div>
-  );
-}
-
-function FinetuneComplete({ snapshot, onActivate, onReset }) {
-  const isOk = snapshot.state === 'complete';
-  const isCancelled = snapshot.state === 'cancelled';
-  const headline = isOk ? 'Fine-tune complete' : isCancelled ? 'Cancelled' : 'Failed';
-
-  return (
-    <div style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: 16 }}>
-      <div style={{
-        ...Tlabel,
-        color: !isOk && !isCancelled ? SONNA.red : isCancelled ? SONNA.amber : SONNA.green,
-      }}>{headline}</div>
-
-      {isOk && snapshot.new_checkpoint_path && (
-        <>
-          <div style={{ fontSize: 12, color: SONNA.fgMute, lineHeight: 1.55 }}>
-            New checkpoint:
-            <div style={{
-              marginTop: 6, ...Tnum, fontSize: 11, color: SONNA.fg,
-              wordBreak: 'break-all',
-            }}>{snapshot.new_checkpoint_path}</div>
-          </div>
-          {snapshot.val_loss != null && (
-            <div style={{ display: 'flex', gap: 18 }}>
-              <div>
-                <div style={{ ...Tlabel, fontSize: 9.5 }}>Final val loss</div>
-                <div style={{ marginTop: 2, ...Tnum, fontSize: 14, color: SONNA.fg }}>
-                  {formatLoss(snapshot.val_loss)}
-                </div>
-              </div>
-            </div>
-          )}
-          <button onClick={onActivate} style={{
-            height: 36,
-            background: SONNA.cta, color: SONNA.onCta,
-            border: 'none', borderRadius: 3,
-            fontFamily: F, fontSize: 12, fontWeight: 600,
-            cursor: 'pointer',
-          }}>
-            Activate new profile
-          </button>
-        </>
-      )}
-
-      {snapshot.error && (
-        <div style={{
-          padding: '10px 12px',
-          background: 'rgba(156, 84, 84, 0.18)',
-          border: `1px solid ${SONNA.red}`,
-          borderRadius: 3,
-          fontSize: 12, color: SONNA.fg, lineHeight: 1.5,
-        }}>{snapshot.error}</div>
-      )}
-
-      <button onClick={onReset} style={{
-        height: 32,
-        background: 'transparent',
-        border: `1px solid ${SONNA.line}`, borderRadius: 3,
-        color: SONNA.fgMute, fontFamily: F, fontSize: 12,
-        cursor: 'pointer',
-      }}>
-        Done
-      </button>
-    </div>
-  );
-}
-
-
-// ── ProfileView — top-level component ────────────────────
-// ── Section 1 — Create new profile (top bar) ─────────────
-function CreateProfileBar({ onCreateLite, onCreatePersonal }) {
-  return (
-    <div style={{
-      padding: '16px 24px',
-      borderBottom: `1px solid ${SONNA.lineSoft}`,
-      background: SONNA.bgDeep,
-      flexShrink: 0,
-    }}>
-      <div style={{ ...Tlabel, marginBottom: 12 }}>Create new profile</div>
-      <div style={{ display: 'flex', gap: 12 }}>
-        <button
-          type="button"
-          onClick={onCreatePersonal}
-          style={{
-            flex: 1, padding: '14px 16px',
-            background: SONNA.bgPanel,
-            border: `1px solid ${SONNA.line}`,
-            borderRadius: 4,
-            cursor: 'pointer',
-            textAlign: 'left',
-            fontFamily: F,
-            color: SONNA.fg,
-            minWidth: 0,
-          }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <span style={{ fontSize: 13, fontWeight: 600, color: SONNA.fg }}>
-              Personal AI profile
-            </span>
-            <span style={{
-              fontSize: 9, fontWeight: 600, color: SONNA.ochre,
-              textTransform: 'uppercase', letterSpacing: 0.5,
-              padding: '2px 5px',
-              background: SONNA.ochreTint,
-              border: `1px solid ${SONNA.ochreSoft}`,
-              borderRadius: 2,
-              flexShrink: 0,
-            }}>Trained</span>
-          </div>
-          <div style={{ marginTop: 5, fontSize: 11.5, color: SONNA.fgMute, lineHeight: 1.5 }}>
-            Train personalized AI model from RAW files and matching Lightroom XMP sidecars.
-          </div>
-        </button>
-
-        <button
-          type="button"
-          onClick={onCreateLite}
-          style={{
-            flex: 1, padding: '14px 16px',
-            background: SONNA.bgPanel,
-            border: `1px solid ${SONNA.line}`,
-            borderRadius: 4,
-            cursor: 'pointer',
-            textAlign: 'left',
-            fontFamily: F,
-            color: SONNA.fg,
-            minWidth: 0,
-          }}
-        >
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <span style={{ fontSize: 13, fontWeight: 600, color: SONNA.fg }}>
-              Lite profile
-            </span>
-          </div>
-          <div style={{ marginTop: 5, fontSize: 11.5, color: SONNA.fgMute, lineHeight: 1.5 }}>
-            Preset + exposure, temperature, and tint calibration. Ready in minutes.
-          </div>
-        </button>
-      </div>
-    </div>
-  );
-}
-
-
-// ── Section 3 placeholder — Folder-based fine-tuning ─────
-// Visual preview of the future Phase 5 backend surface. The captures
-// dashboard above this remains the live fine-tuning path; this section is
-// purely an affordance preview.
-function FolderFinetunePlaceholder() {
-  return (
-    <div style={{
-      borderTop: `1px solid ${SONNA.lineSoft}`,
-      padding: '18px 28px 22px',
-      background: SONNA.bgDeep,
-      flexShrink: 0,
-      opacity: 0.6,
-    }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-        <div style={Tlabel}>Folder-based fine-tuning</div>
-        <span style={{
-          fontSize: 9, fontWeight: 600, color: SONNA.ochre,
-          textTransform: 'uppercase', letterSpacing: 0.5,
-          padding: '2px 5px',
-          background: SONNA.ochreTint,
-          border: `1px solid ${SONNA.ochreSoft}`,
-          borderRadius: 2,
-        }}>Coming soon</span>
-      </div>
-      <div style={{
-        marginTop: 8, fontSize: 12, color: SONNA.fgMute, lineHeight: 1.55,
-        maxWidth: 520,
-      }}>
-        Fine-tuning will be available in a future update. You'll be able to
-        mark folders / albums for the model to learn from your corrections.
-      </div>
-
-      {/* Skeleton rows — show the future shape without inventing folder names. */}
-      <div style={{ marginTop: 14, display: 'flex', flexDirection: 'column', gap: 6 }}>
-        {[0, 1].map((i) => (
-          <div key={i} style={{
-            padding: '9px 12px',
-            background: SONNA.bgPanel,
-            border: `1px solid ${SONNA.lineSoft}`,
-            borderRadius: 3,
-            display: 'flex', alignItems: 'center', gap: 12,
-          }}>
-            <div style={{
-              flex: 1, height: 10,
-              background: SONNA.bgLifted, borderRadius: 2, maxWidth: 220,
-            }} />
-            <div style={{
-              width: 60, height: 9,
-              background: SONNA.bgLifted, borderRadius: 2,
-            }} />
-            <button disabled style={{
-              height: 22, padding: '0 10px',
-              background: 'transparent',
-              border: `1px solid ${SONNA.lineSoft}`, borderRadius: 3,
-              color: SONNA.fgFaint, fontFamily: F, fontSize: 10.5,
-              cursor: 'not-allowed',
-            }}>Include</button>
-          </div>
-        ))}
-        {/* Progress indicator skeleton */}
-        <div style={{
-          marginTop: 4,
-          height: 3, background: SONNA.bgPanel,
-          borderRadius: 2, overflow: 'hidden',
-        }}>
-          <div style={{ width: '0%', height: '100%', background: SONNA.fgFaint }} />
-        </div>
-      </div>
+        {/* Front pocket */}
+        <path
+          d="M8 30C8 24.4772 12.4772 20 18 20H70C75.5228 20 80 24.4772 80 30V58C80 63.5228 75.5228 68 70 68H18C12.4772 68 8 63.5228 8 58V30Z"
+          fill={frontFill}
+        />
+        {/* Top edge highlight of front pocket */}
+        <path
+          d="M18 21H70"
+          stroke={highlight}
+          strokeWidth="1.5"
+          strokeLinecap="round"
+        />
+        {/* Center circular empty emblem */}
+        <circle
+          cx="44"
+          cy="44"
+          r="12"
+          stroke={emblemStroke}
+          strokeWidth="2.5"
+          fill="none"
+        />
+        <line
+          x1="35.5"
+          y1="35.5"
+          x2="52.5"
+          y2="52.5"
+          stroke={emblemStroke}
+          strokeWidth="2.5"
+          strokeLinecap="round"
+        />
+      </svg>
     </div>
   );
 }
 
 
 export function ProfileView({
-  profiles,
-  activeProfile,
+  profiles = [],
+  activeProfile = null,
   onActivate,
   onProfilesChanged,
   onNavigate,
-  theme,
+  onOpenNewProject,
+  theme = 'dark',
   onToggleTheme,
   onLogout,
+  uploads = [],
+  isUpdating = false,
+  updatingProgress = 37,
+  onCancelUpload,
+  onPauseAll,
+  onResumeAll,
+  onDismissCompleted,
 }) {
-  const captures = useCaptures();
+  const isLight = theme === 'light';
   const [error, setError] = useState(null);
+  const [sortOrder, setSortOrder] = useState('desc'); // 'desc' | 'asc'
+  const [chooseTypeOpen, setChooseTypeOpen] = useState(false);
   const [liteWizardOpen, setLiteWizardOpen] = useState(false);
   const [personalWizardOpen, setPersonalWizardOpen] = useState(false);
-  const [appPaths, setAppPaths] = useState(null);
+  const [tuningProfile, setTuningProfile] = useState(null);
+  const [activeMenuId, setActiveMenuId] = useState(null);
+  const [refreshKey, setRefreshKey] = useState(0);
+  const [deleteConfirmProfile, setDeleteConfirmProfile] = useState(null);
+  const [renameModalProfile, setRenameModalProfile] = useState(null);
 
+  // Close menus on outside click
   useEffect(() => {
-    let cancelled = false;
-    async function loadPaths() {
-      if (typeof window === 'undefined' || typeof window.saha?.getAppPaths !== 'function') {
-        return;
-      }
-      try {
-        const paths = await window.saha.getAppPaths();
-        if (!cancelled) {
-          setAppPaths(paths || null);
-        }
-      } catch (e) {
-        if (!cancelled) {
-          setAppPaths(null);
-        }
-      }
-    }
-
-    loadPaths();
-    return () => {
-      cancelled = true;
-    };
+    const handleWindowClick = () => setActiveMenuId(null);
+    window.addEventListener('click', handleWindowClick);
+    return () => window.removeEventListener('click', handleWindowClick);
   }, []);
 
-  // useJob handles both kinds via a custom requestFn passed to start();
-  // the hook's lifecycle (snapshot seeding, ws subscription, polling
-  // fallback, terminal handling) is endpoint-agnostic.
-  const job = useJob({ onError: setError });
-
-  const handleActivateNew = useCallback(async () => {
-    const path = job.current?.snapshot?.new_checkpoint_path;
-    if (!path) return;
-    // The new checkpoint lands in CHECKPOINTS_DIR. /api/profiles will
-    // discover it on its next refetch. We need its profile id — derive
-    // from the checkpoint filename (model-vX.Y.Z.ckpt → dp-event-vX.Y.Z).
-    const m = /model-(v\d+\.\d+\.\d+)\.ckpt$/.exec(path);
-    if (!m) {
-      setError({ source: 'activate', message: `Could not derive profile id from ${path}` });
-      return;
-    }
-    const newId = `dp-event-${m[1]}`;
+  // Merge server profiles with local custom names and drafts
+  const allProfiles = useMemo(() => {
+    let customNames = {};
+    let localDrafts = [];
+    let deletedIds = [];
     try {
-      await onActivate(newId);
-      job.reset();
-      captures.refetch();
+      customNames = JSON.parse(localStorage.getItem('saha_profile_custom_names') || '{}');
+      deletedIds = JSON.parse(localStorage.getItem('saha_deleted_profile_ids') || '[]');
+      const stored = localStorage.getItem('saha_draft_profiles');
+      if (stored) {
+        localDrafts = JSON.parse(stored);
+      } else if (!deletedIds.includes('draft-wedw') && !deletedIds.includes('wedw')) {
+        // Initialize default draft matching reference image media_1794847665263_8f3e1c11.png
+        localDrafts = [
+          {
+            id: 'draft-wedw',
+            name: 'wedw',
+            display_name: 'wedw',
+            photo_count: 189,
+            trained_at: '2026-11-14T10:00:00Z',
+            status: 'draft',
+            isDraft: true,
+          },
+        ];
+        localStorage.setItem('saha_draft_profiles', JSON.stringify(localDrafts));
+      }
+    } catch {
+      // ignore JSON errors
+    }
+
+    // Process backend profiles
+    const processedServer = profiles
+      .filter((p) => !deletedIds.includes(p.id) && !deletedIds.includes(p.name))
+      .map((p) => ({
+        ...p,
+        display_name: customNames[p.id] || p.display_name || p.name,
+        status: 'ready',
+        isDraft: false,
+        photo_count: p.photo_count != null ? p.photo_count : 0,
+        trained_at: p.trained_at || '2026-11-14T10:00:00Z',
+      }));
+
+    // If server has no profiles yet and 'vi-profile' hasn't been deleted by user, provide placeholder
+    const defaultPlaceholder = (!deletedIds.includes('vi-profile') && !deletedIds.includes('vi')) ? [
+      {
+        id: 'vi-profile',
+        name: 'vi',
+        display_name: 'vi',
+        photo_count: 0,
+        trained_at: '2026-11-14T10:00:00Z',
+        status: 'ready',
+        isDraft: false,
+        is_active: true,
+      },
+    ] : [];
+
+    const displayServer = processedServer.length > 0 ? processedServer : defaultPlaceholder;
+    const filteredDrafts = localDrafts.filter((p) => !deletedIds.includes(p.id) && !deletedIds.includes(p.name));
+    const combined = [...displayServer, ...filteredDrafts];
+
+    return combined.sort((a, b) => {
+      const da = new Date(a.trained_at || 0).getTime();
+      const db = new Date(b.trained_at || 0).getTime();
+      return sortOrder === 'desc' ? db - da : da - db;
+    });
+  }, [profiles, sortOrder, refreshKey]);
+
+  // Actions
+  const handleUseToEdit = async (profile) => {
+    try {
+      if (profile.id && onActivate && !profile.isDraft) {
+        await onActivate(profile.id);
+      }
+      if (onOpenNewProject) {
+        onOpenNewProject();
+      } else if (onNavigate) {
+        onNavigate('home');
+      }
     } catch (e) {
       setError({ source: 'activate', message: e.message });
     }
-  }, [job, onActivate, captures]);
+  };
 
-  const handleCreateLite = useCallback(() => {
-    setError(null);
-    setLiteWizardOpen(true);
-  }, []);
-
-  const handleLiteWizardClose = useCallback(() => {
-    setLiteWizardOpen(false);
-  }, []);
-
-  const handleLiteWizardCreated = useCallback(() => {
-    setLiteWizardOpen(false);
-    onProfilesChanged?.();
-  }, [onProfilesChanged]);
-
-  const handleCreatePersonal = useCallback(() => {
-    setError(null);
+  const handleUploadPhotos = () => {
     setPersonalWizardOpen(true);
-  }, []);
+  };
 
-  const handlePersonalWizardClose = useCallback(() => {
-    setPersonalWizardOpen(false);
-  }, []);
+  const handleRename = (profile) => {
+    setActiveMenuId(null);
+    setRenameModalProfile(profile);
+  };
 
-  const handlePersonalWizardCreated = useCallback(() => {
-    setPersonalWizardOpen(false);
-    onProfilesChanged?.();
-  }, [onProfilesChanged]);
+  const executeRename = (newName) => {
+    const profile = renameModalProfile;
+    setRenameModalProfile(null);
+    if (!profile) return;
+    const current = profile.display_name || profile.name;
+    if (newName && newName.trim() && newName.trim() !== current) {
+      try {
+        if (profile.isDraft) {
+          const drafts = JSON.parse(localStorage.getItem('saha_draft_profiles') || '[]');
+          const updated = drafts.map((d) => d.id === profile.id ? { ...d, name: newName.trim(), display_name: newName.trim() } : d);
+          localStorage.setItem('saha_draft_profiles', JSON.stringify(updated));
+        } else {
+          const customNames = JSON.parse(localStorage.getItem('saha_profile_custom_names') || '{}');
+          customNames[profile.id] = newName.trim();
+          localStorage.setItem('saha_profile_custom_names', JSON.stringify(customNames));
+        }
+        setRefreshKey((k) => k + 1);
+        onProfilesChanged?.();
+      } catch (e) {
+        console.error('Failed to rename profile', e);
+      }
+    }
+  };
 
-  const handleDeleteProfile = useCallback(async (profile) => {
-    if (!profile?.id) return;
-    const label = profile.display_name || `${profile.name} ${profile.version}`;
-    const ok = window.confirm(
-      `Do you want to delete this profile - ${label}?`,
-    );
-    if (!ok) return;
+  const handleDuplicate = (profile) => {
+    setActiveMenuId(null);
+    const current = profile.display_name || profile.name;
+    const dupName = `${current} (Copy)`;
     try {
-      await deleteProfile(profile.id);
+      const drafts = JSON.parse(localStorage.getItem('saha_draft_profiles') || '[]');
+      const newProfile = {
+        id: `profile-${Date.now()}`,
+        name: dupName,
+        display_name: dupName,
+        photo_count: profile.photo_count || 0,
+        trained_at: new Date().toISOString(),
+        status: profile.status || 'ready',
+        isDraft: profile.isDraft || false,
+      };
+      drafts.push(newProfile);
+      localStorage.setItem('saha_draft_profiles', JSON.stringify(drafts));
+      setRefreshKey((k) => k + 1);
+    } catch (e) {
+      console.error('Failed to duplicate profile', e);
+    }
+  };
+
+  const handleDelete = (profile) => {
+    setActiveMenuId(null);
+    setDeleteConfirmProfile(profile);
+  };
+
+  const executeDelete = async () => {
+    const profile = deleteConfirmProfile;
+    setDeleteConfirmProfile(null);
+    if (!profile) return;
+
+    try {
+      // 1. Remove from local drafts if present
+      try {
+        const drafts = JSON.parse(localStorage.getItem('saha_draft_profiles') || '[]');
+        const updated = drafts.filter((d) => d.id !== profile.id && d.name !== profile.name);
+        localStorage.setItem('saha_draft_profiles', JSON.stringify(updated));
+      } catch (err) {
+        console.warn('Failed to update drafts:', err);
+      }
+
+      // 2. Mark profile as deleted in localStorage so it never reappears
+      try {
+        const deletedIds = JSON.parse(localStorage.getItem('saha_deleted_profile_ids') || '[]');
+        if (profile.id && !deletedIds.includes(profile.id)) deletedIds.push(profile.id);
+        if (profile.name && !deletedIds.includes(profile.name)) deletedIds.push(profile.name);
+        localStorage.setItem('saha_deleted_profile_ids', JSON.stringify(deletedIds));
+      } catch (err) {
+        console.warn('Failed to update deleted IDs:', err);
+      }
+
+      // 3. Clean up custom renamed label
+      try {
+        const customNames = JSON.parse(localStorage.getItem('saha_profile_custom_names') || '{}');
+        if (customNames[profile.id]) {
+          delete customNames[profile.id];
+          localStorage.setItem('saha_profile_custom_names', JSON.stringify(customNames));
+        }
+      } catch (err) {
+        console.warn('Failed to remove custom name:', err);
+      }
+
+      // 4. If this is a server profile (and not placeholder), delete on server
+      if (!profile.isDraft && profile.id !== 'vi-profile') {
+        try {
+          await deleteProfile(profile.id);
+        } catch (serverErr) {
+          console.warn('Backend deleteProfile note:', serverErr);
+        }
+      }
+
       onProfilesChanged?.();
+      setRefreshKey((k) => k + 1);
       setError(null);
     } catch (e) {
+      console.error('Failed to delete profile', e);
       setError({ source: 'delete-profile', message: e.message });
     }
-  }, [onProfilesChanged]);
+  };
 
   return (
     <AppShell
-      title="saha - profile"
+      title="saha - profiles"
       activeNav="profiles"
       onNavigate={onNavigate}
       theme={theme}
       onToggleTheme={onToggleTheme}
       onLogout={onLogout}
+      onOpenNewProject={onOpenNewProject}
+      uploads={uploads}
+      isUpdating={isUpdating}
+      updatingProgress={updatingProgress}
+      onCancelUpload={onCancelUpload}
+      onPauseAll={onPauseAll}
+      onResumeAll={onResumeAll}
+      onDismissCompleted={onDismissCompleted}
     >
       <div style={{
-        flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0,
+        flex: 1,
+        background: SONNA.bgDeep,
+        display: 'flex',
+        flexDirection: 'column',
+        minWidth: 0,
+        overflowY: 'auto',
+        padding: '28px 36px',
+        color: SONNA.fg,
+        transition: 'background 0.2s ease, color 0.2s ease',
       }}>
-        <CreateProfileBar
-          onCreateLite={handleCreateLite}
-          onCreatePersonal={handleCreatePersonal}
-        />
-        <div style={{ flex: 1, display: 'flex', minHeight: 0 }}>
-          <ProfileList
-            profiles={profiles}
-            onPick={onActivate}
-            onDeleteProfile={handleDeleteProfile}
-          />
-          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
-            <ErrorBanner error={error} onDismiss={() => setError(null)} />
-            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
-              <CapturesSummary data={captures.data} loading={captures.loading} />
-              <FolderFinetunePlaceholder />
-            </div>
-          </div>
-          <RightActionPanel
-            capturesCount={captures.data?.captures_count || 0}
-            activeProfile={activeProfile}
-            onError={setError}
-            job={job}
-            onActivateNew={handleActivateNew}
-            capturesDir={appPaths?.capturesDir}
-          />
+        {/* Header Bar */}
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          marginBottom: 16,
+        }}>
+          <h1 style={{
+            fontSize: 22,
+            fontWeight: 700,
+            color: SONNA.fg,
+            margin: 0,
+            letterSpacing: -0.3,
+          }}>
+            AI Profiles
+          </h1>
+
+          {/* Create your own profile outline button only shown when profiles exist */}
+          {allProfiles.length > 0 && (
+            <button
+              type="button"
+              onClick={() => setChooseTypeOpen(true)}
+              style={{
+                height: 36,
+                padding: '0 18px',
+                background: isLight ? '#FFFFFF' : 'transparent',
+                border: `1px solid ${isLight ? 'rgba(0,0,0,0.2)' : 'rgba(255, 255, 255, 0.45)'}`,
+                borderRadius: 6,
+                color: SONNA.fg,
+                fontFamily: F,
+                fontSize: 13,
+                fontWeight: 600,
+                cursor: 'pointer',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 6,
+                justifyContent: 'center',
+                transition: 'all 0.15s ease',
+                boxShadow: isLight ? '0 1px 3px rgba(0,0,0,0.06)' : 'none',
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.borderColor = isLight ? 'rgba(0,0,0,0.45)' : 'rgba(255, 255, 255, 0.85)';
+                e.currentTarget.style.background = isLight ? '#F5EFE6' : 'rgba(255, 255, 255, 0.05)';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.borderColor = isLight ? 'rgba(0,0,0,0.2)' : 'rgba(255, 255, 255, 0.45)';
+                e.currentTarget.style.background = isLight ? '#FFFFFF' : 'transparent';
+              }}
+            >
+              <span>+</span>
+              <span>Create your own profile</span>
+            </button>
+          )}
         </div>
+
+        {/* Sub-navigation Tab: Your profiles */}
+        <div style={{
+          display: 'flex',
+          gap: 28,
+          borderBottom: `1px solid ${SONNA.lineSoft}`,
+          marginBottom: 18,
+        }}>
+          <button
+            type="button"
+            style={{
+              padding: '8px 0 12px 0',
+              background: 'transparent',
+              border: 'none',
+              borderBottom: `2px solid ${SONNA.fg}`,
+              color: SONNA.fg,
+              fontSize: 13,
+              fontWeight: 600,
+              cursor: 'default',
+              transition: 'all 0.15s ease',
+            }}
+          >
+            Your profiles
+          </button>
+        </div>
+
+        <ErrorBanner error={error} onDismiss={() => setError(null)} />
+
+        {/* Your profiles Table or Zero State matching Imagen AI reference */}
+        {allProfiles.length === 0 ? (
+            <div style={{
+              flex: 1,
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              justifyContent: 'center',
+              textAlign: 'center',
+              padding: '60px 24px',
+            }}>
+              <EmptyProfilesFolder isLight={isLight} />
+              <h2 style={{
+                fontSize: 22,
+                fontWeight: 700,
+                color: SONNA.fg,
+                marginBottom: 8,
+                letterSpacing: -0.3,
+              }}>
+                No personal AI profiles yet
+              </h2>
+              <p style={{
+                fontSize: 13.5,
+                color: SONNA.fgMute,
+                maxWidth: 440,
+                lineHeight: 1.5,
+                margin: '0 0 24px 0',
+              }}>
+                Create your first Personal AI Profile and train it with your editing style by uploading previous edited photos.
+              </p>
+              <button
+                type="button"
+                onClick={() => setChooseTypeOpen(true)}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 6,
+                  height: 36,
+                  padding: '0 20px',
+                  background: SONNA.ochre,
+                  color: '#FFFFFF',
+                  border: 'none',
+                  borderRadius: 6,
+                  fontFamily: F,
+                  fontSize: 13,
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  boxShadow: '0 4px 14px rgba(224, 83, 83, 0.35)',
+                  transition: 'background 0.15s ease',
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background = SONNA.ochreSoft;
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = SONNA.ochre;
+                }}
+              >
+                <span>+</span>
+                <span>Create your own profile</span>
+              </button>
+            </div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column' }}>
+              {/* Table Header Row */}
+              <div style={{
+                display: 'grid',
+                gridTemplateColumns: 'minmax(180px, 1.8fr) 180px 150px 170px 240px',
+                padding: '8px 24px 12px 24px',
+                fontSize: 12,
+                fontWeight: 500,
+                color: SONNA.fgDim,
+              }}>
+                <span>Profile name</span>
+                <span>Number of photos</span>
+                <span
+                  onClick={() => setSortOrder((prev) => (prev === 'desc' ? 'asc' : 'desc'))}
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 4,
+                    cursor: 'pointer',
+                    userSelect: 'none',
+                  }}
+                >
+                  Date {sortOrder === 'desc' ? '↓' : '↑'}
+                </span>
+                <span>Status</span>
+                <span />
+              </div>
+
+              {/* Profile Card Rows */}
+              {allProfiles.map((p) => {
+                const isDraft = p.status === 'draft' || p.isDraft;
+                const menuOpen = activeMenuId === p.id;
+
+                return (
+                  <div
+                    key={p.id}
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns: 'minmax(180px, 1.8fr) 180px 150px 170px 240px',
+                    padding: '16px 24px',
+                    marginBottom: 8,
+                    background: SONNA.bgPanel,
+                    borderRadius: 8,
+                    border: `1px solid ${SONNA.lineSoft}`,
+                    alignItems: 'center',
+                    position: 'relative',
+                    transition: 'background 0.15s ease, border-color 0.15s ease',
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.background = SONNA.bgHover;
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.background = SONNA.bgPanel;
+                  }}
+                >
+                  {/* Column 1: Profile Name */}
+                  <div style={{
+                    fontSize: 13.5,
+                    fontWeight: 600,
+                    color: SONNA.fg,
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap',
+                    paddingRight: 12,
+                  }}>
+                    {p.display_name || p.name}
+                  </div>
+
+                  {/* Column 2: Number of Photos */}
+                  <div style={{
+                    fontSize: 13,
+                    color: SONNA.fgMute,
+                    fontFamily: M,
+                  }}>
+                    {p.photo_count != null ? p.photo_count.toLocaleString() : 0}
+                  </div>
+
+                  {/* Column 3: Date */}
+                  <div style={{
+                    fontSize: 13,
+                    color: SONNA.fgMute,
+                  }}>
+                    {formatDate(p.trained_at)}
+                  </div>
+
+                  {/* Column 4: Status */}
+                  <div>
+                    {isDraft ? (
+                      <div style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 6,
+                        color: SONNA.fgDim,
+                        fontSize: 13,
+                        fontWeight: 500,
+                      }}>
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <path d="M12 20h9" />
+                          <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" />
+                        </svg>
+                        Draft
+                      </div>
+                    ) : (
+                      <div style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 6,
+                        color: isLight ? '#16A34A' : '#22C55E',
+                        fontSize: 13,
+                        fontWeight: 500,
+                      }}>
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                          <circle cx="12" cy="12" r="10" />
+                          <path d="m9 12 2 2 4-4" />
+                        </svg>
+                        Ready to use
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Column 5: Right Action Buttons */}
+                  <div style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'flex-end',
+                    gap: 10,
+                  }}>
+                    {isDraft ? (
+                      <button
+                        type="button"
+                        onClick={() => handleUploadPhotos(p)}
+                        style={{
+                          height: 32,
+                          padding: '0 16px',
+                          background: isLight ? '#FFFFFF' : 'transparent',
+                          border: `1px solid ${isLight ? 'rgba(0,0,0,0.2)' : 'rgba(255, 255, 255, 0.35)'}`,
+                          borderRadius: 6,
+                          color: SONNA.fg,
+                          fontFamily: F,
+                          fontSize: 12.5,
+                          fontWeight: 600,
+                          cursor: 'pointer',
+                          transition: 'all 0.15s ease',
+                        }}
+                        onMouseEnter={(e) => {
+                          e.currentTarget.style.borderColor = isLight ? 'rgba(0,0,0,0.4)' : 'rgba(255, 255, 255, 0.7)';
+                          e.currentTarget.style.background = isLight ? '#EFE7DC' : 'rgba(255, 255, 255, 0.06)';
+                        }}
+                        onMouseLeave={(e) => {
+                          e.currentTarget.style.borderColor = isLight ? 'rgba(0,0,0,0.2)' : 'rgba(255, 255, 255, 0.35)';
+                          e.currentTarget.style.background = isLight ? '#FFFFFF' : 'transparent';
+                        }}
+                      >
+                        Upload photos
+                      </button>
+                    ) : (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => handleUseToEdit(p)}
+                          style={{
+                            height: 32,
+                            padding: '0 18px',
+                            background: '#E05353',
+                            border: 'none',
+                            borderRadius: 6,
+                            color: '#FFFFFF',
+                            fontFamily: F,
+                            fontSize: 12.5,
+                            fontWeight: 600,
+                            cursor: 'pointer',
+                            boxShadow: '0 2px 8px rgba(224, 83, 83, 0.35)',
+                            transition: 'background 0.15s ease',
+                          }}
+                          onMouseEnter={(e) => {
+                            e.currentTarget.style.background = '#EC5A5A';
+                          }}
+                          onMouseLeave={(e) => {
+                            e.currentTarget.style.background = '#E05353';
+                          }}
+                        >
+                          Use to edit
+                        </button>
+
+                        {/* Tuning Sliders Icon */}
+                        <button
+                          type="button"
+                          onClick={() => setTuningProfile(p)}
+                          title="Tune profile settings & overrides"
+                          style={{
+                            width: 32,
+                            height: 32,
+                            borderRadius: 6,
+                            background: 'transparent',
+                            border: 'none',
+                            color: SONNA.fgMute,
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            cursor: 'pointer',
+                            transition: 'color 0.15s ease',
+                          }}
+                          onMouseEnter={(e) => {
+                            e.currentTarget.style.color = SONNA.fg;
+                          }}
+                          onMouseLeave={(e) => {
+                            e.currentTarget.style.color = SONNA.fgMute;
+                          }}
+                        >
+                          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <line x1="4" y1="21" x2="4" y2="14" />
+                            <line x1="4" y1="10" x2="4" y2="3" />
+                            <line x1="12" y1="21" x2="12" y2="12" />
+                            <line x1="12" y1="8" x2="12" y2="3" />
+                            <line x1="20" y1="21" x2="20" y2="16" />
+                            <line x1="20" y1="12" x2="20" y2="3" />
+                            <line x1="1" y1="14" x2="7" y2="14" />
+                            <line x1="9" y1="8" x2="15" y2="8" />
+                            <line x1="17" y1="16" x2="23" y2="16" />
+                          </svg>
+                        </button>
+                      </>
+                    )}
+
+                    {/* Three-dots menu button */}
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setActiveMenuId(menuOpen ? null : p.id);
+                      }}
+                      title="More options"
+                      style={{
+                        width: 30,
+                        height: 32,
+                        borderRadius: 6,
+                        background: 'transparent',
+                        border: 'none',
+                        color: SONNA.fgMute,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        cursor: 'pointer',
+                        fontSize: 18,
+                        transition: 'color 0.15s ease',
+                      }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.color = SONNA.fg;
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.color = SONNA.fgMute;
+                      }}
+                    >
+                      ⋮
+                    </button>
+
+                    {/* Dropdown Menu */}
+                    {menuOpen && (
+                      <div
+                        onClick={(e) => e.stopPropagation()}
+                        style={{
+                          position: 'absolute',
+                          right: 20,
+                          top: 50,
+                          zIndex: 60,
+                          width: 170,
+                          background: SONNA.bgPanel,
+                          border: `1px solid ${SONNA.line}`,
+                          borderRadius: 8,
+                          boxShadow: isLight ? '0 10px 28px rgba(0,0,0,0.12)' : '0 12px 32px rgba(0, 0, 0, 0.65)',
+                          padding: 5,
+                          textAlign: 'left',
+                        }}
+                      >
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setActiveMenuId(null);
+                            setTuningProfile(p);
+                          }}
+                          style={{
+                            width: '100%',
+                            padding: '8px 10px',
+                            background: 'transparent',
+                            border: 'none',
+                            color: SONNA.fg,
+                            fontSize: 12,
+                            textAlign: 'left',
+                            cursor: 'pointer',
+                            borderRadius: 4,
+                          }}
+                        >
+                          Tune Overrides
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleRename(p)}
+                          style={{
+                            width: '100%',
+                            padding: '8px 10px',
+                            background: 'transparent',
+                            border: 'none',
+                            color: SONNA.fg,
+                            fontSize: 12,
+                            textAlign: 'left',
+                            cursor: 'pointer',
+                            borderRadius: 4,
+                          }}
+                        >
+                          Rename Profile
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleDuplicate(p)}
+                          style={{
+                            width: '100%',
+                            padding: '8px 10px',
+                            background: 'transparent',
+                            border: 'none',
+                            color: SONNA.fg,
+                            fontSize: 12,
+                            textAlign: 'left',
+                            cursor: 'pointer',
+                            borderRadius: 4,
+                          }}
+                        >
+                          Duplicate Profile
+                        </button>
+                        <div style={{ height: 1, background: SONNA.lineSoft, margin: '4px 0' }} />
+                        <button
+                          type="button"
+                          onClick={() => handleDelete(p)}
+                          style={{
+                            width: '100%',
+                            padding: '8px 10px',
+                            background: 'transparent',
+                            border: 'none',
+                            color: SONNA.red,
+                            fontSize: 12,
+                            textAlign: 'left',
+                            cursor: 'pointer',
+                            borderRadius: 4,
+                          }}
+                        >
+                          Delete Profile
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+            </div>
+          )
+        }
       </div>
+
+      {/* Choice Modal (Lite vs Personal AI Profile) */}
+      <ChooseProfileTypeModal
+        isOpen={chooseTypeOpen}
+        onClose={() => setChooseTypeOpen(false)}
+        onSelectLite={() => setLiteWizardOpen(true)}
+        onSelectPersonal={() => setPersonalWizardOpen(true)}
+        theme={theme}
+      />
+
+      {/* Tuning Modal */}
+      <ProfileTuningModal
+        isOpen={!!tuningProfile}
+        profile={tuningProfile}
+        onClose={() => setTuningProfile(null)}
+        onSaveOverrides={(id, overrides) => {
+          try {
+            localStorage.setItem(`saha_profile_override_${id}`, JSON.stringify(overrides));
+          } catch (e) {
+            console.error('Failed to save profile overrides', e);
+          }
+        }}
+      />
+
+      {/* Lite Wizard */}
       {liteWizardOpen && (
         <LiteProfileWizard
-          onClose={handleLiteWizardClose}
-          onCreated={handleLiteWizardCreated}
+          onClose={() => setLiteWizardOpen(false)}
+          onCreated={() => {
+            setLiteWizardOpen(false);
+            onProfilesChanged?.();
+            setRefreshKey((k) => k + 1);
+          }}
+          theme={theme}
         />
       )}
+
+      {/* Personal AI Wizard */}
       {personalWizardOpen && (
         <PersonalProfileWizard
-          onClose={handlePersonalWizardClose}
-          onCreated={handlePersonalWizardCreated}
+          onClose={() => setPersonalWizardOpen(false)}
+          onCreated={() => {
+            setPersonalWizardOpen(false);
+            onProfilesChanged?.();
+            setRefreshKey((k) => k + 1);
+          }}
         />
       )}
+      {/* Delete Profile Confirmation Modal */}
+      <ConfirmModal
+        isOpen={!!deleteConfirmProfile}
+        title="Delete profile?"
+        message={`Do you want to delete profile "${deleteConfirmProfile?.display_name || deleteConfirmProfile?.name}"? This cannot be undone.`}
+        confirmText="Delete"
+        cancelText="Cancel"
+        onConfirm={executeDelete}
+        onCancel={() => setDeleteConfirmProfile(null)}
+        theme={theme}
+      />
+
+      {/* Rename Profile Prompt Modal */}
+      <ConfirmModal
+        isOpen={!!renameModalProfile}
+        title="Rename profile"
+        message="Enter a new name for this profile:"
+        confirmText="Save"
+        cancelText="Cancel"
+        isPrompt={true}
+        promptInitialValue={renameModalProfile?.display_name || renameModalProfile?.name || ''}
+        promptPlaceholder="Profile name"
+        onConfirm={executeRename}
+        onCancel={() => setRenameModalProfile(null)}
+        theme={theme}
+      />
     </AppShell>
   );
 }
+
+export default ProfileView;

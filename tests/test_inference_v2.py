@@ -3,12 +3,19 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from datetime import datetime, timezone
+
+import pytest
+
 from sonna_editor import config
 from sonna_editor.inference.pipeline import (
     ALWAYS_ON_POSTPROCESS,
+    DENOISE_STRENGTH_LEVELS,
     _V1_SKIP_FIELDS,
+    _apply_denoise_if_needed,
     _apply_wb_skip_substitution,
     _stabilise_rgb_tone_curve_endpoints,
+    smooth_burst_predictions,
 )
 
 
@@ -160,3 +167,55 @@ def test_wb_substitution_falls_back_to_omission_when_as_shot_wb_missing_end_to_e
     # Sanity: other model fields still written
     assert 'crs:Exposure2012="+0.5"' in text
     assert 'crs:Temperature="+6000"' in text
+
+
+def test_smooth_burst_predictions_stabilizes_burst() -> None:
+    dt1 = datetime(2026, 6, 1, 14, 0, 0, tzinfo=timezone.utc)
+    dt2 = datetime(2026, 6, 1, 14, 0, 1, tzinfo=timezone.utc)
+    dt3 = datetime(2026, 6, 1, 14, 0, 2, tzinfo=timezone.utc)
+    # 4th shot after a 10s pause
+    dt4 = datetime(2026, 6, 1, 14, 0, 12, tzinfo=timezone.utc)
+
+    preds = [
+        {"Exposure2012": 0.20, "Temperature": 5200.0},
+        {"Exposure2012": 0.40, "Temperature": 5600.0},
+        {"Exposure2012": 0.30, "Temperature": 5400.0},
+        {"Exposure2012": 0.80, "Temperature": 6200.0},
+    ]
+    metas = [
+        {"capture_datetime": dt1, "iso": 400},
+        {"capture_datetime": dt2, "iso": 400},
+        {"capture_datetime": dt3, "iso": 400},
+        {"capture_datetime": dt4, "iso": 400},
+    ]
+
+    smooth_burst_predictions(preds, metas, max_burst_gap_seconds=4.0)
+
+    # Median exposure for first 3 shots is 0.30.
+    # shot 0: 0.7 * 0.20 + 0.3 * 0.30 = 0.23
+    assert preds[0]["Exposure2012"] == pytest.approx(0.23, abs=0.01)
+    # shot 1: 0.7 * 0.40 + 0.3 * 0.30 = 0.37
+    assert preds[1]["Exposure2012"] == pytest.approx(0.37, abs=0.01)
+    # shot 2: 0.7 * 0.30 + 0.3 * 0.30 = 0.30
+    assert preds[2]["Exposure2012"] == pytest.approx(0.30, abs=0.01)
+    # shot 3 was outside burst gap, remains unblended
+    assert preds[3]["Exposure2012"] == 0.80
+    assert preds[3]["Temperature"] == 6200.0
+
+
+def test_apply_denoise_strength_levels() -> None:
+    meta = {"iso": 3200}
+    for strength, expected_lum in DENOISE_STRENGTH_LEVELS.items():
+        sliders = {}
+        res = _apply_denoise_if_needed(
+            sliders,
+            meta,
+            denoise_enabled=True,
+            denoise_iso_threshold=1200,
+            denoise_strength=strength,
+        )
+        assert res is not None
+        assert res["applied"] is True
+        assert res["strength"] == strength
+        assert sliders["LuminanceSmoothing"] == expected_lum
+

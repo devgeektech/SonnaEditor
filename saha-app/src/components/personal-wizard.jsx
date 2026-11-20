@@ -6,6 +6,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import SONNA from '../tokens.js';
 import { createPersonalProfile } from '../api/client.js';
 import { useJob, isTerminal } from '../hooks/useJob.js';
+import { ConfirmModal } from './confirm-modal.jsx';
 
 const F = SONNA.font;
 const M = SONNA.mono;
@@ -265,6 +266,7 @@ export function PersonalProfileWizard({ onClose, onCreated }) {
   const [batchSize, setBatchSize] = useState(16);
   const [workers, setWorkers] = useState(4);
   const [submitError, setSubmitError] = useState(null);
+  const [confirmLeaveOpen, setConfirmLeaveOpen] = useState(false);
   const job = useJob({ onError: (e) => setSubmitError(e?.message || String(e)) });
 
   const trainingStarted = !!job.current;
@@ -274,7 +276,10 @@ export function PersonalProfileWizard({ onClose, onCreated }) {
 
   const requestClose = useCallback(() => {
     if (trainingStarted && !isTerminal(job.current.snapshot.state)) return;
-    if (!trainingStarted && hasAnyState && !window.confirm('Discard your progress and close?')) return;
+    if (!trainingStarted && hasAnyState) {
+      setConfirmLeaveOpen(true);
+      return;
+    }
     onClose();
   }, [hasAnyState, job.current, onClose, trainingStarted]);
 
@@ -378,7 +383,7 @@ export function PersonalProfileWizard({ onClose, onCreated }) {
 
   return (
     <div style={{
-      position: 'fixed', inset: 0, zIndex: 100,
+      position: 'fixed', inset: 0, zIndex: 1100,
       background: 'rgba(0, 0, 0, 0.55)',
       display: 'flex', alignItems: 'center', justifyContent: 'center',
       padding: 24,
@@ -464,6 +469,19 @@ export function PersonalProfileWizard({ onClose, onCreated }) {
           </div>
         )}
       </div>
+
+      <ConfirmModal
+        isOpen={confirmLeaveOpen}
+        title="Are you sure you want to leave?"
+        message="Your progress won't be saved for later"
+        confirmText="Yes, leave"
+        cancelText="Cancel"
+        onConfirm={() => {
+          setConfirmLeaveOpen(false);
+          onClose();
+        }}
+        onCancel={() => setConfirmLeaveOpen(false)}
+      />
     </div>
   );
 }

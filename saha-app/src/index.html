@@ -1,31 +1,19 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-theme="dark">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Saha</title>
+  <script>
+    try {
+      if (localStorage.getItem('saha-theme') === 'light') {
+        localStorage.removeItem('saha-theme');
+      }
+      document.documentElement.dataset.theme = 'dark';
+    } catch (e) {}
+  </script>
   <style>
     :root,
-    html[data-theme="light"] {
-      --saha-bg-deep: #F7F3ED;
-      --saha-bg-panel: #FFFDF9;
-      --saha-bg-lifted: #EFE7DC;
-      --saha-bg-hover: #E7DCCF;
-      --saha-line: #D8CEC1;
-      --saha-line-soft: #E7DED3;
-      --saha-fg: #221B15;
-      --saha-fg-mute: #5F564E;
-      --saha-fg-dim: #7A7067;
-      --saha-fg-faint: #A3988D;
-      --saha-accent: #E17A36;
-      --saha-accent-soft: #C36127;
-      --saha-accent-tint: rgba(225, 122, 54, 0.16);
-      --saha-on-accent: #FFFFFF;
-      --saha-green: #4F8464;
-      --saha-amber: #A9792C;
-      --saha-red: #A24B45;
-      --saha-on-danger: #FFFFFF;
-    }
     html[data-theme="dark"] {
       --saha-bg-deep: #16140F;
       --saha-bg-panel: #1F1D17;
@@ -37,13 +25,33 @@
       --saha-fg-mute: #B2ADA1;
       --saha-fg-dim: #807A6D;
       --saha-fg-faint: #5C574D;
-      --saha-accent: #F0944F;
-      --saha-accent-soft: #D47A3E;
-      --saha-accent-tint: rgba(240, 148, 79, 0.18);
-      --saha-on-accent: #1F130B;
+      --saha-accent: #E05353;
+      --saha-accent-soft: #C84343;
+      --saha-accent-tint: rgba(224, 83, 83, 0.18);
+      --saha-on-accent: #FFFFFF;
       --saha-green: #6E9B7E;
       --saha-amber: #C49A5E;
-      --saha-red: #B7655E;
+      --saha-red: #E05353;
+      --saha-on-danger: #FFFFFF;
+    }
+    html[data-theme="light"] {
+      --saha-bg-deep: #F7F3ED;
+      --saha-bg-panel: #FFFDF9;
+      --saha-bg-lifted: #EFE7DC;
+      --saha-bg-hover: #E7DCCF;
+      --saha-line: #D8CEC1;
+      --saha-line-soft: #E7DED3;
+      --saha-fg: #221B15;
+      --saha-fg-mute: #5F564E;
+      --saha-fg-dim: #7A7067;
+      --saha-fg-faint: #A3988D;
+      --saha-accent: #E05353;
+      --saha-accent-soft: #C84343;
+      --saha-accent-tint: rgba(224, 83, 83, 0.16);
+      --saha-on-accent: #FFFFFF;
+      --saha-green: #4F8464;
+      --saha-amber: #A9792C;
+      --saha-red: #E05353;
       --saha-on-danger: #FFFFFF;
     }
     html, body {

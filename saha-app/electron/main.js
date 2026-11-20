@@ -1,11 +1,14 @@
 // Electron main process — spawns the FastAPI backend, gates window creation
 // on /api/health, cleanly terminates the subprocess on quit.
 
-const { app, BrowserWindow, dialog, ipcMain, shell } = require('electron');
+const { app, BrowserWindow, Menu, dialog, ipcMain, shell } = require('electron');
 const { spawn } = require('node:child_process');
 const fs = require('node:fs');
 const path = require('node:path');
 const http = require('node:http');
+
+// Completely disable Electron default application menu across all windows
+Menu.setApplicationMenu(null);
 
 const isDev = !app.isPackaged;
 const PORT = 8765;
@@ -40,8 +43,8 @@ if (process.platform === 'darwin') {
 }
 
 function backendStartupTimeoutMs() {
-  const value = Number(process.env.SAHA_BACKEND_STARTUP_TIMEOUT_MS || 30000);
-  return Number.isFinite(value) && value > 0 ? value : 30000;
+  const value = Number(process.env.SAHA_BACKEND_STARTUP_TIMEOUT_MS || 60000);
+  return Number.isFinite(value) && value > 0 ? value : 60000;
 }
 
 // Repo-root resolution:
@@ -88,7 +91,17 @@ function getBackendCommand() {
     };
   }
 
-  const uvCommand = process.platform === 'win32' ? 'uv.cmd' : 'uv';
+  let uvCommand = 'uv';
+  if (process.platform === 'win32') {
+    const userProfile = process.env.USERPROFILE || '';
+    const uvCandidate = path.join(userProfile, '.local', 'bin', 'uv.exe');
+    if (fs.existsSync(uvCandidate)) {
+      uvCommand = uvCandidate;
+    } else {
+      uvCommand = 'uv.exe';
+    }
+  }
+
   return {
     command: uvCommand,
     args: ['run', 'python', 'scripts/serve.py', '--port', String(PORT)],
@@ -136,11 +149,23 @@ async function killBackend() {
   if (!backend || externalBackend) return;
   const proc = backend;
   backend = null;
-  proc.kill('SIGTERM');
+  if (process.platform === 'win32' && proc.pid) {
+    try {
+      spawn('taskkill', ['/pid', String(proc.pid), '/T', '/F'], { windowsHide: true });
+    } catch {}
+  } else {
+    try { proc.kill('SIGTERM'); } catch {}
+  }
   // Give it 2s for clean shutdown, then SIGKILL.
   await new Promise((resolve) => {
     const timer = setTimeout(() => {
-      try { proc.kill('SIGKILL'); } catch { /* already gone */ }
+      try {
+        if (process.platform === 'win32' && proc.pid) {
+          spawn('taskkill', ['/pid', String(proc.pid), '/T', '/F'], { windowsHide: true });
+        } else {
+          proc.kill('SIGKILL');
+        }
+      } catch { /* already gone */ }
       resolve();
     }, 2000);
     proc.once('exit', () => { clearTimeout(timer); resolve(); });
@@ -148,6 +173,8 @@ async function killBackend() {
 }
 
 function createWindow() {
+  Menu.setApplicationMenu(null);
+
   const win = new BrowserWindow({
     width: 1280,
     height: 780,
@@ -155,6 +182,7 @@ function createWindow() {
     minHeight: 720,
     backgroundColor: '#16140F',
     titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'default',
+    autoHideMenuBar: false,
     icon: path.join(__dirname, '..', 'build', 'icon.png'),
     show: false,
     webPreferences: {
@@ -164,7 +192,25 @@ function createWindow() {
     },
   });
 
-  win.once('ready-to-show', () => win.show());
+  if (typeof win.removeMenu === 'function') {
+    win.removeMenu();
+  }
+  win.setMenu(null);
+  win.setMenuBarVisibility(false);
+  win.setAutoHideMenuBar(false);
+
+  win.once('ready-to-show', () => {
+    win.show();
+    win.focus();
+  });
+
+  // Guarantee window is shown even if ready-to-show is delayed
+  setTimeout(() => {
+    if (!win.isDestroyed() && !win.isVisible()) {
+      win.show();
+      win.focus();
+    }
+  }, 1200);
 
   // Forward renderer console messages to the main-process stdout in dev so
   // `npm run dev` shows React/JS logs alongside the backend output.
@@ -258,7 +304,17 @@ ipcMain.handle('saha:reveal-path', async (_event, p) => {
 
 ipcMain.handle('saha:get-app-paths', async () => getAppPaths());
 
-app.whenReady().then(bootstrap).catch((err) => {
+app.on('browser-window-created', (_event, window) => {
+  if (typeof window.removeMenu === 'function') window.removeMenu();
+  window.setMenu(null);
+  window.setMenuBarVisibility(false);
+  window.setAutoHideMenuBar(false);
+});
+
+app.whenReady().then(() => {
+  Menu.setApplicationMenu(null);
+  return bootstrap();
+}).catch((err) => {
   console.error('[electron] bootstrap failed', err);
   dialog.showErrorBox('Saha — startup failed', String(err && err.stack ? err.stack : err));
   app.quit();

@@ -8,6 +8,7 @@ cd "$DIR"
 
 # Ensure common macOS paths (Homebrew Apple Silicon & Intel, local bin) are on PATH
 export PATH="/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:$HOME/.local/bin:$HOME/bin:$DIR/.saha/node/bin:$PATH"
+unset ELECTRON_RUN_AS_NODE
 
 echo "================================================="
 echo " Starting Sonna Editor (Saha) for macOS"
@@ -63,6 +64,14 @@ if command -v git-lfs >/dev/null 2>&1; then
     git lfs pull 2>/dev/null || true
 fi
 
-# 6. Launch Saha (syncs python environment and boots Electron)
+# 6. Clear any lingering dev ports (5173, 8765)
+for port in 5173 8765; do
+    PID=$(lsof -ti :$port 2>/dev/null || true)
+    if [ -n "$PID" ]; then
+        kill -9 $PID 2>/dev/null || true
+    fi
+done
+
+# 7. Launch Saha (syncs python environment and boots Electron)
 echo "[saha] Starting desktop application..."
 uv run python scripts/run_app.py "$@"

@@ -11,6 +11,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable, Iterable, Optional, cast
+import numpy as np
 from PIL import Image
 
 from sonna_editor import config
@@ -148,14 +149,89 @@ ALWAYS_ON_POSTPROCESS: dict[str, str] = {
 # and a photo's extracted ISO is above the configured threshold. This is an
 # inference postprocess, not a trained model output.
 DEFAULT_DENOISE_ISO_THRESHOLD = 1200
+DENOISE_STRENGTH_LEVELS: dict[str, float] = {
+    "subtle": 15.0,
+    "moderate": 30.0,
+    "strong": 45.0,
+    "stronger": 60.0,
+}
 DENOISE_SETTINGS: dict[str, float] = {
-    "LuminanceSmoothing": 35.0,
+    "LuminanceSmoothing": 30.0,
     "LuminanceNoiseReductionDetail": 50.0,
     "LuminanceNoiseReductionContrast": 0.0,
     "ColorNoiseReduction": 25.0,
     "ColorNoiseReductionDetail": 50.0,
     "ColorNoiseReductionSmoothness": 50.0,
 }
+
+def smooth_burst_predictions(
+    predictions_list: list[dict[str, float | None]],
+    metadatas: list[dict],
+    max_burst_gap_seconds: float = 4.0,
+) -> None:
+    """Stabilize Exposure2012 and Temperature across burst shots.
+
+    Photographers capturing rapid bursts under identical lighting expect
+    consistent exposure and color temperature. Applies a rolling median blend
+    across frames captured within max_burst_gap_seconds of each other with
+    matching ISO.
+    """
+    if len(predictions_list) < 2:
+        return
+
+    timestamps: list[float | None] = []
+    for meta in metadatas:
+        dt = meta.get("capture_datetime")
+        if isinstance(dt, datetime):
+            timestamps.append(dt.timestamp())
+        else:
+            timestamps.append(None)
+
+    clusters: list[list[int]] = []
+    current_cluster: list[int] = [0]
+
+    for i in range(1, len(predictions_list)):
+        t_prev = timestamps[i - 1]
+        t_curr = timestamps[i]
+        is_burst = False
+        if t_prev is not None and t_curr is not None:
+            gap = abs(t_curr - t_prev)
+            if gap <= max_burst_gap_seconds:
+                iso_prev = metadatas[i - 1].get("iso")
+                iso_curr = metadatas[i].get("iso")
+                if iso_prev == iso_curr:
+                    is_burst = True
+
+        if is_burst:
+            current_cluster.append(i)
+        else:
+            if len(current_cluster) > 1:
+                clusters.append(current_cluster)
+            current_cluster = [i]
+
+    if len(current_cluster) > 1:
+        clusters.append(current_cluster)
+
+    for cluster in clusters:
+        exps = [predictions_list[idx].get("Exposure2012") for idx in cluster]
+        temps = [predictions_list[idx].get("Temperature") for idx in cluster]
+
+        valid_exps = [e for e in exps if e is not None]
+        valid_temps = [t for t in temps if t is not None]
+
+        if valid_exps:
+            med_exp = float(np.median(valid_exps))
+            for idx in cluster:
+                curr_exp = predictions_list[idx].get("Exposure2012")
+                if curr_exp is not None:
+                    predictions_list[idx]["Exposure2012"] = round(0.7 * curr_exp + 0.3 * med_exp, 3)
+
+        if valid_temps:
+            med_temp = float(np.median(valid_temps))
+            for idx in cluster:
+                curr_temp = predictions_list[idx].get("Temperature")
+                if curr_temp is not None:
+                    predictions_list[idx]["Temperature"] = round(0.7 * curr_temp + 0.3 * med_temp, 1)
 
 # Epistemic clamp: bounds the model's log-space Temperature prediction to the
 # range covered by training data. Refusing to extrapolate beyond observed
@@ -212,7 +288,8 @@ def _apply_denoise_if_needed(
     *,
     denoise_enabled: bool,
     denoise_iso_threshold: int,
-) -> dict[str, float | int | bool] | None:
+    denoise_strength: str = "moderate",
+) -> dict[str, float | int | bool | dict[str, float]] | None:
     """Apply Lightroom denoise sliders for photos above the ISO threshold."""
     iso = _safe_iso_value(metadata)
     should_apply = (
@@ -220,8 +297,12 @@ def _apply_denoise_if_needed(
         and iso is not None
         and iso > float(denoise_iso_threshold)
     )
+    lum_smoothing = DENOISE_STRENGTH_LEVELS.get(denoise_strength.lower(), 30.0)
+    settings = dict(DENOISE_SETTINGS)
+    settings["LuminanceSmoothing"] = lum_smoothing
+
     if should_apply:
-        for field, value in DENOISE_SETTINGS.items():
+        for field, value in settings.items():
             slider_dict[field] = value
 
     if not denoise_enabled:
@@ -229,8 +310,9 @@ def _apply_denoise_if_needed(
     return {
         "iso": round(iso, 3) if iso is not None else None,
         "threshold": int(denoise_iso_threshold),
+        "strength": denoise_strength,
         "applied": bool(should_apply),
-        "settings": dict(DENOISE_SETTINGS) if should_apply else {},
+        "settings": settings if should_apply else {},
     }
 
 
@@ -442,6 +524,8 @@ def process_shoot_with_model(
     auto_straighten: bool = False,
     denoise_enabled: bool = False,
     denoise_iso_threshold: int = DEFAULT_DENOISE_ISO_THRESHOLD,
+    denoise_strength: str = "moderate",
+    smooth_bursts: bool = True,
     on_photo_prepared: Optional[Callable[[dict], None]] = None,
     on_photo_complete: Optional[Callable[[dict], None]] = None,
     cancel_event: Optional[threading.Event] = None,
@@ -693,14 +777,13 @@ def process_shoot_with_model(
         user_skip |= {"Temperature", "Tint"}
     effective_skip: frozenset[str] = _V1_SKIP_FIELDS | frozenset(user_skip)
 
-    for i, raw_path in enumerate(good_raws):
-        photo_start = time.monotonic()
-        if cancel_event is not None and cancel_event.is_set():
-            cancelled = True
-            break
+    # Pre-extract slider dicts across all valid photos so burst sequence smoothing
+    # and batch-level adjustments can stabilize predictions across consecutive shots.
+    all_slider_dicts: list[dict[str, float | None]] = []
+    for i in range(len(good_raws)):
         if is_mode_b_initial:
             assert mode_b_preset is not None
-            full_slider_dict: dict[str, float | None] = _mode_b_adjusted_values_for_photo(
+            d = _mode_b_adjusted_values_for_photo(
                 previews[i],
                 metadatas[i],
                 mode_b_preset,
@@ -708,19 +791,30 @@ def process_shoot_with_model(
             )
         else:
             assert preds is not None
-            full_slider_dict = cast(
+            d = cast(
                 dict[str, float | None],
                 predictions_to_dict(preds, batch_idx=i).copy(),
-            )  # all model fields
+            )
             # Epistemic clamp on Temperature — bounded to training data range.
-            # See TEMPERATURE_LOG_CLAMP definition above for rationale.
-            _apply_temperature_clamp(full_slider_dict)
-            _stabilise_rgb_tone_curve_endpoints(full_slider_dict)
+            _apply_temperature_clamp(d)
+            _stabilise_rgb_tone_curve_endpoints(d)
+        all_slider_dicts.append(d)
+
+    if smooth_bursts:
+        smooth_burst_predictions(all_slider_dicts, metadatas)
+
+    for i, raw_path in enumerate(good_raws):
+        photo_start = time.monotonic()
+        if cancel_event is not None and cancel_event.is_set():
+            cancelled = True
+            break
+        full_slider_dict = all_slider_dicts[i]
         denoise_result = _apply_denoise_if_needed(
             full_slider_dict,
             metadatas[i],
             denoise_enabled=denoise_enabled,
             denoise_iso_threshold=denoise_iso_threshold,
+            denoise_strength=denoise_strength,
         )
         if denoise_result is not None:
             denoise_by_file[raw_path.name] = denoise_result

@@ -1,5 +1,6 @@
 // Sonna Editor — design tokens, shared across all directions.
 // Ported from "SAHA UI/tokens.js" (window-attached) to ES module default export.
+// Theme accent set to signature Imagen coral #E05353.
 
 const TYPE = {
   font: '-apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif',
@@ -25,13 +26,13 @@ export const THEMES = {
     fgFaint: '#5C574D',
 
     // Status / accent
-    ochre: '#F0944F',
-    ochreSoft: '#D47A3E',
-    ochreTint: 'rgba(240, 148, 79, 0.18)',
-    onAccent: '#1F130B',
+    ochre: '#E05353',
+    ochreSoft: '#C84343',
+    ochreTint: 'rgba(224, 83, 83, 0.18)',
+    onAccent: '#FFFFFF',
     green: '#6E9B7E',
     amber: '#C49A5E',
-    red: '#B7655E',
+    red: '#E05353',
     onDanger: '#FFFFFF',
   },
   light: {
@@ -48,13 +49,13 @@ export const THEMES = {
     fgDim: '#7A7067',
     fgFaint: '#A3988D',
 
-    ochre: '#E17A36',
-    ochreSoft: '#C36127',
-    ochreTint: 'rgba(225, 122, 54, 0.16)',
+    ochre: '#E05353',
+    ochreSoft: '#C84343',
+    ochreTint: 'rgba(224, 83, 83, 0.16)',
     onAccent: '#FFFFFF',
     green: '#4F8464',
     amber: '#A9792C',
-    red: '#A24B45',
+    red: '#E05353',
     onDanger: '#FFFFFF',
   },
 };
@@ -81,11 +82,11 @@ const SONNA = {
   amber: 'var(--saha-amber)',
   red: 'var(--saha-red)',
   onDanger: 'var(--saha-on-danger)',
-  theme: 'light',
+  theme: 'dark',
 };
 
 export function applyTheme(theme) {
-  const nextTheme = THEMES[theme] ? theme : 'light';
+  const nextTheme = THEMES[theme] ? theme : 'dark';
   SONNA.theme = nextTheme;
   if (typeof document !== 'undefined') {
     document.documentElement.dataset.theme = nextTheme;

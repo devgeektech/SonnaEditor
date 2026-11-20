@@ -325,6 +325,17 @@ def test_delete_active_profile_promotes_remaining_profile(
     assert active_file.read_text().strip() == "dp-event-v1.2.2"
 
 
+def test_delete_nonexistent_profile_is_idempotent(
+    client: TestClient, isolated_paths: dict[str, Path]
+) -> None:
+    resp = client.delete("/api/profiles/non-existent-profile-123")
+    assert resp.status_code == 200
+    assert resp.json() == {
+        "profile_id": "non-existent-profile-123",
+        "deleted_paths": [],
+    }
+
+
 # ── /api/profiles/lite ──────────────────────────────────────────────────────
 
 def test_lite_create_happy_path(

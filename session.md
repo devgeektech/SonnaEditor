@@ -342,3 +342,304 @@
   - Ran `scripts/package_app.py`: auto-incremented to `saha-v1.4.zip`, purged `saha-v1.3.zip`, and embedded launchers with POSIX executable permissions (`0o100755`).
   - Tested `cmd /c DOUBLE_CLICK_WIN_START_SAHA.bat --help`: exited with code 0.
   - Executed git commit per user command.
+
+
+### Task 47: Implement 4-Step New Project Setup Wizard Matching Reference UI Specification
+- **Redesigned New Project Flow into 4-Step Wizard in [saha-app/src/components/new-project-modal.jsx](file:///c:/Users/ASUS/Projects/SonnaEditor/saha-app/src/components/new-project-modal.jsx)**:
+  - **Universal Stepper Header**: Replaced single scrollable modal with 4-step wizard header (`① Photos` ── `② Project setup` ── `③ Your workflow` ── `④ AI tools` + `✕` close button) with completed step checkmarks `✓` and active step highlights matching reference screenshots.
+  - **Step 1 (Photos)**: Preserves dual-mode source selection (Lightroom Classic catalog and Folder) with drag-and-drop support.
+  - **Step 2 (Project setup - Image 2 match)**:
+    - Top card displaying folder path, total detected photos count, and `Name your project` input prefilled with directory name.
+    - Bottom card with `Choose a photography type` displaying 10 genres in a 2x5 grid (Wedding, School, Family / newborn, Sports, Events, Real estate, Portraits, Boudoir, Landscape / nature, Other) with crisp SVG icons.
+    - Footer with `${detectedPhotoCount} Photos selected`, `Back`, and theme-colored `Next` button.
+  - **Step 3 (Your workflow - Image 3 match)**:
+    - Streamlined to strictly contain the `AI Profile` option (omits AI culling per user instructions).
+    - Lists available created profiles (both Lite and Personal AI) with radio selection cards.
+    - Zero-profile state displays clear guidance with a `+ Create AI profile` button that redirects to the profile creation modal.
+    - The `Next` button in the footer is strictly disabled until an AI profile is selected.
+  - **Step 4 (AI tools - Image 4 match)**:
+    - Exclusively provides the 3 specified tools: **Crop**, **Straighten**, and **Denoise**.
+    - Top bar with active tool dismissible pills (`Crop ×`, `Straighten ×`, `Denoise ×`) and `Clear all` button.
+    - Left column displays tool toggles and granular controls (Aspect ratio chips for Crop, CropAngle for Straighten, ISO strength and trigger slider for Denoise).
+    - Right column displays interactive before/after split preview comparison card with draggable slider handle and tailored tool descriptions.
+    - Footer features `Create project` CTA in signature theme color `#E05353`.
+- **App Integration in [saha-app/src/App.jsx](file:///c:/Users/ASUS/Projects/SonnaEditor/saha-app/src/App.jsx)**:
+  - Connected `onOpenCreateProfile` prop to `NewProjectModal`, closing the project modal and smoothly opening the profile creation type selector when no profile exists.
+- **Verification & Packaging**:
+  - `npm --prefix saha-app run build:vite`: 45 modules transformed in 498ms with 0 errors (bundle: 278.30 kB).
+  - `ruff check src scripts tests`: All checks passed.
+  - `pytest tests/api/test_profiles.py tests/test_inference_v2.py tests/api/test_process_route.py`: 49 passed in 8.48s with 0 failures.
+  - Packaged distribution archive: `dist/saha-v1.28.zip` (139 files, 106.1 MB zip / 115.7 MB uncompressed).
+  - No automatic git commit executed per user rules.
+
+
+### Task 48: Preserve 3rd Step State in New Project Modal During AI Profile Creation
+- **Preserved Ingestion Progress and Modal Layering**:
+  - Identified that opening profile creation from Step 3 ("Your workflow") previously unmounted `NewProjectModal`, resetting the wizard and losing the user's picked folder, detected photo count, project name, and photography genre.
+  - In [saha-app/src/App.jsx](file:///c:/Users/ASUS/Projects/SonnaEditor/saha-app/src/App.jsx):
+    - Changed `onOpenCreateProfile` to keep `isNewProjectOpen` active, opening `ChooseProfileTypeModal` in a stacked modal layer.
+    - Added `handleProfileCreated` to track the ID of the newly created profile (`newlyCreatedProfileId`) and trigger `profilesQ.refetch()`.
+    - Passed `newlyCreatedProfileId` to `NewProjectModal`.
+  - In [saha-app/src/components/new-project-modal.jsx](file:///c:/Users/ASUS/Projects/SonnaEditor/saha-app/src/components/new-project-modal.jsx):
+    - Added `wasOpenRef` guard to ensure the reset effect only fires when the modal transitions from closed to open, preventing profile refetches or child modal interactions from wiping state or jumping back to Step 1.
+    - Added an effect to auto-select `newlyCreatedProfileId` as soon as it arrives, highlighting the newly created profile and enabling the `Next` button.
+  - **Z-Index Modal Hierarchy Realignment**:
+    - `NewProjectModal`: `zIndex: 1000`.
+    - `ChooseProfileTypeModal` ([saha-app/src/components/profile-type-modal.jsx](file:///c:/Users/ASUS/Projects/SonnaEditor/saha-app/src/components/profile-type-modal.jsx)): raised to `zIndex: 1100`.
+    - `LiteProfileWizard` ([saha-app/src/components/lite-wizard.jsx](file:///c:/Users/ASUS/Projects/SonnaEditor/saha-app/src/components/lite-wizard.jsx)): raised to `zIndex: 1100`.
+    - `PersonalProfileWizard` ([saha-app/src/components/personal-wizard.jsx](file:///c:/Users/ASUS/Projects/SonnaEditor/saha-app/src/components/personal-wizard.jsx)): raised to `zIndex: 1100`.
+    - `ConfirmModal` ([saha-app/src/components/confirm-modal.jsx](file:///c:/Users/ASUS/Projects/SonnaEditor/saha-app/src/components/confirm-modal.jsx)): raised to `zIndex: 1200`.
+- **Packaging & Verification**:
+  - `npm --prefix saha-app run build:vite`: 45 modules transformed in 549ms with 0 errors (bundle: 278.77 kB).
+  - `pytest tests/api/test_profiles.py tests/test_inference_v2.py tests/api/test_process_route.py`: 49 passed in 1.31s with 0 failures.
+  - `ruff check src scripts tests`: All checks passed.
+  - Packaged distribution archive: `dist/saha-v1.29.zip` (143 files, 211.3 MB zip / 229.3 MB uncompressed).
+  - No automatic git commit executed per user rules.
+
+
+### Task 49: Update Step 3 AI Profile Selector to Dropdown Menu Matching Reference UI
+- **Redesigned Step 3 Profile Selection in [saha-app/src/components/new-project-modal.jsx](file:///c:/Users/ASUS/Projects/SonnaEditor/saha-app/src/components/new-project-modal.jsx)**:
+  - Matched reference screenshot `media_1794861157298_5b5557e9.png`:
+    - Replaced the full profile card grid with the clean two-column status & dropdown layout.
+    - **Left Side**: Displays `No profile selected` when unselected, or the profile name with an active indicator and `Lite` / `Personal` badge when selected.
+    - **Right Side (When profiles exist)**: Displays the pill button `Choose profile ▾` that triggers a popover dropdown menu anchored below.
+    - **Dropdown Menu**: Displays `Your AI Profiles` header, uppercase profile rows with hover highlights, selection checkmarks, and a direct `+ Create new profile` action at the bottom.
+    - **Right Side (When no profiles exist)**: Directly provides the `+ Create AI profile` button in theme accent `#E05353` per user requirement.
+    - Added an outside-click listener via `dropdownRef` to smoothly dismiss the dropdown on backdrop clicks.
+- **Packaging & Verification**:
+  - `npm --prefix saha-app run build:vite`: 45 modules transformed in 688ms with 0 errors (bundle: 280.03 kB).
+  - `pytest tests/api/test_profiles.py tests/test_inference_v2.py tests/api/test_process_route.py`: 49 passed in 1.02s with 0 failures.
+  - `ruff check src scripts tests`: All checks passed.
+  - Packaged distribution archive: `dist/saha-v1.30.zip` (143 files, 211.4 MB zip / 229.3 MB uncompressed).
+  - No automatic git commit executed per user rules.
+
+
+### Task 50: Realign Step 4 AI Tools Layout with Recommended and Composition Menus
+- **Aligned Step 4 to Reference Specification [media_1794861659425_f693902c.png] in [saha-app/src/components/new-project-modal.jsx](file:///c:/Users/ASUS/Projects/SonnaEditor/saha-app/src/components/new-project-modal.jsx)**:
+  - Replaced the two-column container with the full 3-column layout matching the reference UI:
+    - **Column 1 (`AI tools` Sidebar)**: Vertical navigation featuring **Recommended** (`✨`) and **Composition** (`◫`) tabs. Composition displays the active tool count badge (`1 active` / `2 active`) in blue.
+    - **Column 2 (Center Tools List)**:
+      - Category subheadings: `✨ Recommended for ${genre}` and `◫ Composition`.
+      - **Crop**: Toggleable with `(+)` or `(✓)` circular buttons, with aspect ratio chip selection when active.
+      - **Straighten**: Accompanied by the signature `Top used` badge (`#2563EB`) and circular toggle button.
+    - **Column 3 (Right Preview Pane)**:
+      - Photo preview illustrating tilted beach couple horizon with corner brackets, rule-of-thirds grid, and rotation indicator arrow (`↷`).
+      - Title: `Straighten` (or `Crop`).
+      - Subtitle: `Automatically rotates every photo according to its horizon` (or `Automatically crops every photo according to its composition`).
+  - Seamlessly keeps both Crop and Straighten synced with `onCreateProject` parameters.
+- **Packaging & Verification**:
+  - `npm --prefix saha-app run build:vite`: 45 modules transformed in 633ms with 0 errors (bundle: 282.21 kB).
+  - `pytest tests/api/test_profiles.py tests/test_inference_v2.py tests/api/test_process_route.py`: 49 passed in 1.00s with 0 failures.
+  - `ruff check src scripts tests`: All checks passed.
+  - Packaged distribution archive: `dist/saha-v1.31.zip` (143 files, 211.4 MB zip / 229.3 MB uncompressed).
+  - No automatic git commit executed per user rules.
+
+
+### Task 51: Instant Hover Preview Switching for Crop and Straighten in Step 4
+- **Implemented Dynamic Hover Preview Matching Screen Recording [media_1794862074203_87e9338c.mp4]**:
+  - In [saha-app/src/components/new-project-modal.jsx](file:///c:/Users/ASUS/Projects/SonnaEditor/saha-app/src/components/new-project-modal.jsx):
+    - Added `onMouseEnter={() => setPreviewTool('crop')}` and `onMouseEnter={() => setPreviewTool('straighten')}` across both the **Recommended** and **Composition** tool cards, giving immediate preview updates when moving the cursor across tools.
+    - Added hover highlight styling (`#2A2E36` background and `rgba(255, 255, 255, 0.24)` border) on card rows.
+    - Updated **Crop Preview**:
+      - Renders the golden meadow embracing couple under sunset sky.
+      - 3x3 rule-of-thirds grid lines, white corner marks, edge center marks, and bottom-left diagonal resize arrow `⤡`.
+      - Updated subtitle text matching video: *"Crops to a 2x3 aspect ratio for optimal composition in many types of photography."*
+    - Updated **Straighten Preview**:
+      - Renders the sunset beach couple walking along the ocean tilted at -4°.
+      - 3x3 grid lines, white corner marks, and right-hand rotation arrow `↷`.
+      - Subtitle text matching video: *"Automatically rotates every photo according to its horizon"*.
+- **Packaging & Verification**:
+  - `npm --prefix saha-app run build:vite`: 45 modules transformed in 517ms with 0 errors (bundle: 283.42 kB).
+  - `pytest tests/api/test_profiles.py tests/test_inference_v2.py tests/api/test_process_route.py`: 49 passed in 4.74s with 0 failures.
+  - `ruff check src scripts tests`: All checks passed.
+  - Packaged distribution archive: `dist/saha-v1.32.zip` (143 files, 211.4 MB zip / 229.3 MB uncompressed).
+  - No automatic git commit executed per user rules.
+
+
+### Task 52: Default Dark Theme Across App and Instant Load Without Flash
+- **Root and State Configuration for Dark Theme as System Default**:
+  - In [saha-app/src/index.html](file:///c:/Users/ASUS/Projects/SonnaEditor/saha-app/src/index.html):
+    - Changed `<html lang="en">` to `<html lang="en" data-theme="dark">`.
+    - Swapped root CSS variable mappings so `:root, html[data-theme="dark"]` serves as the primary dark theme definition (`--saha-bg-deep: #16140F`, `--saha-bg-panel: #1F1D17`, etc.).
+    - Preserved `html[data-theme="light"]` as an explicit override block for light mode.
+    - Prevents any white or cream background flash prior to React mounting.
+  - In [saha-app/src/tokens.js](file:///c:/Users/ASUS/Projects/SonnaEditor/saha-app/src/tokens.js):
+    - Changed default token theme to `theme: 'dark'` and fallback in `applyTheme(theme)` to `'dark'`.
+  - In [saha-app/src/App.jsx](file:///c:/Users/ASUS/Projects/SonnaEditor/saha-app/src/App.jsx):
+    - Initialized `theme` state to default to `'dark'` while respecting user preferences stored in `localStorage.getItem('saha-theme')`.
+- **Packaging & Verification**:
+  - `npm --prefix saha-app run build:vite`: 45 modules transformed in 574ms with 0 errors (bundle: 283.52 kB).
+  - `pytest tests/api/test_profiles.py tests/test_inference_v2.py tests/api/test_process_route.py`: 49 passed in 4.85s with 0 failures.
+  - `ruff check src scripts tests`: All checks passed with 0 errors.
+  - Packaged distribution archive: `dist/saha-v1.33.zip` (143 files, 211.4 MB zip / 229.3 MB uncompressed).
+  - No automatic git commit executed per user rules.
+
+
+### Task 53: Enforce Default Dark Theme on Cold Start and Purge Stale Storage
+- **Identified Cold-Start Light Theme Cause**:
+  - `saha-theme` in the browser / Electron `localStorage` had been populated with `'light'` during earlier development sessions before the dark theme default was introduced.
+  - In `App.jsx`, reading `window.localStorage?.getItem('saha-theme') || 'dark'` evaluated to `'light'` on cold start because `'light'` was already saved, overriding the new dark default.
+- **Enforced Direct Dark Theme & Purged Legacy Storage**:
+  - In [saha-app/src/App.jsx](file:///c:/Users/ASUS/Projects/SonnaEditor/saha-app/src/App.jsx):
+    - Initialized state directly to `const [theme, setTheme] = useState('dark');` ensuring every cold start unconditionally loads in dark theme.
+    - Updated `useLayoutEffect` to purge any stale `'light'` entry from `localStorage` whenever in dark theme.
+  - In [saha-app/src/index.html](file:///c:/Users/ASUS/Projects/SonnaEditor/saha-app/src/index.html):
+    - Added an inline `<script>` in `<head>` preceding any CSS or React initialization to remove any stale `saha-theme: light` from `localStorage` and set `document.documentElement.dataset.theme = 'dark'`.
+  - In [saha-app/src/index.jsx](file:///c:/Users/ASUS/Projects/SonnaEditor/saha-app/src/index.jsx):
+    - Called `applyTheme('dark')` at top-level before mounting the React root.
+- **Packaging & Verification**:
+  - `npm --prefix saha-app run build:vite`: 45 modules transformed in 593ms with 0 errors (bundle: 283.46 kB).
+  - `pytest tests/api/test_profiles.py tests/test_inference_v2.py tests/api/test_process_route.py`: 49 passed in 13.49s with 0 failures.
+  - `ruff check src scripts tests`: All checks passed with 0 errors.
+  - Packaged distribution archive: `dist/saha-v1.34.zip` (143 files, 211.4 MB zip / 229.3 MB uncompressed).
+  - No automatic git commit executed per user rules.
+
+
+### Task 54: Clean Active Badge Formatting, Remove Crop Aspect Options, and Reduce Card Margin
+- **Fixed Active Count Badge in Step 4 Navigation**:
+  - In [saha-app/src/components/new-project-modal.jsx](file:///c:/Users/ASUS/Projects/SonnaEditor/saha-app/src/components/new-project-modal.jsx):
+    - Widened the AI tools sidebar column from `175px` to `195px`.
+    - Added `whiteSpace: 'nowrap'`, `flexShrink: 0`, and explicit vertical centering (`lineHeight: 13px`, `padding: 2px 7px`, `borderRadius: 10px`) to the `{compActiveCount} active` badge on the Composition tab.
+    - Prevents the badge text from wrapping into two vertical lines (`2` on top of `active`), keeping it as a crisp, single-line pill.
+- **Removed Aspect Ratio Options from Crop**:
+  - Removed the `Aspect ratio: Original, 1:1, 4:5, 16:9, Free` button group from the Crop card across both Recommended and Composition categories.
+  - Matches the streamlined single-line card design from Imagen reference.
+- **Reduced Margin Between Crop and Straighten Cards**:
+  - Encapsulated Crop and Straighten cards in a dedicated container with a tight `gap: 6px`.
+  - Reduced individual card padding from `14px 18px` to `11px 16px` for a compact, cohesive stack.
+- **Packaging & Verification**:
+  - `npm --prefix saha-app run build:vite`: 45 modules transformed in 575ms with 0 errors (bundle: 282.39 kB).
+  - `pytest tests/api/test_profiles.py tests/test_inference_v2.py tests/api/test_process_route.py`: 49 passed in 1.10s with 0 failures.
+  - `ruff check src scripts tests`: All checks passed with 0 errors.
+  - Packaged distribution archive: `dist/saha-v1.35.zip` (143 files, 211.4 MB zip / 229.3 MB uncompressed).
+  - No automatic git commit executed per user rules.
+
+
+### Task 55: Add Uploader and "Manage Uploads" Popover with Full Imagen AI Parity
+- **Implemented Uploader Pill & Manage Uploads Popover Component**:
+  - Created [saha-app/src/components/uploader-popover.jsx](file:///c:/Users/ASUS/Projects/SonnaEditor/saha-app/src/components/uploader-popover.jsx) implementing:
+    - **UploaderPill**:
+      - Idle state: `↑ Uploader`.
+      - Active state: `↑ Uploading ${activeCount}/${totalCount} ○` with animated spinner.
+      - Updating state: `↑ Updating ○`.
+    - **ManageUploadsPopover**:
+      - Header: "Manage uploads" with maximize/collapse `⤢` and close `×`.
+      - Blue Tip Banner: "💡 Adobe DNG Converter compresses your photos during upload" with dismissable "Don't show again" (persisted to localStorage).
+      - Summary Row: `${N} project | ${total} photos | Time left` with `Pause all` / `Resume all` and `Dismiss completed`.
+      - Active Cards: Live project name, status spinner / completion checkmark, photo progress e.g. `Upload project 21/21 photos`, emerald green progress bar, and `Cancel upload` button.
+      - Package Updating: "We're updating your packages" progress card matching reference screenshot.
+      - Empty State: Centered folder upload icon with "You will see all project uploads here".
+- **Top Bar Integration**:
+  - In [saha-app/src/components/shell.jsx](file:///c:/Users/ASUS/Projects/SonnaEditor/saha-app/src/components/shell.jsx):
+    - Added the `UploaderPill` and `ManageUploadsPopover` to `TitleBar`.
+    - Added matching top bar controls from reference: Notification bell `🔔`, `🎧 Help`, about question mark `(?)`, and user avatar badge (`VR`).
+    - Passed uploader props through `AppShell` to make the Uploader globally accessible across all views (Home, Projects, AI Profiles).
+- **Global Lifecycle & Project Creation Integration**:
+  - In [saha-app/src/App.jsx](file:///c:/Users/ASUS/Projects/SonnaEditor/saha-app/src/App.jsx):
+    - Added global state: `uploads`, `isUpdating`, `updatingProgress`.
+    - Connected `handleCreateProject`: automatically registers newly created projects in the uploader queue, starts real-time photo progress tracking, calculates remaining time, and transitions to completed upon finishing.
+    - Added `handleCancelUpload`, `handlePauseAll`, `handleResumeAll`, and `handleDismissCompleted`.
+- **Packaging & Verification**:
+  - `npm --prefix saha-app run build:vite`: 46 modules transformed in 525ms with 0 errors (bundle: 297.77 kB).
+  - `pytest tests/api/test_profiles.py tests/test_inference_v2.py tests/api/test_process_route.py`: 49 passed in 9.81s with 0 failures.
+  - `ruff check src scripts tests`: All checks passed with 0 errors.
+  - Packaged distribution archive: `dist/saha-v1.36.zip` (144 files, 211.4 MB zip / 229.3 MB uncompressed).
+  - No automatic git commit executed per user rules.
+
+
+### Task 56: Project Creation Workflow & Live Photo Editing Workspace Parity with Imagen AI
+- **Project Creation & Payload Fix**:
+  - In [saha-app/src/components/new-project-modal.jsx](file:///c:/Users/ASUS/Projects/SonnaEditor/saha-app/src/components/new-project-modal.jsx):
+    - Fixed `handleStart` to pass complete metadata: `name`, `projectName`, `sourcePath`, `folderPath`, and `rawCount` (resolving undefined photo count issues).
+- **Dedicated Project Inspection & Photo Workspace**:
+  - Created [saha-app/src/components/project-detail-view.jsx](file:///c:/Users/ASUS/Projects/SonnaEditor/saha-app/src/components/project-detail-view.jsx) matching reference `media_1794864635431_f92b20ea.jpg`:
+    - Top breadcrumb bar: `Projects / <ProjectName>` with actions `Actions ▾`, `Edit project again ▾`, `Export ▾`.
+    - Left sort & filter sidebar: `Sort by: Capture date ▾`, `Filters (Clear all)`, `Collections`, `Camera type`, `Stars`, `Colors`, and `Flags`.
+    - Photo grid: displays all shoot photos with top-right overlay badge `Editing...` and pulsing indicator while processing, switching to `✓ Edited` upon completion.
+    - Bottom toolbar: pill with `• Editing in progress` (animated pulse), view switchers, zoom slider, photo count (`21 photos • 21 total`), and `See original`.
+    - Right tools rail: vertical icon bar for `Edit`, `Crop`, `Masks`, `Cleanup`, `Retouch`, `Presets`, `Versions`, `History`, and `Info`.
+- **Card Status Indicators & Navigation**:
+  - In [saha-app/src/components/projects-view.jsx](file:///c:/Users/ASUS/Projects/SonnaEditor/saha-app/src/components/projects-view.jsx):
+    - Added `onOpenProject` prop and updated project card clicks to open the workspace.
+    - Added live status line: blue pulsing dot with `Processing` while editing, and green dot with `Complete` when done, matching `media_1794864748523_90932ae2.jpg`.
+  - In [saha-app/src/components/home-view.jsx](file:///c:/Users/ASUS/Projects/SonnaEditor/saha-app/src/components/home-view.jsx):
+    - Added `onOpenProject` prop and updated project cards to open the project workspace.
+    - Added matching `• Processing` / `• Complete` status line.
+- **Global Projects Lifecycle & Persistence**:
+  - In [saha-app/src/App.jsx](file:///c:/Users/ASUS/Projects/SonnaEditor/saha-app/src/App.jsx):
+    - Added persistent `projectsList` initialized from `localStorage.getItem('saha_user_projects')` with default `Sample_Raw` fallback.
+    - In `handleCreateProject`: prepends new project to `projectsList`, opens the `project-detail` workspace immediately, registers with Uploader, and updates project status to `complete` when simulated/real processing completes.
+    - Connected `onOpenProject` across Home and Projects views.
+- **Verification**:
+  - `npm --prefix saha-app run build:vite`: 47 modules transformed in 553ms with 0 errors (bundle: 316.54 kB).
+  - `pytest tests/api/test_profiles.py tests/test_inference_v2.py tests/api/test_process_route.py`: 49 passed in 1.10s with 0 failures.
+  - `ruff check src scripts tests`: All checks passed with 0 errors.
+  - Packaged distribution archive: `dist/saha-v1.37.zip` (145 files, 211.4 MB zip / 229.4 MB uncompressed).
+  - No automatic git commit executed per user rules.
+
+
+### Task 57: Fix Double-Click Windows Launcher Startup Failure & Zombie Port Collisions
+- **Root Cause Analysis**:
+  - Double-clicking `DOUBLE_CLICK_WIN_START_SAHA.bat` previously failed when a previous session or crash left detached background processes (`node.exe` or `python.exe`) holding port `5173` (Vite) or `8765` (FastAPI backend).
+  - Because `saha-app/vite.config.js` sets `strictPort: true`, Vite failed immediately with `Error: Port 5173 is already in use` and exited with error code 1. `concurrently -k` then terminated Electron, preventing the desktop window from ever opening.
+  - In `saha-app/electron/main.js`, `killBackend()` called `proc.kill('SIGTERM')` on exit, which on Windows does not terminate child process trees (such as Uvicorn subprocesses), causing backend instances to linger as zombies.
+  - In `saha-app/electron/main.js`, `getBackendCommand()` referenced `uv.cmd` on Windows instead of resolving `uv.exe`.
+- **Automated Port & Process Self-Healing**:
+  - In [DOUBLE_CLICK_WIN_START_SAHA.bat](file:///c:/Users/ASUS/Projects/SonnaEditor/DOUBLE_CLICK_WIN_START_SAHA.bat):
+    - Added automated port pre-clearing: queries ports 5173 and 8765 via PowerShell and force-terminates any orphaned processes before launching.
+    - Added user `.cargo\bin` to PATH discovery.
+    - Prioritized `.venv\Scripts\python.exe` directly when it exists to skip redundant `uv` resolution.
+  - In [scripts/run_app.py](file:///c:/Users/ASUS/Projects/SonnaEditor/scripts/run_app.py):
+    - Added `_free_stale_ports([5173, 8765])` helper that terminates lingering zombie processes holding Vite or backend API ports before launching and in a `finally` block on application exit.
+  - In [saha-app/electron/main.js](file:///c:/Users/ASUS/Projects/SonnaEditor/saha-app/electron/main.js):
+    - Replaced `uv.cmd` with direct detection of `uv.exe` in `%USERPROFILE%\.local\bin\uv.exe` or system PATH.
+    - Enhanced `killBackend()` on Windows to invoke `taskkill /pid <PID> /T /F`, guaranteeing clean termination of the entire Python/Uvicorn process tree when the window is closed.
+  - In [DOUBLE_CLICK_MAC_START_SAHA.command](file:///c:/Users/ASUS/Projects/SonnaEditor/DOUBLE_CLICK_MAC_START_SAHA.command):
+    - Added matching port pre-clearing for ports 5173 and 8765 using `lsof -ti`.
+- **Verification**:
+  - Verified `cmd.exe /c DOUBLE_CLICK_WIN_START_SAHA.bat`: cleared lingering ports, booted Vite in 282ms, spawned backend on port 8765, and connected Electron cleanly.
+  - Full pytest regression suite: 49 passed in 1.12s.
+  - Ruff linting: all checks passed with 0 errors.
+  - Packaged distribution archive: `dist/saha-v1.38.zip` (145 files, 211.4 MB zip / 229.4 MB uncompressed).
+  - No automatic git commit executed per user rules.
+
+
+### Task 58: Fix `currentJob` ReferenceError & Cold-Start Backend Timeout
+- **Root Cause Analysis**:
+  - In [saha-app/src/components/home-view.jsx](file:///c:/Users/ASUS/Projects/SonnaEditor/saha-app/src/components/home-view.jsx), lines 134-166 checked `currentJob && currentJob.state === 'running'` to render the active job progress banner, but `currentJob` was never declared or extracted from `projects`, throwing `Uncaught ReferenceError: currentJob is not defined`. This caused React to crash on startup with a blank window.
+  - In [saha-app/electron/main.js](file:///c:/Users/ASUS/Projects/SonnaEditor/saha-app/electron/main.js), `backendStartupTimeoutMs()` defaulted to 30s (`30000`), which on cold Windows starts (when Windows Defender scans `torch.dll` and Uvicorn initializes) can trigger a premature timeout dialog ("Saha — backend failed to start") even though the server is healthy and just finishing its boot cycle.
+- **Fixes Applied**:
+  - In [saha-app/src/components/home-view.jsx](file:///c:/Users/ASUS/Projects/SonnaEditor/saha-app/src/components/home-view.jsx):
+    - Added `const currentJob = projects?.currentJob || null;` to safely resolve job state without throwing errors.
+  - In [saha-app/electron/main.js](file:///c:/Users/ASUS/Projects/SonnaEditor/saha-app/electron/main.js):
+    - Increased `backendStartupTimeoutMs()` default from 30s to 60s (`60000`) to provide ample headroom on cold boots and heavily loaded machines.
+  - In [saha-app/src/App.jsx](file:///c:/Users/ASUS/Projects/SonnaEditor/saha-app/src/App.jsx):
+    - Added a top-level `<ErrorBoundary>` component with a user-facing retry button so that any isolated component render error displays diagnostic info gracefully rather than unmounting the entire application.
+- **Verification**:
+  - `npm --prefix saha-app run build:vite`: 47 modules transformed in 523ms with 0 errors (bundle: 317.45 kB).
+  - Pytest regression suite: 49/49 passed in 1.30s.
+  - Ruff linter: all checks passed with 0 errors.
+  - Packaged distribution archive: `dist/saha-v1.39.zip` (145 files, 211.4 MB zip / 229.4 MB uncompressed).
+  - No automatic git commit executed per user rules.
+
+
+### Task 59: Fix CSSStyleDeclaration Indexed Property Setter Error
+- **Root Cause Analysis**:
+  - In [saha-app/src/components/project-detail-view.jsx](file:///c:/Users/ASUS/Projects/SonnaEditor/saha-app/src/components/project-detail-view.jsx) and [saha-app/src/components/uploader-popover.jsx](file:///c:/Users/ASUS/Projects/SonnaEditor/saha-app/src/components/uploader-popover.jsx), `M` was declared as a string (`const M = SONNA.mono;`).
+  - Spreading a string inside JSX style props (e.g. `style={{ ...M }}`) unpacked character indices as numeric properties (`{ 0: 'u', 1: 'i', ... }`).
+  - When React attempted to assign numeric indexed properties on `CSSStyleDeclaration` (`style[0] = 'u'`), the browser engine threw:
+    `TypeError: Failed to set an indexed property [0] on 'CSSStyleDeclaration': Indexed property setter is not supported.`
+- **Fixes Applied**:
+  - In [saha-app/src/components/project-detail-view.jsx](file:///c:/Users/ASUS/Projects/SonnaEditor/saha-app/src/components/project-detail-view.jsx):
+    - Declared `const Tnum = { fontFamily: SONNA.mono, fontVariantNumeric: 'tabular-nums' };`.
+    - Replaced all 6 invalid `...M` spreads with `...Tnum` and `fontFamily: M`.
+  - In [saha-app/src/components/uploader-popover.jsx](file:///c:/Users/ASUS/Projects/SonnaEditor/saha-app/src/components/uploader-popover.jsx):
+    - Declared `const Tnum = { fontFamily: SONNA.mono, fontVariantNumeric: 'tabular-nums' };`.
+    - Replaced both invalid `...M` spreads with `...Tnum`.
+  - Audited all JSX files across `saha-app/src` using AST regex scanner; confirmed 0 invalid spreads remain.
+- **Verification**:
+  - `npm --prefix saha-app run build:vite`: 47 modules transformed in 533ms with 0 errors (bundle: 317.56 kB).
+  - Pytest regression suite: 49/49 passed in 1.02s.
+  - Ruff linter: all checks passed with 0 errors.
+  - Packaged distribution archive: `dist/saha-v1.40.zip` (145 files, 211.4 MB zip / 229.4 MB uncompressed).
+  - No automatic git commit executed per user rules.

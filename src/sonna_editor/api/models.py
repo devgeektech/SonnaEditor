@@ -124,6 +124,8 @@ class ProcessRequest(BaseModel):
     # than denoise_iso_threshold.
     denoise_enabled: bool = False
     denoise_iso_threshold: int = Field(default=1200, ge=0)
+    denoise_strength: str = Field(default="moderate")
+    smooth_bursts: bool = True
 
 
 class FinetuneRequest(BaseModel):

@@ -214,7 +214,7 @@ def delete_profile(profile_id: str) -> DeleteProfileResponse:
     discovered = _discover_profiles()
     match = next((p for p in discovered if p.id == profile_id), None)
     if match is None:
-        raise HTTPException(status_code=404, detail="Profile not found")
+        return DeleteProfileResponse(profile_id=profile_id, deleted_paths=[])
     ckpt_path = Path(match.checkpoint_path)
     deleted_paths: list[str] = []
 

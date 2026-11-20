@@ -68,6 +68,13 @@
    - `DOUBLE_CLICK_MAC_START_SAHA.command` automatically discovers Apple Silicon Homebrew (`/opt/homebrew/bin`), auto-installs `uv`, and auto-bootstraps portable Node.js LTS for `darwin-arm64` if needed.
    - Electron main process augments `process.env.PATH` to ensure Python and `uv` work seamlessly when opened from Finder.
 
+8. **Imagen AI UI Realignment & Burst Smoothing:**
+   - Redesigned frontend UI matching Imagen AI reference screenshots: dedicated Home welcome & 3-step onboarding cards, Lite vs Personal profile qualification flow, 9-genre selector, multi-step project creation modal with AI tools flyout, full-width profile table with 3-dot context menu, and profile baseline tuning modal.
+   - Realigned the left sidebar into 78px width with 64x56px rounded button tiles (Home, AI Profiles, Projects, Social Spotlight with notification red dot badge, Profile Shop, and Inspector) and top window chrome with serif logo and `↑ Uploader` pill.
+   - Preserves Sonna dark warm ochre/charcoal palette (`#16140F`, `#1F1D17`, `#D4A359`) with zero ad banners, purchasing prompts, or subscription paywalls.
+   - `smooth_burst_predictions()` stabilizes exposure and temperature across burst sequences (frames <= 4.0s apart with matching ISO) via a 70/30 current-to-median blend.
+   - 4-tier ISO noise reduction (subtle, moderate, strong, stronger) in `_apply_denoise_if_needed()`.
+
 ---
 
 ## Master Documentation Map

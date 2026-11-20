@@ -1,6 +1,7 @@
 @echo off
 setlocal
 cd /d "%~dp0"
+set ELECTRON_RUN_AS_NODE=
 
 echo =================================================
 echo  Starting Sonna Editor (Saha) for Windows
@@ -11,9 +12,14 @@ if exist "C:\Program Files\nodejs" set "PATH=C:\Program Files\nodejs;%PATH%"
 if exist "C:\Program Files (x86)\nodejs" set "PATH=C:\Program Files (x86)\nodejs;%PATH%"
 if exist "%LOCALAPPDATA%\Programs\nodejs" set "PATH=%LOCALAPPDATA%\Programs\nodejs;%PATH%"
 if exist "%USERPROFILE%\.local\bin" set "PATH=%USERPROFILE%\.local\bin;%PATH%"
+if exist "%USERPROFILE%\.cargo\bin" set "PATH=%USERPROFILE%\.cargo\bin;%PATH%"
 if exist "%APPDATA%\npm" set "PATH=%APPDATA%\npm;%PATH%"
 if exist "%LOCALAPPDATA%\Programs\Python\Python311" set "PATH=%LOCALAPPDATA%\Programs\Python\Python311;%LOCALAPPDATA%\Programs\Python\Python311\Scripts;%PATH%"
 if exist "C:\Windows\System32" set "PATH=%PATH%;C:\Windows\System32;C:\Windows"
+
+REM Automatically terminate any lingering zombie processes holding port 5173 (Vite) or 8765 (Backend API)
+echo [saha] Clearing any lingering network ports (5173, 8765)...
+powershell -NoProfile -Command "try { Get-NetTCPConnection -LocalPort 5173,8765 -ErrorAction SilentlyContinue | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force -ErrorAction SilentlyContinue } } catch {}; exit 0" >nul 2>&1
 
 REM Clean up cross-platform virtual environment (e.g. from macOS)
 if exist ".venv" if not exist ".venv\Scripts\python.exe" (
@@ -39,20 +45,18 @@ if not defined NODE_CMD (
     exit /b 1
 )
 
-REM Check uv or repo python
+REM Check repo virtualenv Python first (fastest and most reliable if already created)
 set "PYTHON_LAUNCHER="
-if exist "%USERPROFILE%\.local\bin\uv.exe" (
-    set "PYTHON_LAUNCHER=uv run python"
+if exist ".venv\Scripts\python.exe" (
+    set "PYTHON_LAUNCHER=.venv\Scripts\python.exe"
+) else if exist "%USERPROFILE%\.local\bin\uv.exe" (
+    set "PYTHON_LAUNCHER="%USERPROFILE%\.local\bin\uv.exe" run python"
 ) else (
     for %%i in (uv.exe) do if not "%%~$PATH:i"=="" set "PYTHON_LAUNCHER=uv run python"
 )
 
 if not defined PYTHON_LAUNCHER (
-    if exist ".venv\Scripts\python.exe" (
-        set "PYTHON_LAUNCHER=.venv\Scripts\python.exe"
-    ) else (
-        for %%i in (python.exe) do if not "%%~$PATH:i"=="" set "PYTHON_LAUNCHER=python"
-    )
+    for %%i in (python.exe) do if not "%%~$PATH:i"=="" set "PYTHON_LAUNCHER=python"
 )
 
 if not defined PYTHON_LAUNCHER (
@@ -68,4 +72,7 @@ if errorlevel 1 (
     echo.
     echo [saha] Application exited with error code %ERRORLEVEL%.
     pause
+) else (
+    echo.
+    echo [saha] Application closed cleanly.
 )

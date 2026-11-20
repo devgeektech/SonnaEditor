@@ -93,6 +93,34 @@ def _is_node_modules_valid_for_platform(app_dir: Path) -> bool:
     return True
 
 
+def _free_stale_ports(ports: list[int]) -> None:
+    """Terminate lingering zombie processes holding required ports."""
+    if sys.platform == "win32":
+        for port in ports:
+            try:
+                cmd = (
+                    f'powershell -NoProfile -Command "'
+                    f'try {{ Get-NetTCPConnection -LocalPort {port} -ErrorAction SilentlyContinue '
+                    f'| ForEach-Object {{ Stop-Process -Id $_.OwningProcess -Force -ErrorAction SilentlyContinue }} '
+                    f'}} catch {{}}; exit 0"'
+                )
+                subprocess.run(cmd, shell=True, capture_output=True, timeout=5)
+            except Exception:
+                pass
+    elif sys.platform in ("darwin", "linux"):
+        for port in ports:
+            try:
+                out = subprocess.check_output(["lsof", "-ti", f":{port}"], text=True).strip()
+                if out:
+                    for pid in out.split():
+                        try:
+                            os.kill(int(pid), 9)
+                        except OSError:
+                            pass
+            except Exception:
+                pass
+
+
 def _run(command: list[str], cwd: Path) -> int:
     print(f"[saha] {' '.join(command)}", flush=True)
     return subprocess.run(command, cwd=cwd).returncode
@@ -109,6 +137,9 @@ def main() -> None:
     )
     args = parser.parse_args()
 
+    # Clean up any lingering zombie processes holding port 5173 (Vite) or 8765 (API)
+    _free_stale_ports([5173, 8765])
+
     repo_root = config.PROJECT_ROOT
     app_dir = repo_root / "saha-app"
     node_modules = app_dir / "node_modules"
@@ -119,6 +150,11 @@ def main() -> None:
     config.ensure_runtime_directories()
     _node_command()
     npm = _npm_command()
+
+    # Ensure Electron runs as a GUI app even if launched from an IDE or shell
+    # that exports ELECTRON_RUN_AS_NODE=1.
+    if "ELECTRON_RUN_AS_NODE" in os.environ:
+        del os.environ["ELECTRON_RUN_AS_NODE"]
 
     if sys.platform == "darwin" and os.environ.get("ELECTRON_DISABLE_GPU") is None:
         os.environ["ELECTRON_DISABLE_GPU"] = "0"
@@ -139,7 +175,12 @@ def main() -> None:
         if install_code != 0:
             raise SystemExit(install_code)
 
-    raise SystemExit(_run([npm, "run", "dev"], app_dir))
+    try:
+        exit_code = _run([npm, "run", "dev"], app_dir)
+    finally:
+        _free_stale_ports([5173, 8765])
+
+    raise SystemExit(exit_code)
 
 
 if __name__ == "__main__":

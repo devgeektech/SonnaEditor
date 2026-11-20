@@ -3,8 +3,9 @@
 // any of {Sign in, Continue with Apple, Continue with Google} fires onSubmit.
 // Real auth is out of scope per the brief.
 
+import { useState } from 'react';
 import SONNA from '../tokens.js';
-import { SahaLockup } from './logo.jsx';
+import { SahaWordmark } from './logo.jsx';
 
 const F = SONNA.font;
 const M = SONNA.mono;
@@ -78,17 +79,50 @@ function AppleGlyph() {
   );
 }
 
-function ThemeIcon({ active }) {
-  const stroke = active ? SONNA.ochre : SONNA.fgMute;
+function EyeIcon({ visible, color = SONNA.fgMute }) {
+  if (visible) {
+    return (
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24" />
+        <line x1="1" y1="1" x2="23" y2="23" />
+      </svg>
+    );
+  }
   return (
-    <svg width="15" height="15" viewBox="0 0 15 15" fill="none">
-      <circle cx="7.5" cy="7.5" r="3.2" stroke={stroke} strokeWidth="1.3" />
-      <path d="M7.5 1.2v1.7M7.5 12.1v1.7M13.8 7.5h-1.7M2.9 7.5H1.2M12 3l-1.2 1.2M4.2 10.8 3 12M12 12l-1.2-1.2M4.2 4.2 3 3" stroke={stroke} strokeWidth="1.3" strokeLinecap="round" />
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+      <circle cx="12" cy="12" r="3" />
     </svg>
   );
 }
 
-export function SahaLogin({ onSubmit, theme = SONNA.theme, onToggleTheme }) {
+function ThemeIcon({ isLight }) {
+  if (isLight) {
+    return (
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <circle cx="12" cy="12" r="5" />
+        <line x1="12" y1="1" x2="12" y2="3" />
+        <line x1="12" y1="21" x2="12" y2="23" />
+        <line x1="4.22" y1="4.22" x2="5.64" y2="5.64" />
+        <line x1="18.36" y1="18.36" x2="19.78" y2="19.78" />
+        <line x1="1" y1="12" x2="3" y2="12" />
+        <line x1="21" y1="12" x2="23" y2="12" />
+        <line x1="4.22" y1="19.78" x2="5.64" y2="18.36" />
+        <line x1="18.36" y1="5.64" x2="19.78" y2="4.22" />
+      </svg>
+    );
+  }
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
+    </svg>
+  );
+}
+
+export function SahaLogin({ onSubmit, theme, onToggleTheme }) {
+  const [showPassword, setShowPassword] = useState(false);
+  const isLight = theme === 'light';
+
   const handleSubmit = (e) => {
     if (e && typeof e.preventDefault === 'function') e.preventDefault();
     if (typeof onSubmit === 'function') onSubmit();
@@ -111,12 +145,13 @@ export function SahaLogin({ onSubmit, theme = SONNA.theme, onToggleTheme }) {
         padding: '56px 56px 40px',
         display: 'flex', flexDirection: 'column', gap: 32,
       }}>
-        <SahaLockup markSize={36} wordSize={26} gap={12} />
+        <div>
+          <SahaWordmark size={32} />
+        </div>
 
         <div style={{ flex: 1 }} />
 
         <div>
-          <div style={{ ...Tlabel, color: SONNA.ochre, marginBottom: 14 }}>For working photographers</div>
           <div style={{
             fontSize: 38, fontWeight: 300, letterSpacing: 0, lineHeight: 1.15,
             color: SONNA.fg, maxWidth: 440,
@@ -125,7 +160,7 @@ export function SahaLogin({ onSubmit, theme = SONNA.theme, onToggleTheme }) {
             <span style={{ color: SONNA.fgMute }}> before your coffee gets cold.</span>
           </div>
           <div style={{
-            marginTop: 22, fontSize: 13, color: SONNA.fgMute, lineHeight: 1.65, maxWidth: 400,
+            marginTop: 22, fontSize: 13, color: SONNA.ochre, lineHeight: 1.65, maxWidth: 400,
           }}>
             Saha learns your taste from the photos you've already kept, then
             sorts the next shoot the way you would. Your edits, profiles and
@@ -142,29 +177,44 @@ export function SahaLogin({ onSubmit, theme = SONNA.theme, onToggleTheme }) {
         display: 'flex', flexDirection: 'column', justifyContent: 'center',
         position: 'relative',
       }}>
-        <button
-          type="button"
-          onClick={onToggleTheme}
-          title={`Switch to ${theme === 'dark' ? 'light' : 'dark'} theme`}
-          aria-label={`Switch to ${theme === 'dark' ? 'light' : 'dark'} theme`}
-          style={{
-            position: 'absolute',
-            top: 24,
-            right: 32,
-            width: 32,
-            height: 32,
-            padding: 0,
-            borderRadius: 6,
-            border: `1px solid ${SONNA.line}`,
-            background: SONNA.bgPanel,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            cursor: 'pointer',
-          }}
-        >
-          <ThemeIcon active={theme === 'light'} />
-        </button>
+        {/* Right Corner Theme Button */}
+        {onToggleTheme && (
+          <button
+            type="button"
+            onClick={onToggleTheme}
+            title={isLight ? 'Switch to Dark Theme' : 'Switch to Light Theme'}
+            aria-label="Toggle theme"
+            style={{
+              position: 'absolute',
+              top: 24,
+              right: 28,
+              width: 32,
+              height: 32,
+              borderRadius: 6,
+              background: 'transparent',
+              border: `1px solid ${isLight ? 'rgba(0,0,0,0.16)' : 'rgba(255,255,255,0.18)'}`,
+              color: isLight ? '#71717a' : '#E8E2D6',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              cursor: 'pointer',
+              padding: 0,
+              fontSize: 13,
+              zIndex: 10,
+              transition: 'all 0.15s ease',
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.borderColor = isLight ? 'rgba(0,0,0,0.4)' : 'rgba(255,255,255,0.45)';
+              e.currentTarget.style.background = isLight ? 'rgba(0,0,0,0.06)' : 'rgba(255,255,255,0.08)';
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.borderColor = isLight ? 'rgba(0,0,0,0.16)' : 'rgba(255,255,255,0.18)';
+              e.currentTarget.style.background = 'transparent';
+            }}
+          >
+            <ThemeIcon isLight={isLight} />
+          </button>
+        )}
         <div style={{ maxWidth: 380, width: '100%', margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 24 }}>
           <div>
             <div style={{ fontSize: 22, fontWeight: 400, color: SONNA.fg, letterSpacing: 0 }}>
@@ -176,7 +226,13 @@ export function SahaLogin({ onSubmit, theme = SONNA.theme, onToggleTheme }) {
           </div>
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-            <Field label="Email" type="email" placeholder="you@studio.com" autoFocus />
+            <Field
+              label="Email"
+              type="email"
+              placeholder="you@studio.com"
+              value="saha@studios.com"
+              autoFocus
+            />
             <div>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 7 }}>
                 <span style={Tlabel}>Password</span>
@@ -187,13 +243,36 @@ export function SahaLogin({ onSubmit, theme = SONNA.theme, onToggleTheme }) {
                 height: 38, borderRadius: 3,
                 background: SONNA.bgPanel,
                 border: `1px solid ${SONNA.line}`,
-                padding: '0 12px',
+                padding: '0 8px 0 12px',
               }}>
-                <input type="password" defaultValue="••••••••••••" style={{
-                  flex: 1, background: 'transparent', border: 'none', outline: 'none',
-                  color: SONNA.fg, fontFamily: F, fontSize: 13, letterSpacing: 2,
-                }} />
-                <span style={{ ...Tnum, fontSize: 10, color: SONNA.fgFaint }}>show</span>
+                <input
+                  type={showPassword ? 'text' : 'password'}
+                  defaultValue="sahastudios@123"
+                  style={{
+                    flex: 1, background: 'transparent', border: 'none', outline: 'none',
+                    color: SONNA.fg, fontFamily: F, fontSize: 13,
+                    letterSpacing: showPassword ? 0.2 : 1.5,
+                  }}
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword((prev) => !prev)}
+                  title={showPassword ? 'Hide password' : 'Show password'}
+                  aria-label={showPassword ? 'Hide password' : 'Show password'}
+                  style={{
+                    background: 'transparent',
+                    border: 'none',
+                    outline: 'none',
+                    padding: '4px 6px',
+                    cursor: 'pointer',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    color: SONNA.fgMute,
+                  }}
+                >
+                  <EyeIcon visible={showPassword} />
+                </button>
               </span>
             </div>
             <label style={{ display: 'flex', alignItems: 'center', gap: 9, fontSize: 12, color: SONNA.fgMute, marginTop: 2 }}>

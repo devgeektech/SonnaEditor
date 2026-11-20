@@ -6,16 +6,18 @@ import SONNA from '../tokens.js';
 const BONE = '#E8E2D6';
 
 // ── Wordmark — the locked-in logo ───────────────────────────
-export function SahaWordmark({ size = 26, color, weight = 600, tracking = -1.2 }) {
+export function SahaWordmark({ size = 26, color, weight = 700, tracking = '-0.03em' }) {
   return (
     <span style={{
-      fontFamily: SONNA.font,
+      fontFamily: 'Georgia, "Playfair Display", serif',
+      fontStyle: 'italic',
       fontSize: size,
       fontWeight: weight,
       letterSpacing: tracking,
-      color: color ?? SONNA.fg,
+      color: color ?? SONNA.ochre,
       lineHeight: 1,
       whiteSpace: 'nowrap',
+      display: 'inline-block',
     }}>saha</span>
   );
 }
@@ -73,11 +75,10 @@ export function SahaMark({ size = 32, gradient = false, mono = false, bg, fg }) 
   );
 }
 
-// ── Lockup — mark + wordmark on one row ─────────────────────
-export function SahaLockup({ markSize = 28, wordSize = 22, gap = 10, gradient = false, mono = false, color, bg }) {
+// ── Lockup — single signature wordmark ───────────────────────
+export function SahaLockup({ wordSize = 28, color }) {
   return (
-    <span style={{ display: 'inline-flex', alignItems: 'center', gap }}>
-      <SahaMark size={markSize} gradient={gradient} mono={mono} bg={bg} />
+    <span style={{ display: 'inline-flex', alignItems: 'center' }}>
       <SahaWordmark size={wordSize} color={color} />
     </span>
   );
