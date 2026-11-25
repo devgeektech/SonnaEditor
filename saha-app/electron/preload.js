@@ -16,12 +16,21 @@ contextBridge.exposeInMainWorld('saha', {
   // absolute file path, or null if the user cancels.
   pickFile: (opts) => ipcRenderer.invoke('saha:pick-file', opts),
 
+  // Retrieve filesystem stats for a path (size, isFile, isDirectory).
+  getFileStat: (filePath) => ipcRenderer.invoke('saha:get-file-stat', filePath),
+
   // Open a directory in the host file manager. Used by the profile view to
   // expose the checkpoints folder.
   revealPath: (path) => ipcRenderer.invoke('saha:reveal-path', path),
 
+  // Open a catalog (.lrcat) or shoot folder directly in Adobe Lightroom Classic.
+  openInLightroom: (path) => ipcRenderer.invoke('saha:open-lightroom', path),
+
   // Return the runtime paths the renderer should use for generated assets.
   getAppPaths: () => ipcRenderer.invoke('saha:get-app-paths'),
+
+  // Ensure the local Python API backend is running (restarts if dead).
+  ensureBackend: () => ipcRenderer.invoke('saha:ensure-backend'),
 
   // Constant for now; a future preference could redirect this.
   apiBaseUrl: () => API_BASE_URL,

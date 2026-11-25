@@ -7,6 +7,7 @@ import { resolve } from 'node:path';
 export default defineConfig({
   root: 'src',
   base: './',
+  publicDir: resolve(__dirname, 'public'),
   plugins: [react()],
   build: {
     outDir: resolve(__dirname, 'dist'),

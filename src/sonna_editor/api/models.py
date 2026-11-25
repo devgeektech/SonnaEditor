@@ -60,6 +60,23 @@ class RawFileEntry(BaseModel):
     size_bytes: int
 
 
+class CatalogFolderEntry(BaseModel):
+    id: str
+    name: str
+    path: str
+    total_photos: int = 0
+    filtered_photos: int = 0
+    date: str = ""
+
+
+class CatalogCollectionEntry(BaseModel):
+    id: str
+    name: str
+    total_photos: int = 0
+    filtered_photos: int = 0
+    date: str = ""
+
+
 class FolderScanResponse(BaseModel):
     folder_path: str
     source_type: Literal["folder", "catalog"] = "folder"
@@ -74,6 +91,17 @@ class FolderScanResponse(BaseModel):
     # confirmation dialog. Stray .xmp files unrelated to any RAW are not
     # counted (they're invisible to the inference pipeline's write path).
     xmp_conflict_count: int = 0
+    catalog_size_bytes: Optional[int] = None
+    catalog_size_formatted: Optional[str] = None
+    folders: list[CatalogFolderEntry] = Field(default_factory=list)
+    collections: list[CatalogCollectionEntry] = Field(default_factory=list)
+
+
+class DiscoveredCatalog(BaseModel):
+    name: str
+    path: str
+    size: str = ""
+    size_bytes: int = 0
 
 
 class RecentFolder(BaseModel):
@@ -160,8 +188,9 @@ class LiteProfileRequest(BaseModel):
     preset_path: str
     # Answers keyed by survey question. Current UI asks exposure /
     # temperature / tint and fills legacy look-slider answers with zero so
-    # older survey serialization remains compatible.
-    survey_answers: dict[str, int] = Field(default_factory=dict)
+    # older survey serialization remains compatible. Accepts fractional
+    # values (e.g. 1.333) for fine-grained multi-scene calibration.
+    survey_answers: dict[str, float | int] = Field(default_factory=dict)
 
 
 class LiteProfileCreated(BaseModel):

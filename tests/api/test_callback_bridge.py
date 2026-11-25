@@ -865,7 +865,7 @@ def test_pipeline_denoise_applies_only_above_iso_threshold(
     )
 
     assert result["processed"] == 2
-    assert captured["high.xmp"]["LuminanceSmoothing"] == pytest.approx(35.0)
+    assert captured["high.xmp"]["LuminanceSmoothing"] == pytest.approx(30.0)
     assert captured["high.xmp"]["ColorNoiseReduction"] == pytest.approx(25.0)
     assert captured["low.xmp"]["LuminanceSmoothing"] == pytest.approx(0.0)
     assert captured["low.xmp"]["ColorNoiseReduction"] == pytest.approx(0.0)
@@ -876,4 +876,4 @@ def test_pipeline_denoise_applies_only_above_iso_threshold(
     assert sidecar["denoise"]["high.cr3"]["applied"] is True
     assert sidecar["denoise"]["high.cr3"]["iso"] == 1600
     assert sidecar["denoise"]["low.cr3"]["applied"] is False
-    assert sidecar["photos"]["high.cr3"]["LuminanceSmoothing"] == pytest.approx(35.0)
+    assert sidecar["photos"]["high.cr3"]["LuminanceSmoothing"] == pytest.approx(30.0)

@@ -65,6 +65,21 @@ def test_compute_offset_at_half(key: str) -> None:
 
 
 @pytest.mark.parametrize("key", ALL_KEYS)
+def test_compute_offset_fractional(key: str) -> None:
+    mag = OFFSET_MAGNITUDES[key]
+    assert compute_offset(key, +1.333) == pytest.approx(1.333 * mag / 2.0)
+    assert compute_offset(key, -0.667) == pytest.approx(-0.667 * mag / 2.0)
+
+
+@pytest.mark.parametrize("key", ALL_KEYS)
+def test_compute_offset_rejects_out_of_bounds(key: str) -> None:
+    with pytest.raises(ValueError, match=r"between -2 and \+2"):
+        compute_offset(key, 2.5)
+    with pytest.raises(ValueError, match=r"between -2 and \+2"):
+        compute_offset(key, -2.1)
+
+
+@pytest.mark.parametrize("key", ALL_KEYS)
 @pytest.mark.parametrize("n", [1, 2])
 def test_compute_offset_symmetric(key: str, n: int) -> None:
     assert compute_offset(key, +n) == pytest.approx(-compute_offset(key, -n))
@@ -160,6 +175,34 @@ def test_normalise_lite_answers_keeps_all_six_keys() -> None:
         "saturation": 0,
         "shadows": 0,
     }
+
+
+def test_normalise_lite_answers_fractional_precision() -> None:
+    answers = {
+        "exposure": 1.3333,
+        "temperature": -0.6667,
+        "tint": 0.5,
+        "contrast": 0,
+        "saturation": 0,
+        "shadows": 0,
+    }
+    normalised = normalise_lite_answers(answers)
+    assert normalised["exposure"] == 1.3333
+    assert normalised["temperature"] == -0.6667
+    assert normalised["tint"] == 0.5
+    assert normalised["contrast"] == 0
+
+
+def test_normalise_lite_answers_rejects_out_of_bounds() -> None:
+    with pytest.raises(ValueError, match="in range"):
+        normalise_lite_answers({
+            "exposure": 3.0,
+            "temperature": 0,
+            "tint": 0,
+            "contrast": 0,
+            "saturation": 0,
+            "shadows": 0,
+        })
 
 
 # --- build_survey_payload ---

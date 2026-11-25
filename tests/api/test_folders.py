@@ -170,3 +170,16 @@ def test_recent_returns_entries_when_file_present(
     assert len(payload) == 1
     assert payload[0]["name"] == "JCDecaux Brisbane"
     assert payload[0]["raw_count"] == 412
+
+
+def test_list_discovered_catalogs(client: TestClient, synthetic_catalog: Path) -> None:
+    resp = client.get("/api/catalogs")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert isinstance(data, list)
+    # Check that entries have expected schema
+    for cat in data:
+        assert "name" in cat
+        assert "path" in cat
+        assert "size" in cat
+        assert "size_bytes" in cat

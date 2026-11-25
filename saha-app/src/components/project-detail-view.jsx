@@ -1,6 +1,6 @@
 // Project Detail & Photo Inspection View matching Imagen AI reference
 // Reference: media_1794864635431_f92b20ea.jpg (Shoot grid with "Editing...", bottom "• Editing in progress" pill,
-// left filter sidebar, right tool rail, breadcrumb "Projects / Sample_Raw")
+// left filter sidebar, right tool rail, breadcrumb "Projects / Project Name")
 
 import { useState, useMemo } from 'react';
 import SONNA from '../tokens.js';
@@ -38,10 +38,12 @@ export function ProjectDetailView({
   onPauseAll,
   onResumeAll,
   onDismissCompleted,
+  isUploadsOpen,
+  onToggleUploadsOpen,
 }) {
   const isLight = theme === 'light';
   const photoCount = project?.photos || 21;
-  const isProcessing = project?.status === 'processing';
+  const isProcessing = project?.status === 'processing' || project?.status === 'editing' || project?.status === 'uploading' || isUpdating;
 
   const [zoomLevel, setZoomLevel] = useState(1);
   const [selectedPhotoId, setSelectedPhotoId] = useState(null);
@@ -85,6 +87,8 @@ export function ProjectDetailView({
         onPauseAll={onPauseAll}
         onResumeAll={onResumeAll}
         onDismissCompleted={onDismissCompleted}
+        isUploadsOpen={isUploadsOpen}
+        onToggleUploadsOpen={onToggleUploadsOpen}
       />
 
       {/* ── Subheader Bar matching Imagen reference ─────────────── */}
@@ -98,7 +102,7 @@ export function ProjectDetailView({
         justifyContent: 'space-between',
         padding: '0 16px',
       }}>
-        {/* Breadcrumb: Projects / Sample_Raw */}
+        {/* Breadcrumb: Projects / Project Name */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13 }}>
           <button
             type="button"
@@ -120,7 +124,7 @@ export function ProjectDetailView({
           </button>
           <span style={{ color: isLight ? '#D1D5DB' : '#4B5563' }}>/</span>
           <span style={{ fontWeight: 700, color: isLight ? '#111827' : '#FFFFFF' }}>
-            {project?.name || 'Sample_Raw'}
+            {project?.name || 'Untitled Project'}
           </span>
         </div>
 

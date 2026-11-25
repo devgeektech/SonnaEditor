@@ -19,7 +19,7 @@ if exist "C:\Windows\System32" set "PATH=%PATH%;C:\Windows\System32;C:\Windows"
 
 REM Automatically terminate any lingering zombie processes holding port 5173 (Vite) or 8765 (Backend API)
 echo [saha] Clearing any lingering network ports (5173, 8765)...
-powershell -NoProfile -Command "try { Get-NetTCPConnection -LocalPort 5173,8765 -ErrorAction SilentlyContinue | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force -ErrorAction SilentlyContinue } } catch {}; exit 0" >nul 2>&1
+powershell -NoProfile -Command "try { Get-NetTCPConnection -LocalPort 5173,8765 -ErrorAction SilentlyContinue | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force -ErrorAction SilentlyContinue } } catch {}; try { Get-CimInstance Win32_Process -Filter \"CommandLine LIKE '%%scripts/serve.py%%'\" | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue } } catch {}; exit 0" >nul 2>&1
 
 REM Clean up cross-platform virtual environment (e.g. from macOS)
 if exist ".venv" if not exist ".venv\Scripts\python.exe" (

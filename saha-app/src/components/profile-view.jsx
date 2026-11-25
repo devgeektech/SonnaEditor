@@ -9,7 +9,6 @@ import SONNA from '../tokens.js';
 import { AppShell } from './shell.jsx';
 import { ErrorBanner } from './error-banner.jsx';
 import { ChooseProfileTypeModal } from './profile-type-modal.jsx';
-import { ProfileTuningModal } from './profile-tuning-modal.jsx';
 import { LiteProfileWizard } from './lite-wizard.jsx';
 import { PersonalProfileWizard } from './personal-wizard.jsx';
 import { ConfirmModal } from './confirm-modal.jsx';
@@ -112,7 +111,6 @@ export function ProfileView({
   const [chooseTypeOpen, setChooseTypeOpen] = useState(false);
   const [liteWizardOpen, setLiteWizardOpen] = useState(false);
   const [personalWizardOpen, setPersonalWizardOpen] = useState(false);
-  const [tuningProfile, setTuningProfile] = useState(null);
   const [activeMenuId, setActiveMenuId] = useState(null);
   const [refreshKey, setRefreshKey] = useState(0);
   const [deleteConfirmProfile, setDeleteConfirmProfile] = useState(null);
@@ -155,17 +153,15 @@ export function ProfileView({
       // ignore JSON errors
     }
 
-    // Process backend profiles
-    const processedServer = profiles
-      .filter((p) => !deletedIds.includes(p.id) && !deletedIds.includes(p.name))
-      .map((p) => ({
-        ...p,
-        display_name: customNames[p.id] || p.display_name || p.name,
-        status: 'ready',
-        isDraft: false,
-        photo_count: p.photo_count != null ? p.photo_count : 0,
-        trained_at: p.trained_at || '2026-11-14T10:00:00Z',
-      }));
+    // Process backend profiles (server is the single source of truth for files on disk)
+    const processedServer = profiles.map((p) => ({
+      ...p,
+      display_name: customNames[p.id] || p.display_name || p.name,
+      status: 'ready',
+      isDraft: false,
+      photo_count: p.photo_count != null ? p.photo_count : 0,
+      trained_at: p.trained_at || '2026-11-14T10:00:00Z',
+    }));
 
     // If server has no profiles yet and 'vi-profile' hasn't been deleted by user, provide placeholder
     const defaultPlaceholder = (!deletedIds.includes('vi-profile') && !deletedIds.includes('vi')) ? [
@@ -222,15 +218,23 @@ export function ProfileView({
     setRenameModalProfile(null);
     if (!profile) return;
     const current = profile.display_name || profile.name;
-    if (newName && newName.trim() && newName.trim() !== current) {
+    const trimmed = (newName || '').trim();
+    if (trimmed && trimmed.toLowerCase() !== current.toLowerCase()) {
+      const isDup = allProfiles.some(
+        (p) => p.id !== profile.id && (p.display_name || p.name || '').trim().toLowerCase() === trimmed.toLowerCase()
+      );
+      if (isDup) {
+        setError({ source: 'rename', message: `A profile named "${trimmed}" already exists. Every profile must have a unique name.` });
+        return;
+      }
       try {
         if (profile.isDraft) {
           const drafts = JSON.parse(localStorage.getItem('saha_draft_profiles') || '[]');
-          const updated = drafts.map((d) => d.id === profile.id ? { ...d, name: newName.trim(), display_name: newName.trim() } : d);
+          const updated = drafts.map((d) => d.id === profile.id ? { ...d, name: trimmed, display_name: trimmed } : d);
           localStorage.setItem('saha_draft_profiles', JSON.stringify(updated));
         } else {
           const customNames = JSON.parse(localStorage.getItem('saha_profile_custom_names') || '{}');
-          customNames[profile.id] = newName.trim();
+          customNames[profile.id] = trimmed;
           localStorage.setItem('saha_profile_custom_names', JSON.stringify(customNames));
         }
         setRefreshKey((k) => k + 1);
@@ -244,7 +248,13 @@ export function ProfileView({
   const handleDuplicate = (profile) => {
     setActiveMenuId(null);
     const current = profile.display_name || profile.name;
-    const dupName = `${current} (Copy)`;
+    const existingNames = new Set(allProfiles.map((p) => (p.display_name || p.name || '').trim().toLowerCase()));
+    let counter = 1;
+    let dupName = `${current} (Copy)`;
+    while (existingNames.has(dupName.toLowerCase())) {
+      counter += 1;
+      dupName = `${current} (Copy ${counter})`;
+    }
     try {
       const drafts = JSON.parse(localStorage.getItem('saha_draft_profiles') || '[]');
       const newProfile = {
@@ -284,14 +294,15 @@ export function ProfileView({
         console.warn('Failed to update drafts:', err);
       }
 
-      // 2. Mark profile as deleted in localStorage so it never reappears
-      try {
-        const deletedIds = JSON.parse(localStorage.getItem('saha_deleted_profile_ids') || '[]');
-        if (profile.id && !deletedIds.includes(profile.id)) deletedIds.push(profile.id);
-        if (profile.name && !deletedIds.includes(profile.name)) deletedIds.push(profile.name);
-        localStorage.setItem('saha_deleted_profile_ids', JSON.stringify(deletedIds));
-      } catch (err) {
-        console.warn('Failed to update deleted IDs:', err);
+      // 2. If this is a draft or placeholder, mark as deleted in localStorage so it doesn't reappear
+      if (profile.isDraft || profile.id === 'vi-profile') {
+        try {
+          const deletedIds = JSON.parse(localStorage.getItem('saha_deleted_profile_ids') || '[]');
+          if (profile.id && !deletedIds.includes(profile.id)) deletedIds.push(profile.id);
+          localStorage.setItem('saha_deleted_profile_ids', JSON.stringify(deletedIds));
+        } catch (err) {
+          console.warn('Failed to update deleted IDs:', err);
+        }
       }
 
       // 3. Clean up custom renamed label
@@ -435,102 +446,103 @@ export function ProfileView({
 
         {/* Your profiles Table or Zero State matching Imagen AI reference */}
         {allProfiles.length === 0 ? (
-            <div style={{
-              flex: 1,
-              display: 'flex',
-              flexDirection: 'column',
-              alignItems: 'center',
-              justifyContent: 'center',
-              textAlign: 'center',
-              padding: '60px 24px',
+          <div style={{
+            flex: 1,
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'center',
+            textAlign: 'center',
+            padding: '60px 24px',
+          }}>
+            <EmptyProfilesFolder isLight={isLight} />
+            <h2 style={{
+              fontSize: 22,
+              fontWeight: 700,
+              color: SONNA.fg,
+              marginBottom: 8,
+              letterSpacing: -0.3,
             }}>
-              <EmptyProfilesFolder isLight={isLight} />
-              <h2 style={{
-                fontSize: 22,
-                fontWeight: 700,
-                color: SONNA.fg,
-                marginBottom: 8,
-                letterSpacing: -0.3,
-              }}>
-                No personal AI profiles yet
-              </h2>
-              <p style={{
-                fontSize: 13.5,
-                color: SONNA.fgMute,
-                maxWidth: 440,
-                lineHeight: 1.5,
-                margin: '0 0 24px 0',
-              }}>
-                Create your first Personal AI Profile and train it with your editing style by uploading previous edited photos.
-              </p>
-              <button
-                type="button"
-                onClick={() => setChooseTypeOpen(true)}
+              No personal AI profiles yet
+            </h2>
+            <p style={{
+              fontSize: 13.5,
+              color: SONNA.fgMute,
+              maxWidth: 440,
+              lineHeight: 1.5,
+              margin: '0 0 24px 0',
+            }}>
+              Create your first Personal AI Profile and train it with your editing style by uploading previous edited photos.
+            </p>
+            <button
+              type="button"
+              onClick={() => setChooseTypeOpen(true)}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 6,
+                height: 36,
+                padding: '0 20px',
+                background: SONNA.ochre,
+                color: '#FFFFFF',
+                border: 'none',
+                borderRadius: 6,
+                fontFamily: F,
+                fontSize: 13,
+                fontWeight: 600,
+                cursor: 'pointer',
+                boxShadow: '0 4px 14px rgba(224, 83, 83, 0.35)',
+                transition: 'background 0.15s ease',
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = SONNA.ochreSoft;
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = SONNA.ochre;
+              }}
+            >
+              <span>+</span>
+              <span>Create your own profile</span>
+            </button>
+          </div>
+        ) : (
+          <div className="saha-table-scroll">
+          <div style={{ display: 'flex', flexDirection: 'column', minWidth: 740 }}>
+            {/* Table Header Row */}
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: 'minmax(180px, 1.8fr) 180px 150px 170px 240px',
+              padding: '8px 24px 12px 24px',
+              fontSize: 12,
+              fontWeight: 500,
+              color: SONNA.fgDim,
+            }}>
+              <span>Profile name</span>
+              <span>Number of photos</span>
+              <span
+                onClick={() => setSortOrder((prev) => (prev === 'desc' ? 'asc' : 'desc'))}
                 style={{
                   display: 'inline-flex',
                   alignItems: 'center',
-                  gap: 6,
-                  height: 36,
-                  padding: '0 20px',
-                  background: SONNA.ochre,
-                  color: '#FFFFFF',
-                  border: 'none',
-                  borderRadius: 6,
-                  fontFamily: F,
-                  fontSize: 13,
-                  fontWeight: 600,
+                  gap: 4,
                   cursor: 'pointer',
-                  boxShadow: '0 4px 14px rgba(224, 83, 83, 0.35)',
-                  transition: 'background 0.15s ease',
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.background = SONNA.ochreSoft;
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.background = SONNA.ochre;
+                  userSelect: 'none',
                 }}
               >
-                <span>+</span>
-                <span>Create your own profile</span>
-              </button>
+                Date {sortOrder === 'desc' ? '↓' : '↑'}
+              </span>
+              <span>Status</span>
+              <span />
             </div>
-          ) : (
-            <div style={{ display: 'flex', flexDirection: 'column' }}>
-              {/* Table Header Row */}
-              <div style={{
-                display: 'grid',
-                gridTemplateColumns: 'minmax(180px, 1.8fr) 180px 150px 170px 240px',
-                padding: '8px 24px 12px 24px',
-                fontSize: 12,
-                fontWeight: 500,
-                color: SONNA.fgDim,
-              }}>
-                <span>Profile name</span>
-                <span>Number of photos</span>
-                <span
-                  onClick={() => setSortOrder((prev) => (prev === 'desc' ? 'asc' : 'desc'))}
-                  style={{
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: 4,
-                    cursor: 'pointer',
-                    userSelect: 'none',
-                  }}
-                >
-                  Date {sortOrder === 'desc' ? '↓' : '↑'}
-                </span>
-                <span>Status</span>
-                <span />
-              </div>
 
-              {/* Profile Card Rows */}
-              {allProfiles.map((p) => {
-                const isDraft = p.status === 'draft' || p.isDraft;
-                const menuOpen = activeMenuId === p.id;
+            {/* Profile Card Rows */}
+            {allProfiles.map((p) => {
+              const isDraft = p.status === 'draft' || p.isDraft;
+              const menuOpen = activeMenuId === p.id;
 
-                return (
-                  <div
-                    key={p.id}
+              return (
+                <div
+                  key={p.id}
                   style={{
                     display: 'grid',
                     gridTemplateColumns: 'minmax(180px, 1.8fr) 180px 150px 170px 240px',
@@ -678,44 +690,6 @@ export function ProfileView({
                         >
                           Use to edit
                         </button>
-
-                        {/* Tuning Sliders Icon */}
-                        <button
-                          type="button"
-                          onClick={() => setTuningProfile(p)}
-                          title="Tune profile settings & overrides"
-                          style={{
-                            width: 32,
-                            height: 32,
-                            borderRadius: 6,
-                            background: 'transparent',
-                            border: 'none',
-                            color: SONNA.fgMute,
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            cursor: 'pointer',
-                            transition: 'color 0.15s ease',
-                          }}
-                          onMouseEnter={(e) => {
-                            e.currentTarget.style.color = SONNA.fg;
-                          }}
-                          onMouseLeave={(e) => {
-                            e.currentTarget.style.color = SONNA.fgMute;
-                          }}
-                        >
-                          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                            <line x1="4" y1="21" x2="4" y2="14" />
-                            <line x1="4" y1="10" x2="4" y2="3" />
-                            <line x1="12" y1="21" x2="12" y2="12" />
-                            <line x1="12" y1="8" x2="12" y2="3" />
-                            <line x1="20" y1="21" x2="20" y2="16" />
-                            <line x1="20" y1="12" x2="20" y2="3" />
-                            <line x1="1" y1="14" x2="7" y2="14" />
-                            <line x1="9" y1="8" x2="15" y2="8" />
-                            <line x1="17" y1="16" x2="23" y2="16" />
-                          </svg>
-                        </button>
                       </>
                     )}
 
@@ -769,26 +743,6 @@ export function ProfileView({
                           textAlign: 'left',
                         }}
                       >
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setActiveMenuId(null);
-                            setTuningProfile(p);
-                          }}
-                          style={{
-                            width: '100%',
-                            padding: '8px 10px',
-                            background: 'transparent',
-                            border: 'none',
-                            color: SONNA.fg,
-                            fontSize: 12,
-                            textAlign: 'left',
-                            cursor: 'pointer',
-                            borderRadius: 4,
-                          }}
-                        >
-                          Tune Overrides
-                        </button>
                         <button
                           type="button"
                           onClick={() => handleRename(p)}
@@ -847,8 +801,9 @@ export function ProfileView({
                 </div>
               );
             })}
-            </div>
-          )
+          </div>
+          </div>
+        )
         }
       </div>
 
@@ -861,30 +816,19 @@ export function ProfileView({
         theme={theme}
       />
 
-      {/* Tuning Modal */}
-      <ProfileTuningModal
-        isOpen={!!tuningProfile}
-        profile={tuningProfile}
-        onClose={() => setTuningProfile(null)}
-        onSaveOverrides={(id, overrides) => {
-          try {
-            localStorage.setItem(`saha_profile_override_${id}`, JSON.stringify(overrides));
-          } catch (e) {
-            console.error('Failed to save profile overrides', e);
-          }
-        }}
-      />
-
       {/* Lite Wizard */}
       {liteWizardOpen && (
         <LiteProfileWizard
           onClose={() => setLiteWizardOpen(false)}
-          onCreated={() => {
+          onCreated={async (res) => {
             setLiteWizardOpen(false);
-            onProfilesChanged?.();
+            if (onProfilesChanged) {
+              await onProfilesChanged(res);
+            }
             setRefreshKey((k) => k + 1);
           }}
           theme={theme}
+          profiles={profiles}
         />
       )}
 
@@ -892,11 +836,14 @@ export function ProfileView({
       {personalWizardOpen && (
         <PersonalProfileWizard
           onClose={() => setPersonalWizardOpen(false)}
-          onCreated={() => {
+          onCreated={async (res) => {
             setPersonalWizardOpen(false);
-            onProfilesChanged?.();
+            if (onProfilesChanged) {
+              await onProfilesChanged(res);
+            }
             setRefreshKey((k) => k + 1);
           }}
+          profiles={profiles}
         />
       )}
       {/* Delete Profile Confirmation Modal */}

@@ -264,12 +264,23 @@ def _next_lite_seq() -> int:
     return (max(seen) + 1) if seen else 1
 
 
-def _validate_survey_answers(answers: dict[str, int]) -> dict[str, int]:
+def _validate_survey_answers(answers: dict[str, float | int]) -> dict[str, float | int]:
     """Raise HTTPException(400) if the survey payload is incomplete/invalid."""
     try:
         return normalise_lite_answers(answers)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+def _assert_unique_profile_name(name: str) -> None:
+    norm_name = name.strip().lower()
+    for p in _discover_profiles():
+        existing = (p.display_name or p.name or "").strip().lower()
+        if existing and existing == norm_name:
+            raise HTTPException(
+                status_code=400,
+                detail=f"A profile named '{name}' already exists. Every profile must have a unique name.",
+            )
 
 
 # ── Personal AI profile creation ────────────────────────────────────────────
@@ -278,6 +289,7 @@ def _validate_personal_profile_request(req: PersonalProfileRequest) -> tuple[str
     name = req.profile_name.strip()
     if not name:
         raise HTTPException(status_code=400, detail="profile_name must be non-empty")
+    _assert_unique_profile_name(name)
     input_dir = Path(req.input_dir)
     if not input_dir.is_absolute():
         raise HTTPException(status_code=400, detail="input_dir must be absolute")
@@ -433,6 +445,7 @@ def create_lite_profile(req: LiteProfileRequest) -> LiteProfileCreated:
     name = req.profile_name.strip()
     if not name:
         raise HTTPException(status_code=400, detail="profile_name must be non-empty")
+    _assert_unique_profile_name(name)
 
     preset_path = Path(req.preset_path)
     if not preset_path.is_absolute():

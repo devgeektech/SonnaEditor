@@ -235,11 +235,21 @@ export function TitleBar({
   onPauseAll,
   onResumeAll,
   onDismissCompleted,
+  isUploadsOpen: controlledIsOpen,
+  onToggleUploadsOpen: controlledToggle,
 }) {
   const isMac = typeof window !== 'undefined' && window.saha?.platform === 'darwin';
   const logoLeft = isMac ? 78 : 16;
   const isLight = theme === 'light';
-  const [isUploadsOpen, setIsUploadsOpen] = useState(false);
+  const [localUploadsOpen, setLocalUploadsOpen] = useState(false);
+  const isUploadsOpen = controlledIsOpen !== undefined ? controlledIsOpen : localUploadsOpen;
+  const toggleUploads = () => {
+    if (controlledToggle) {
+      controlledToggle(!isUploadsOpen);
+    } else {
+      setLocalUploadsOpen(!localUploadsOpen);
+    }
+  };
 
   return (
     <div style={{
@@ -317,105 +327,9 @@ export function TitleBar({
           activeUploads={uploads}
           isUpdating={isUpdating}
           isOpen={isUploadsOpen}
-          onClick={() => setIsUploadsOpen(!isUploadsOpen)}
+          onClick={toggleUploads}
           theme={theme}
         />
-
-        {/* Notifications Icon matching Imagen */}
-        <button
-          type="button"
-          title="Notifications"
-          style={{
-            background: 'transparent',
-            border: 'none',
-            color: isLight ? '#6B7280' : '#9CA3AF',
-            cursor: 'pointer',
-            padding: '6px',
-            borderRadius: 6,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-          }}
-          onMouseEnter={(e) => { e.currentTarget.style.color = isLight ? '#111827' : '#FFFFFF'; }}
-          onMouseLeave={(e) => { e.currentTarget.style.color = isLight ? '#6B7280' : '#9CA3AF'; }}
-        >
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
-            <path d="M13.73 21a2 2 0 0 1-3.46 0" />
-          </svg>
-        </button>
-
-        {/* Help Icon matching Imagen */}
-        <button
-          type="button"
-          title="Help & Support"
-          style={{
-            background: 'transparent',
-            border: 'none',
-            color: isLight ? '#6B7280' : '#9CA3AF',
-            cursor: 'pointer',
-            padding: '4px 6px',
-            borderRadius: 6,
-            display: 'flex',
-            alignItems: 'center',
-            gap: 5,
-            fontFamily: SONNA.font,
-            fontSize: 12.5,
-          }}
-          onMouseEnter={(e) => { e.currentTarget.style.color = isLight ? '#111827' : '#FFFFFF'; }}
-          onMouseLeave={(e) => { e.currentTarget.style.color = isLight ? '#6B7280' : '#9CA3AF'; }}
-        >
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M3 18v-6a9 9 0 0 1 18 0v6" />
-            <path d="M21 19a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3zM3 19a2 2 0 0 0 2 2h1a2 2 0 0 0 2-2v-3a2 2 0 0 0-2-2H3z" />
-          </svg>
-          <span>Help</span>
-        </button>
-
-        {/* Info Question Mark Icon matching Imagen */}
-        <button
-          type="button"
-          title="About Saha"
-          style={{
-            width: 20,
-            height: 20,
-            borderRadius: '50%',
-            background: 'transparent',
-            border: `1px solid ${isLight ? 'rgba(0,0,0,0.2)' : 'rgba(255,255,255,0.2)'}`,
-            color: isLight ? '#6B7280' : '#9CA3AF',
-            cursor: 'pointer',
-            padding: 0,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            fontSize: 11,
-            fontWeight: 700,
-          }}
-          onMouseEnter={(e) => { e.currentTarget.style.color = isLight ? '#111827' : '#FFFFFF'; }}
-          onMouseLeave={(e) => { e.currentTarget.style.color = isLight ? '#6B7280' : '#9CA3AF'; }}
-        >
-          ?
-        </button>
-
-        {/* User Profile Avatar Pill matching Imagen */}
-        <div
-          title="Saha Studio User"
-          style={{
-            width: 26,
-            height: 26,
-            borderRadius: '50%',
-            background: isLight ? '#E5E7EB' : '#374151',
-            color: isLight ? '#1F2937' : '#F3F4F6',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            fontSize: 10.5,
-            fontWeight: 700,
-            cursor: 'default',
-          }}
-        >
-          VR
-        </div>
 
         {/* Theme toggle button */}
         {onToggleTheme && (
@@ -455,7 +369,10 @@ export function TitleBar({
         {/* Floating Manage Uploads Popover */}
         <ManageUploadsPopover
           isOpen={isUploadsOpen}
-          onClose={() => setIsUploadsOpen(false)}
+          onClose={() => {
+            if (controlledToggle) controlledToggle(false);
+            else setLocalUploadsOpen(false);
+          }}
           uploads={uploads}
           isUpdating={isUpdating}
           updatingProgress={updatingProgress}
@@ -486,6 +403,8 @@ export function AppShell({
   onPauseAll,
   onResumeAll,
   onDismissCompleted,
+  isUploadsOpen,
+  onToggleUploadsOpen,
   children,
 }) {
   return (
@@ -512,6 +431,8 @@ export function AppShell({
         onPauseAll={onPauseAll}
         onResumeAll={onResumeAll}
         onDismissCompleted={onDismissCompleted}
+        isUploadsOpen={isUploadsOpen}
+        onToggleUploadsOpen={onToggleUploadsOpen}
       />
       <div style={{ flex: 1, display: 'flex', minHeight: 0 }}>
         <NavRail

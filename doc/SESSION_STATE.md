@@ -18,7 +18,7 @@
   - Managed via Git LFS through `.gitattributes`.
 - **Active Lite Profile Checkpoint:** `v1_learning/model-v0.1.0.ckpt`
   - Sidecar properties: `profile_type=mode_b_initial`, anchored to `foundation-sonna-raw-xmp-004-visual`.
-  - Mode B processing applies preset baseline look + adaptive per-photo Exposure and camera "As Shot" WB preserving.
+  - Mode B processing applies preset baseline look + style survey calibration (Exposure, Temp, Tint) + adaptive per-photo scene Exposure and camera "As Shot" WB anchoring. Full 9-step survey efficacy verified end-to-end.
 - **Client Distribution Bundle:** `dist/saha-mac-client-bundle.zip` (106.2 MB)
   - Packaged via `scripts/package_for_client.py` for client testing on macOS Apple Silicon / Intel.
   - Companion testing guide: [doc/MAC_CLIENT_TESTING.md](MAC_CLIENT_TESTING.md).
@@ -70,10 +70,35 @@
 
 8. **Imagen AI UI Realignment & Burst Smoothing:**
    - Redesigned frontend UI matching Imagen AI reference screenshots: dedicated Home welcome & 3-step onboarding cards, Lite vs Personal profile qualification flow, 9-genre selector, multi-step project creation modal with AI tools flyout, full-width profile table with 3-dot context menu, and profile baseline tuning modal.
-   - Realigned the left sidebar into 78px width with 64x56px rounded button tiles (Home, AI Profiles, Projects, Social Spotlight with notification red dot badge, Profile Shop, and Inspector) and top window chrome with serif logo and `↑ Uploader` pill.
+   - Clean top window chrome with serif logo, `↑ Uploader` pill, and theme toggle (unnecessary notification bell, help, info `?`, and avatar pills removed per studio production spec).
+   - Realigned the left sidebar into 78px width with 64x56px rounded button tiles (Home, AI Profiles, Projects, Social Spotlight with notification red dot badge, Profile Shop, and Inspector).
    - Preserves Sonna dark warm ochre/charcoal palette (`#16140F`, `#1F1D17`, `#D4A359`) with zero ad banners, purchasing prompts, or subscription paywalls.
    - `smooth_burst_predictions()` stabilizes exposure and temperature across burst sequences (frames <= 4.0s apart with matching ISO) via a 70/30 current-to-median blend.
    - 4-tier ISO noise reduction (subtle, moderate, strong, stronger) in `_apply_denoise_if_needed()`.
+
+9. **Catalog Ingestion, Review in Adobe, & Uploader State Sync:**
+   - Multi-step catalog wizard with folder breakdown, metadata filtering, and genre selection matching reference. On "Choose a source", footer is cleanly suppressed; on "Choose photos", initial selection starts at 0 with gated "Next" button until folders are checked.
+
+10. **Profile Uniqueness & Registry Truth:**
+    - Strict unique profile name enforcement across backend endpoints (`create_lite_profile` and `create_personal_profile`) and frontend wizards (`LiteProfileWizard` and `PersonalProfileWizard`). Case-insensitive and trimmed names prevent duplicate profiles.
+    - Profiles on disk returned by `GET /api/profiles` represent the single authoritative source of truth and are never filtered by client-side suppression lists. Local draft deletion is kept isolated to local mock drafts. Newly created profiles automatically activate and sync with project creation workflows.
+   - Projects list/table view with real-time status transitions (`• Uploading photos · 0%` -> `• Editing` -> `• Ready for review` -> `● Fine-tune profile`).
+   - "Review edits ▾" dropdown offering `Review in Adobe` (triggers XMP metadata download wizard) and `Review in Saha` (in-app photo inspection).
+   - "Download edits" modal with folder location picker, download options (`Edits and ratings` / `Edits only`), and export metadata progress card with `Open folder` and `Train profile` transition.
+   - Global `Manage uploads` popover and `ProjectDetailView` with photo grid editing badges.
+   - Process lifecycle self-healing: proactive cleanup of stale zombie port bindings and synchronous tree termination on Windows prevents `backend failed to start` errors upon double-clicking or restarting.
+
+10. **Lite Profile 9-Step Visual Style Survey Parity:**
+   - Full 9-step benchmark visual style survey across 3 lighting archetypes (Backlit outdoor by water, Dim indoor shadow, and Direct sunlight with saturated foliage).
+   - 45 original uncompressed 960x1440 and 1440x961 master WebP image assets extracted directly from Imagen's application bundle into `saha-app/public/survey/` and bundled into distribution assets (eliminating all blurriness and visual artifacts).
+   - Captures user's aesthetic preferences for Exposure, Temperature, and Tint across all 3 scenarios, averaging them to set baseline profile offsets (`exposure_offset`, `temperature_offset`, `tint_offset`) on the Mode B carrier checkpoint.
+   - Visual indicator dashes (9 dashes) and signature lime-yellow (`#D4F49C`) selection outline with smooth 250ms auto-advance and `Build profile` CTA on final step.
+
+11. **Production Codebase Hygiene & Dead Code Purge:**
+   - Purged dead frontend components (`genre-grid.jsx`) and unused hooks (`useCaptures.js`, `useRecentFolders.js`).
+   - Stripped duplicate image directories (`saha-app/src/public/`) and redundant 45 `.jpg` exports, preserving only the 45 master `.webp` assets.
+   - Removed empty legacy package `src/sonna_editor/profiles/` and stale local server PID artifacts (`.saha/jobs/.serve.pid`).
+   - Cleaned distribution package: `dist/saha-v1.50.zip` down to 186 essential files (saved 139 files and ~34 MB).
 
 ---
 

@@ -100,8 +100,11 @@ def _free_stale_ports(ports: list[int]) -> None:
             try:
                 cmd = (
                     f'powershell -NoProfile -Command "'
-                    f'try {{ Get-NetTCPConnection -LocalPort {port} -ErrorAction SilentlyContinue '
+                    f'try {{ Get-NetTCPConnection -LocalPort {port} -State Listen -ErrorAction SilentlyContinue '
                     f'| ForEach-Object {{ Stop-Process -Id $_.OwningProcess -Force -ErrorAction SilentlyContinue }} '
+                    f'}} catch {{}}; '
+                    f'try {{ Get-CimInstance Win32_Process -Filter \\"CommandLine LIKE \'%scripts/serve.py%\'\\" '
+                    f'| ForEach-Object {{ Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }} '
                     f'}} catch {{}}; exit 0"'
                 )
                 subprocess.run(cmd, shell=True, capture_output=True, timeout=5)
@@ -177,6 +180,22 @@ def main() -> None:
 
     try:
         exit_code = _run([npm, "run", "dev"], app_dir)
+        if exit_code != 0:
+            print(
+                f"\x1b[1;31m[saha ERROR]\x1b[0m Application process exited with code {exit_code}",
+                file=sys.stderr,
+                flush=True,
+            )
+    except KeyboardInterrupt:
+        print("\n[saha] Shutdown requested by user.", flush=True)
+        exit_code = 0
+    except Exception as exc:
+        print(
+            f"\x1b[1;31m[saha ERROR]\x1b[0m Launcher exception: {exc}",
+            file=sys.stderr,
+            flush=True,
+        )
+        raise
     finally:
         _free_stale_ports([5173, 8765])
 

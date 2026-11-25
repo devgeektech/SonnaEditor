@@ -427,6 +427,7 @@ def _survey_adjusted_preset(ckpt_sidecar: dict) -> dict[str, float | None]:
 
     survey = load_survey(survey_path)
     questions = survey.get("questions") or {}
+    survey_offsets: dict[str, float] = {}
     for entry in questions.values():
         field = entry.get("slider_field")
         if field not in config.SLIDER_FIELDS:
@@ -437,6 +438,7 @@ def _survey_adjusted_preset(ckpt_sidecar: dict) -> dict[str, float | None]:
         if offset == 0.0:
             continue
 
+        survey_offsets[field] = offset
         base = preset.get(field)
         if base is None:
             base = float(LR_DEFAULTS[field]) if field == "Temperature" else 0.0
@@ -444,6 +446,7 @@ def _survey_adjusted_preset(ckpt_sidecar: dict) -> dict[str, float | None]:
         lo, hi = config.SLIDER_RANGES[field]
         preset[field] = max(lo, min(hi, target))
 
+    preset["_survey_offsets"] = survey_offsets
     return preset
 
 
@@ -455,12 +458,34 @@ def _mode_b_adjusted_values_for_photo(
 ) -> dict[str, float | None]:
     """Return the Lite per-photo preset + auto-adjusted values."""
     photo_preset = dict(preset)
+
+    # To compute the scene-adaptive exposure delta without stripping the preset's
+    # base exposure and style survey calibration, evaluate scene delta against
+    # a neutral baseline (Exposure2012=0.0). This ensures the user's calibrated
+    # style is preserved while individual photos receive adaptive scene compensation.
+    neutral_preset = dict(photo_preset)
+    neutral_preset["Exposure2012"] = 0.0
+
     delta = compute_adjustment(
         image,
         metadata,
-        photo_preset,
+        neutral_preset,
         _MODE_B_ADJUSTMENT_OPTIONS,
     )
+
+    # Highlight protection: if base exposure is positive, guard against blowing highlights
+    if "Exposure2012" in delta and delta["Exposure2012"] is not None:
+        base_exp = float(photo_preset.get("Exposure2012") or 0.0)
+        target_exp = base_exp + float(delta["Exposure2012"])
+        rgb_arr = np.asarray(image.convert("RGB"), dtype=np.float32)
+        luma = 0.2126 * rgb_arr[:, :, 0] + 0.7152 * rgb_arr[:, :, 1] + 0.0722 * rgb_arr[:, :, 2]
+        p98 = float(np.percentile(luma, 98))
+        if p98 > 0:
+            max_headroom = float(np.log2(248.0 / p98))
+            if target_exp > max_headroom:
+                effective_exp = max(base_exp, max_headroom) if base_exp < max_headroom else base_exp
+                delta["Exposure2012"] = effective_exp - base_exp
+
     # The legacy preset adjuster returns WB deltas. If the preset omitted WB,
     # apply those deltas to the photo's AsShot WB rather than to 0.
     as_shot_wb = metadata.get("as_shot_wb")
@@ -483,28 +508,37 @@ def _anchor_mode_b_wb_to_as_shot(
 
     Lightroom presets can accidentally carry the source photo's absolute
     Temperature/Tint. Applying that absolute WB across a new shoot is a common
-    route to pink or over-warm output. Lite should start from the current
-    photo's AsShot WB, then allow only a small preset/survey style nudge.
-    If the preset does not specify WB, leave Temperature/Tint as None so
-    Lightroom keeps native As-Shot camera WB.
+    route to pink or over-warm output. Lite bounds the preset's uncalibrated
+    style delta to (±300K, ±5 Tint) while fully preserving the user's explicit
+    Style Survey calibration (up to ±1000K, ±10 Tint) on top of the camera's
+    native AsShot WB.
+    If the preset does not specify WB and the survey has no WB offset, leave
+    Temperature/Tint as None so Lightroom keeps native As-Shot camera WB.
     """
+    survey_offsets = photo_preset.get("_survey_offsets")
+    survey_offsets_dict = survey_offsets if isinstance(survey_offsets, dict) else {}
+    temp_offset = float(survey_offsets_dict.get("Temperature") or 0.0)
+    tint_offset = float(survey_offsets_dict.get("Tint") or 0.0)
+
     preset_temperature = photo_preset.get("Temperature")
     if preset_temperature is not None:
-        temp_style = float(preset_temperature) - float(LR_DEFAULTS["Temperature"])
+        raw_preset_temp = float(preset_temperature) - temp_offset
+        temp_style = raw_preset_temp - float(LR_DEFAULTS["Temperature"])
         temp_style = max(
             -_MODE_B_MAX_PRESET_TEMP_STYLE_DELTA,
             min(_MODE_B_MAX_PRESET_TEMP_STYLE_DELTA, temp_style),
         )
-        photo_preset["Temperature"] = float(as_shot_wb[0]) + temp_style
+        photo_preset["Temperature"] = float(as_shot_wb[0]) + temp_style + temp_offset
 
     preset_tint = photo_preset.get("Tint")
     if preset_tint is not None:
-        tint_style = float(preset_tint) - float(LR_DEFAULTS["Tint"])
+        raw_preset_tint = float(preset_tint) - tint_offset
+        tint_style = raw_preset_tint - float(LR_DEFAULTS["Tint"])
         tint_style = max(
             -_MODE_B_MAX_PRESET_TINT_STYLE_DELTA,
             min(_MODE_B_MAX_PRESET_TINT_STYLE_DELTA, tint_style),
         )
-        photo_preset["Tint"] = float(as_shot_wb[1]) + tint_style
+        photo_preset["Tint"] = float(as_shot_wb[1]) + tint_style + tint_offset
 
 
 def process_shoot_with_model(

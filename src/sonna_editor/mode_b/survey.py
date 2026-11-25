@@ -147,18 +147,24 @@ assert set(QUESTIONS.keys()) == set(QUESTION_SLIDER_MAP.keys()), (
 )
 
 
-def compute_offset(key: str, answer: int) -> float:
+def compute_offset(key: str, answer: float | int) -> float:
     """Map an answer (-2..+2) to the slider offset for `key`."""
     if key not in OFFSET_MAGNITUDES:
         raise KeyError(f"Unknown survey key: {key!r}")
-    if answer not in VALID_ANSWERS:
+    try:
+        val_float = float(answer)
+    except (TypeError, ValueError) as exc:
         raise ValueError(
-            f"Invalid answer {answer!r} for {key}; must be one of {VALID_ANSWERS}"
+            f"Invalid answer {answer!r} for {key}; must be a number between -2 and +2"
+        ) from exc
+    if not (-2.0 <= val_float <= 2.0):
+        raise ValueError(
+            f"Invalid answer {answer!r} for {key}; must be between -2 and +2"
         )
-    return float(answer) * (OFFSET_MAGNITUDES[key] / 2.0)
+    return val_float * (OFFSET_MAGNITUDES[key] / 2.0)
 
 
-def normalise_lite_answers(answers: dict[str, int]) -> dict[str, int]:
+def normalise_lite_answers(answers: dict[str, float | int]) -> dict[str, float | int]:
     """Validate Lite survey answers and return all six answers in display order."""
     expected = set(str(key) for key in QUESTION_ORDER)
     missing = expected - set(answers.keys())
@@ -169,13 +175,19 @@ def normalise_lite_answers(answers: dict[str, int]) -> dict[str, int]:
     if extra:
         raise ValueError(f"Unknown survey keys: {sorted(extra)}")
 
-    normalised: dict[str, int] = {}
+    normalised: dict[str, float | int] = {}
     for key, value in answers.items():
-        if value not in VALID_ANSWERS:
+        try:
+            val_float = float(value)
+        except (TypeError, ValueError) as exc:
             raise ValueError(
-                f"Value for {key!r} must be one of {VALID_ANSWERS}, got {value}"
+                f"Value for {key!r} must be a number in range [-2, +2], got {value!r}"
+            ) from exc
+        if not (-2.0 <= val_float <= 2.0):
+            raise ValueError(
+                f"Value for {key!r} must be in range [-2, +2], got {value!r}"
             )
-        normalised[key] = value
+        normalised[key] = int(val_float) if val_float.is_integer() else round(val_float, 4)
 
     return {key: normalised[key] for key in QUESTION_ORDER}
 
@@ -228,7 +240,7 @@ def parse_answers_string(s: str) -> dict[str, int]:
 
 
 def build_survey_payload(
-    answers: dict[str, int],
+    answers: dict[str, float | int],
     *,
     created: _dt.datetime | None = None,
 ) -> dict:

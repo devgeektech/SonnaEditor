@@ -11,12 +11,19 @@ from fastapi import APIRouter, HTTPException
 
 from sonna_editor import config
 from sonna_editor.api.models import (
+    DiscoveredCatalog,
     FolderScanRequest,
     FolderScanResponse,
     RawFileEntry,
     RecentFolder,
 )
-from sonna_editor.data.catalog import CatalogError, connect_catalog, find_edited_photos
+from sonna_editor.data.catalog import (
+    CatalogError,
+    connect_catalog,
+    discover_lightroom_catalogs,
+    find_edited_photos,
+    inspect_catalog,
+)
 
 router = APIRouter()
 
@@ -95,6 +102,7 @@ def _scan_catalog(catalog_path: Path, raw_path_str: str) -> FolderScanResponse:
 
     try:
         raws = raw_paths_from_catalog(catalog_path)
+        inspect_data = inspect_catalog(catalog_path)
     except CatalogError as exc:
         return FolderScanResponse(
             folder_path=raw_path_str,
@@ -113,6 +121,10 @@ def _scan_catalog(catalog_path: Path, raw_path_str: str) -> FolderScanResponse:
             files=[],
             is_valid=False,
             error="No available RAW files found in this catalog",
+            catalog_size_bytes=inspect_data.get("size_bytes"),
+            catalog_size_formatted=inspect_data.get("size_formatted"),
+            folders=inspect_data.get("folders", []),
+            collections=inspect_data.get("collections", []),
         )
 
     truncated = len(raws) > _MAX_FILES_RETURNED
@@ -127,6 +139,10 @@ def _scan_catalog(catalog_path: Path, raw_path_str: str) -> FolderScanResponse:
         error=None,
         truncated=truncated,
         xmp_conflict_count=xmp_conflict_count,
+        catalog_size_bytes=inspect_data.get("size_bytes"),
+        catalog_size_formatted=inspect_data.get("size_formatted"),
+        folders=inspect_data.get("folders", []),
+        collections=inspect_data.get("collections", []),
     )
 
 
@@ -247,3 +263,18 @@ def recent_folders() -> list[RecentFolder]:
         except (KeyError, TypeError, ValueError):
             continue
     return out
+
+
+@router.get("/catalogs", response_model=list[DiscoveredCatalog])
+def list_discovered_catalogs() -> list[DiscoveredCatalog]:
+    """Scan and return all Lightroom Classic catalogs detected on this system."""
+    cats = discover_lightroom_catalogs()
+    return [
+        DiscoveredCatalog(
+            name=c["name"],
+            path=c["path"],
+            size=c.get("size", ""),
+            size_bytes=int(c.get("size_bytes", 0)),
+        )
+        for c in cats
+    ]

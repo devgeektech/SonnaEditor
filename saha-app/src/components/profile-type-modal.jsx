@@ -222,12 +222,13 @@ export function ChooseProfileTypeModal({
         </div>
 
         {/* Modal Body: Two Side-by-Side Cards */}
-        <div style={{
-          padding: '24px 28px 32px',
-          display: 'grid',
-          gridTemplateColumns: '1fr 1fr',
-          gap: 20,
-        }}>
+        <div
+          className="saha-2col-grid"
+          style={{
+            padding: '24px 28px 32px',
+            gap: 20,
+          }}
+        >
           {/* Card 1: Lite Personal AI Profile */}
           <div
             onClick={handleSelectLite}

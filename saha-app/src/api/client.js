@@ -22,7 +22,23 @@ async function request(path, init = {}) {
   try {
     resp = await fetch(url, { ...init, headers });
   } catch (e) {
-    throw new ApiError(`Network error: ${e.message}`, 0, null);
+    // If Electron main process can revive a stopped backend, recover and retry once.
+    if (typeof window !== 'undefined' && typeof window.saha?.ensureBackend === 'function') {
+      try {
+        console.warn(`[API] ${init.method || 'GET'} ${path} connection failed; restoring backend...`);
+        const recovered = await window.saha.ensureBackend();
+        if (recovered) {
+          resp = await fetch(url, { ...init, headers });
+        }
+      } catch (retryErr) {
+        console.error(`[API NETWORK ERROR] ${init.method || 'GET'} ${path} - Failed to connect to backend: ${retryErr.message}`);
+        throw new ApiError(`Network error: ${retryErr.message}`, 0, null);
+      }
+    }
+    if (!resp) {
+      console.error(`[API NETWORK ERROR] ${init.method || 'GET'} ${path} - Failed to connect to backend: ${e.message}`);
+      throw new ApiError(`Network error: ${e.message}`, 0, null);
+    }
   }
 
   let body = null;
@@ -33,6 +49,7 @@ async function request(path, init = {}) {
 
   if (!resp.ok) {
     const detail = (body && typeof body === 'object' && (body.detail || body.error)) || resp.statusText;
+    console.error(`[API ERROR] ${init.method || 'GET'} ${path} (${resp.status}): ${detail}`);
     throw new ApiError(String(detail), resp.status, body);
   }
   return body;
@@ -56,6 +73,7 @@ export const createLiteProfile = (req) =>
 export const scanFolder = (folder_path, source_type = 'folder') =>
   request('/api/folders/scan', { method: 'POST', body: JSON.stringify({ folder_path, source_type }) });
 export const listRecentFolders = () => request('/api/folders/recent');
+export const listCatalogs = () => request('/api/catalogs');
 
 // ── Process / jobs ─────────────────────────────────────────
 export const startProcess = (req) =>

@@ -27,6 +27,8 @@ export function HomeView({
   onPauseAll,
   onResumeAll,
   onDismissCompleted,
+  isUploadsOpen,
+  onToggleUploadsOpen,
 }) {
   const isLight = theme === 'light';
   const currentJob = projects?.currentJob || null;
@@ -94,6 +96,8 @@ export function HomeView({
       onPauseAll={onPauseAll}
       onResumeAll={onResumeAll}
       onDismissCompleted={onDismissCompleted}
+      isUploadsOpen={isUploadsOpen}
+      onToggleUploadsOpen={onToggleUploadsOpen}
     >
       <style>{`
         @keyframes pulseDot {

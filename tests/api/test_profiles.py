@@ -496,6 +496,32 @@ def test_lite_create_rejects_non_xmp_preset(
     assert len(fake_mode_b_builder) == 0
 
 
+def test_lite_create_rejects_duplicate_profile_name(
+    client: TestClient, isolated_paths: dict[str, Path],
+    tmp_path: Path, fake_mode_b_builder,
+) -> None:
+    """Duplicate profile names (case-insensitive) are rejected."""
+    _make_ckpt(isolated_paths["foundation_repo"], "foundation.ckpt")
+    preset = _make_preset(tmp_path / "p.xmp")
+
+    # Seed an existing profile named "Wedding Mood"
+    ckpts = isolated_paths["checkpoints_dir"]
+    _make_ckpt(ckpts, "model-v0.1.0.ckpt", sidecar={
+        "profile_id": "wedding-mood-1",
+        "display_name": "Wedding Mood",
+    })
+
+    # Attempt to create with same name in different case
+    resp = client.post("/api/profiles/lite", json={
+        "profile_name": " wedding mood ",
+        "preset_path": str(preset),
+        "survey_answers": _valid_survey_answers(),
+    })
+    assert resp.status_code == 400
+    assert "already exists" in resp.json()["detail"]
+    assert len(fake_mode_b_builder) == 0
+
+
 # ── /api/profiles/personal ─────────────────────────────────────────────────
 
 def test_personal_create_starts_train_job(
@@ -544,3 +570,27 @@ def test_personal_create_rejects_relative_input_dir(client: TestClient) -> None:
 
     assert resp.status_code == 400
     assert "absolute" in resp.json()["detail"]
+
+
+def test_personal_create_rejects_duplicate_profile_name(
+    client: TestClient,
+    isolated_paths: dict[str, Path],
+    tmp_path: Path,
+) -> None:
+    """Personal profile request must have a unique name."""
+    input_dir = tmp_path / "raw-xmp"
+    input_dir.mkdir()
+
+    ckpts = isolated_paths["checkpoints_dir"]
+    _make_ckpt(ckpts, "model-v0.1.0.ckpt", sidecar={
+        "profile_id": "existing-profile-1",
+        "display_name": "Sonna Events",
+    })
+
+    resp = client.post("/api/profiles/personal", json={
+        "profile_name": "  sonna events  ",
+        "input_dir": str(input_dir),
+    })
+
+    assert resp.status_code == 400
+    assert "already exists" in resp.json()["detail"]

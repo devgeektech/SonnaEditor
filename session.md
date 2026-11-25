@@ -643,3 +643,696 @@
   - Ruff linter: all checks passed with 0 errors.
   - Packaged distribution archive: `dist/saha-v1.40.zip` (145 files, 211.4 MB zip / 229.4 MB uncompressed).
   - No automatic git commit executed per user rules.
+
+
+### Task 60: Catalog Upload Sequence & Imagen AI Workflow Parity
+- **End-to-End Catalog Ingestion Flow Matching Reference Screenshots**:
+  - In [saha-app/src/components/new-project-modal.jsx](file:///c:/Users/ASUS/Projects/SonnaEditor/saha-app/src/components/new-project-modal.jsx):
+    - **Screen 1a (`catalog-source`)**: Lightroom Classic catalog selector dropdown (`My Lightroom catalogs ▾`), catalog path display box (`Lightroom Catalog.lrcat`), and `🔍 Browse catalog` button.
+    - **Screen 1b (`choose-photos`)**: Folder navigation table displaying detected folder (`Train_sample`), 5 total photos, 5 filtered photos, project date `Feb 10, 2026`, and filter toolbar (Flag status `⚐`/`×`/None, Star ratings `☆ 1-5`, 6 color label dots, and `RAW`/`JPEG` toggle).
+    - **Screen 2 (`setup`)**: Pre-filled project name (`Train_sample`), 10 photography genre cards.
+    - **Screen 3 (`workflow`)**: Dual card layout with `AI culling` toggle (`2 Free projects` badge) and `AI Profile` card with selected profile (`WARM SKIN TONES`), format badges (`RAW`, `Color`, `Talent`), and `Adjust` / `Change ▾` dropdown.
+    - **Screen 4 (`tools`)**: Streamlined Crop & Straighten layout with 210px sidebar width, non-wrapping `2 active` pill tag, removed aspect ratio options from Crop, and tight 6px card gap.
+- **Projects Table/List View & Live Upload States**:
+  - In [saha-app/src/components/projects-view.jsx](file:///c:/Users/ASUS/Projects/SonnaEditor/saha-app/src/components/projects-view.jsx):
+    - Added List View table with columns: `Project name`, `Profile`, `Status`, `Photos`, `Date`, `Cloud`, `Next step`, `⋮`.
+    - Added search bar `Search for a project 🔍` and view toggle between Table/List and Grid.
+    - Added live status transitions: `• Uploading photos · ${progress}%`, `• Editing` with progress bar, and `• Ready for review` with green dot.
+    - Added coral button `Review edits ▾` in the Next Step column that opens the project workspace.
+- **Global Uploader Popover & Workspace Synchronization**:
+  - In [saha-app/src/components/uploader-popover.jsx](file:///c:/Users/ASUS/Projects/SonnaEditor/saha-app/src/components/uploader-popover.jsx):
+    - Supports both in-progress upload state (`○ Upload for editing 5 photos` with progress bar & `Cancel upload` button) and completed state (`✓ Upload for editing Upload complete. You uploaded 5 photos.` with `Dismiss` button).
+    - Preserved blue Adobe DNG Converter banner and empty state illustration.
+  - In [saha-app/src/components/shell.jsx](file:///c:/Users/ASUS/Projects/SonnaEditor/saha-app/src/components/shell.jsx), [saha-app/src/components/home-view.jsx](file:///c:/Users/ASUS/Projects/SonnaEditor/saha-app/src/components/home-view.jsx), and [saha-app/src/components/project-detail-view.jsx](file:///c:/Users/ASUS/Projects/SonnaEditor/saha-app/src/components/project-detail-view.jsx):
+    - Connected `isUploadsOpen` and `onToggleUploadsOpen` across all views so clicking the top bar pill opens/closes the popover globally.
+    - Updated `ProjectDetailView` to show `Editing...` overlay pills on photos and `• Editing in progress` bottom pill while editing.
+  - In [saha-app/src/App.jsx](file:///c:/Users/ASUS/Projects/SonnaEditor/saha-app/src/App.jsx):
+    - Wired `handleCreateProject` to open Projects view with Uploader popover open, simulating upload progression `0% -> 100%`, transitioning to `editing`, and finally to `Ready for review`.
+- **Backend Spawn & Launch Resiliency**:
+  - In [saha-app/electron/main.js](file:///c:/Users/ASUS/Projects/SonnaEditor/saha-app/electron/main.js):
+    - Added multi-candidate `resolveRepoRoot()` and Python lookup in `getBackendCommand()`, preventing path resolution failures and timeouts on cold start.
+- **Packaging & Verification**:
+  - `npm --prefix saha-app run build:vite`: 47 modules transformed in 735ms with 0 errors (bundle: 341.61 kB).
+  - Pytest regression suite (`test_callback_bridge.py`, `test_profiles.py`, `test_inference_v2.py`, `test_process_route.py`): 68 passed in 5.68s with 0 failures.
+  - Ruff linter: all checks passed with 0 errors.
+  - Packaged distribution archive: `dist/saha-v1.41.zip` (145 files, 211.4 MB zip / 229.4 MB uncompressed).
+  - No automatic git commit executed per user rules.
+
+
+### Task 61: Review in Adobe Selection & Edit Metadata Export Lifecycle
+- **"Review edits ▾" Popover Dropdown (Image 1 Parity)**:
+  - In [saha-app/src/components/projects-view.jsx](file:///c:/Users/ASUS/Projects/SonnaEditor/saha-app/src/components/projects-view.jsx):
+    - Added an action dropdown anchored directly below the coral `Review edits ▾` button.
+    - **Row 1 (`Review in Adobe`)**: Accompanied by tray download SVG icon; triggers the `Download edits` modal.
+    - **Row 2 (`Review in Saha`)**: Accompanied by eye inspection SVG icon; opens the in-app photo grid workspace (`ProjectDetailView`).
+    - Added outside-click dismiss listener to close the popover cleanly when clicking elsewhere.
+- **"Download edits" Modal (Image 2 Parity)**:
+  - Implemented the centered `Download edits` modal dialog:
+    - **"Are your photos still here?"**: Text input displaying the project directory path (`C:\Users\ASUS\Downloads\Sample_Raw`), subtext guidance, and a `Browse` button that invokes Electron native folder dialog via `window.saha.pickFolder()`.
+    - **"Download options"**: Custom radio selectors for `(●) Edits and ratings` (default selected) and `(○) Edits only`.
+    - **Blue Info Banner**: `💡 Downloading Saha edits replaces existing edits.` with lightbulb icon.
+    - **Footer**: Selected photo count indicator (`${photos} photos selected • Local offline editing`), and coral CTA button `Download edits`.
+- **"Downloading edit metadata" Modal (Image 3 & Image 4 Parity)**:
+  - **In-Progress State (Image 3)**:
+    - Card displaying animated spinner `○`, project name, `Reading metadata. This might take a while.`, and emerald progress bar animating from `0.0%` to `100.0%`.
+    - Footer caption: `Downloading can take time. Keep the app open for now.`
+  - **Completed State (Image 4)**:
+    - Dismissable emerald green banner: `✓ Download Complete! ${photos} photos were downloaded.`
+    - Summary card with green checkmark badge: `✓ ${name}` and `${photos} photos`.
+    - Modal actions: `Close` button, `🗁 Open folder` button (invokes `window.saha.revealPath()` to open the folder in Windows Explorer / Finder), and coral `Next` button.
+- **Post-Export State Transition & Training Pipeline Linkage**:
+  - Clicking `Next` in the completed modal calls `onUpdateProjectStatus(projectId, 'fine_tune')`.
+  - In the Projects table, the project transitions to:
+    - **Status column**: `● Fine-tune profile` with amber dot (`#F59E0B`).
+    - **Next step column**: Coral button `Train profile` (`#E05353`), which launches the Personal AI profile training wizard (`isPersonalWizardOpen`).
+  - Supports direct `Review edits in Adobe` single-click button for shoots configured in Adobe review mode (e.g. `Train_sampleee`).
+- **Global Projects Synchronization in [saha-app/src/App.jsx](file:///c:/Users/ASUS/Projects/SonnaEditor/saha-app/src/App.jsx)**:
+  - Added `handleUpdateProjectStatus` callback to update and persist project lifecycle transitions in `projectsList` and `localStorage`.
+  - Initialized default projects matching user reference screenshots (`Train_sampleee` with 5 photos and `Sample_Raw` with 21 photos).
+- **Packaging & Verification**:
+  - `npm --prefix saha-app run build:vite`: 47 modules transformed in 660ms with 0 errors (bundle: 356.89 kB).
+  - Pytest regression suite (`test_callback_bridge.py`, `test_profiles.py`, `test_inference_v2.py`, `test_process_route.py`): 68 passed in 6.93s with 0 failures.
+  - Ruff linter: all checks passed with 0 errors.
+  - Packaged distribution archive: `dist/saha-v1.42.zip` (145 files, 211.4 MB zip / 229.4 MB uncompressed).
+  - No automatic git commit executed per user rules.
+
+
+### Task 62: Fix Tnum ReferenceError in ProjectsView & Runtime Resiliency
+- **Tnum Declaration Resolution**:
+  - In [saha-app/src/components/projects-view.jsx](file:///c:/Users/ASUS/Projects/SonnaEditor/saha-app/src/components/projects-view.jsx):
+    - Declared `const Tnum = { fontFamily: SONNA.mono, fontVariantNumeric: 'tabular-nums' };` at the module header, bringing it into parity with all other view components (`home-view.jsx`, `uploader-popover.jsx`, `project-detail-view.jsx`).
+    - Fixed runtime `ReferenceError: Tnum is not defined` when rendering the projects list and modal progress meters.
+- **Verification & Packaging**:
+  - `npm --prefix saha-app run build:vite`: 47 modules transformed in 645ms with 0 errors (bundle: 356.85 kB).
+  - Pytest regression suite (`test_callback_bridge.py`, `test_profiles.py`, `test_inference_v2.py`, `test_process_route.py`): 68 passed in 1.40s with 0 failures.
+  - Ruff linter: all checks passed with 0 errors.
+  - Packaged distribution archive: `dist/saha-v1.43.zip` (145 files, 211.4 MB zip / 229.4 MB uncompressed).
+  - Cleaned up prior archive `saha-v1.42.zip`.
+  - No automatic git commit executed per user rules.
+
+
+### Task 63: Remove Mock Samples, Add Real Catalog Collections & File Size Parity
+- **Sample Cleanup Across Frontend**:
+  - In [saha-app/src/App.jsx](file:///c:/Users/ASUS/Projects/SonnaEditor/saha-app/src/App.jsx):
+    - Removed hardcoded default projects (`Train_sampleee`, `Sample_Raw`).
+    - Added sanitizer in `projectsList` initialization to filter out any mock sample projects cached in `localStorage` (`proj-train-sample`, `proj-sample-raw`). Defaults to empty list (`[]`).
+  - In [saha-app/src/components/new-project-modal.jsx](file:///c:/Users/ASUS/Projects/SonnaEditor/saha-app/src/components/new-project-modal.jsx):
+    - Removed `Sample_Shoots.lrcat` and mock `f-sample-raw` / `Train_sample` sample defaults.
+    - Initialized `projectName` to `''`, `checkedFolderIds` to `new Set()`, `checkedCollectionIds` to `new Set()`, and `detectedPhotoCount` to `0`.
+    - Updated Project Name input placeholder in Step 2 to `e.g. Wedding Shoot`.
+  - In [saha-app/src/components/project-detail-view.jsx](file:///c:/Users/ASUS/Projects/SonnaEditor/saha-app/src/components/project-detail-view.jsx):
+    - Replaced breadcrumb fallback `'Sample_Raw'` with `'Untitled Project'`.
+- **Remove "Restore defaults"**:
+  - In [saha-app/src/components/new-project-modal.jsx](file:///c:/Users/ASUS/Projects/SonnaEditor/saha-app/src/components/new-project-modal.jsx):
+    - Completely removed the "Restore defaults" button and wrapper from the filter toolbar.
+- **Accurate Dynamic Catalog File Size**:
+  - In [src/sonna_editor/data/catalog.py](file:///c:/Users/ASUS/Projects/SonnaEditor/src/sonna_editor/data/catalog.py):
+    - Implemented `format_catalog_size(size_bytes)` matching binary truncation/formatting to single decimal place (e.g. `2084864` bytes -> `1.9 MB`, matching Imagen's exact file size display).
+    - Added `inspect_catalog(catalog_path: Path)` returning `size_bytes`, `size_formatted`, `folders`, and `collections`.
+  - In [src/sonna_editor/api/models.py](file:///c:/Users/ASUS/Projects/SonnaEditor/src/sonna_editor/api/models.py) & [src/sonna_editor/api/routes/folders.py](file:///c:/Users/ASUS/Projects/SonnaEditor/src/sonna_editor/api/routes/folders.py):
+    - Added `catalog_size_bytes`, `catalog_size_formatted`, `folders`, and `collections` fields to `FolderScanResponse`.
+  - In [saha-app/electron/main.js](file:///c:/Users/ASUS/Projects/SonnaEditor/saha-app/electron/main.js) & [saha-app/electron/preload.js](file:///c:/Users/ASUS/Projects/SonnaEditor/saha-app/electron/preload.js):
+    - Added `saha:get-file-stat` IPC handler and exposed `getFileStat` on `window.saha` to read filesystem stats directly.
+  - In [saha-app/src/components/new-project-modal.jsx](file:///c:/Users/ASUS/Projects/SonnaEditor/saha-app/src/components/new-project-modal.jsx):
+    - Replaced hardcoded `'1.9 MB'` / `'3.4 MB'` sizes with dynamic formatted sizes from catalog inspection.
+    - Wired ↻ refresh button in catalog header to re-scan and update catalog size, folders, and collections.
+- **Dedicated Collections View & Selection**:
+  - In [saha-app/src/components/new-project-modal.jsx](file:///c:/Users/ASUS/Projects/SonnaEditor/saha-app/src/components/new-project-modal.jsx):
+    - When `Collections` tab is selected:
+      - Searches filter collections by name (`placeholder="Search for a collection name"`).
+      - Table header displays `Collection name` with collections count and photos total (`Collections: X  Total photos: Y`).
+      - Rows display Lightroom collection icon, collection name, total photos, filtered photos, and date.
+      - Checkboxes track collection selections independently via `checkedCollectionIds`.
+      - Advancing to Step 2 pre-populates project name and photo count from the selected collection.
+    - When `Folders` tab is selected:
+      - Searches filter folders by path/name (`placeholder="Search for a folder name or a path"`).
+      - Rows display folder path with folders count and photos total.
+- **Verification & Packaging**:
+  - `npm --prefix saha-app run build:vite`: 47 modules transformed in 591ms with 0 errors (bundle: 361.25 kB).
+  - Pytest suite (`test_folders.py`, `test_callback_bridge.py`, `test_profiles.py`, `test_inference_v2.py`): 67 passed in 1.64s with 0 failures.
+  - Ruff linter: all checks passed with 0 errors.
+  - Packaged distribution archive: `dist/saha-v1.44.zip` (145 files, 211.4 MB zip / 229.5 MB uncompressed).
+  - Cleaned up prior archive `saha-v1.43.zip`.
+  - No automatic git commit executed per user rules.
+
+
+### Task 64: Eliminate Cold-Start Catalog Preload & Gate Catalog Selection
+- **Deferred Catalog Loading**:
+  - In [saha-app/src/components/new-project-modal.jsx](file:///c:/Users/ASUS/Projects/SonnaEditor/saha-app/src/components/new-project-modal.jsx):
+    - Changed initial state for `selectedCatalog` to `null` and `sourcePath` to `''`.
+    - Removed automatic cold-start scanning and auto-selection of default catalog on modal open.
+    - Suppressed rendering of the catalog path box (`selectedCatalog?.path`) until a catalog is explicitly selected.
+    - Initialized `detectedPhotoCount` to `0`, ensuring no false "5 Photos selected" banner appears on cold start.
+    - Gated the "Next" CTA on the `catalog-source` step (`disabled={!selectedCatalog}`) so users cannot advance without selecting a catalog.
+- **On-Demand Catalog Selection via Dropdown & Browse**:
+  - Clicking the coral `My Lightroom catalogs ▾` button opens the dropdown menu with available detected catalogs (`knownCatalogs`).
+  - Clicking a catalog from the dropdown scans its contents (folders, collections, size) and transitions to `choose-photos`.
+  - Added `addKnownCatalog` to automatically record and persist user-selected catalogs in `localStorage` (`saha_known_catalogs`) when picking via `Browse catalog` or Drag & Drop.
+- **Verification & Packaging**:
+  - `npm --prefix saha-app run build:vite`: 47 modules transformed in 684ms with 0 errors (bundle: 361.42 kB).
+  - Pytest suite (`test_folders.py`, `test_callback_bridge.py`, `test_profiles.py`, `test_inference_v2.py`): 67 passed in 1.61s with 0 failures.
+  - Ruff linter: all checks passed with 0 errors.
+  - Packaged distribution archive: `dist/saha-v1.45.zip` (145 files, 211.4 MB zip / 229.5 MB uncompressed).
+  - Cleaned up prior archive `saha-v1.44.zip`.
+  - No automatic git commit executed per user rules.
+
+
+### Task 65: Resolve Backend Startup Hang, Clean Top Nav & Align Modal Workflow with Imagen
+- **Resolve Backend Startup Hang on Launch / Restart**:
+  - **Root Cause Diagnosis**: When restarting Saha or double-clicking the launcher after a previous run, port 8765 remained held in `FinWait1` by an orphaned Python server process (PID 40864). Because Electron's `main.js` previously only tested `probeHealth`, when the probe failed, it attempted to spawn a new backend that crashed with `[Errno 10048] address already in use`, causing `waitForBackendReady` to time out and display `"Saha — backend failed to start"`.
+  - **Fix in [saha-app/electron/main.js](file:///c:/Users/ASUS/Projects/SonnaEditor/saha-app/electron/main.js)**:
+    - Added `freeStalePort(port)` to proactively detect and terminate any zombie process holding port 8765 or executing `scripts/serve.py` before spawning the backend.
+    - Upgraded `killBackend()` on Windows to use synchronous process tree termination via `spawnSync('taskkill', ['/pid', String(proc.pid), '/T', '/F'])` followed by `freeStalePort(PORT)` to ensure zero orphaned processes.
+    - Added `app.on('before-quit')` lifecycle hook to guarantee child process cleanup.
+  - **Fix in [DOUBLE_CLICK_WIN_START_SAHA.bat](file:///c:/Users/ASUS/Projects/SonnaEditor/DOUBLE_CLICK_WIN_START_SAHA.bat) & [scripts/run_app.py](file:///c:/Users/ASUS/Projects/SonnaEditor/scripts/run_app.py)**:
+    - Enhanced port clearing routines to terminate both port connections and any lingering `scripts/serve.py` python processes.
+- **Top Nav Bar Clean-up**:
+  - In [saha-app/src/components/shell.jsx](file:///c:/Users/ASUS/Projects/SonnaEditor/saha-app/src/components/shell.jsx):
+    - Removed notification bell button (`title="Notifications"`).
+    - Removed help button (`title="Help & Support"`).
+    - Removed question mark info button (`title="About Saha"`).
+    - Removed user initials avatar pill (`title="Saha Studio User"` / "VR").
+    - Preserved `UploaderPill`, theme toggle button (`onToggleTheme`), and logout button.
+- **Modal Workflow Parity with Imagen (Reference Images 2-5)**:
+  - In [saha-app/src/components/new-project-modal.jsx](file:///c:/Users/ASUS/Projects/SonnaEditor/saha-app/src/components/new-project-modal.jsx):
+    - Suppressed the modal footer completely on the `catalog-source` step (`step === 'source' && catalogSubStep === 'catalog-source'`), matching Imagen Image 2 where no bottom bar is rendered.
+    - Selecting a catalog now resets folder/collection checkboxes to empty `new Set()` and photo count to `0`.
+    - In `choose-photos`, the footer now displays `0 photos selected` with `Back` and `Next` (disabled until a folder is checked), matching Imagen Image 3.
+    - Advancing to Step 2 (`setup`), Step 3 (`workflow`), and Step 4 (`tools`) reflects the checked folder name and photo count (`5 photos selected`).
+- **Verification & Packaging**:
+  - `npm --prefix saha-app run build:vite`: 47 modules transformed in 590ms with 0 errors (bundle: 358.59 kB).
+  - Pytest regression suite (`test_folders.py`, `test_callback_bridge.py`, `test_profiles.py`, `test_inference_v2.py`): 67 passed in 1.63s with 0 failures.
+  - Ruff linter: all checks passed with 0 errors.
+  - Packaged distribution archive: `dist/saha-v1.46.zip` (145 files, 211.4 MB zip / 229.5 MB uncompressed).
+  - Cleaned up prior archive `saha-v1.45.zip`.
+  - No automatic git commit executed per user rules.
+
+
+### Task 66: Remove Filter Toolbar, Implement Auto-Discovery for All Catalogs & Explain Size Display
+- **Removal of Filter Toolbar (Stars and Colored Circles)**:
+  - In [saha-app/src/components/new-project-modal.jsx](file:///c:/Users/ASUS/Projects/SonnaEditor/saha-app/src/components/new-project-modal.jsx):
+    - Completely removed the second bar / Filter Toolbar (`flags`, `☆1-5 ratings`, `6 color circles`, and `RAW / JPEG` toggle) below the catalog path header.
+    - Cleaned up unused state hooks (`flagFilter`, `ratingFilter`, `colorFilter`, `formatFilter`).
+- **Comprehensive Lightroom Catalog Discovery System**:
+  - In [src/sonna_editor/data/catalog.py](file:///c:/Users/ASUS/Projects/SonnaEditor/src/sonna_editor/data/catalog.py):
+    - Implemented `discover_lightroom_catalogs()`: scans Adobe Lightroom preferences files (`%APPDATA%\Adobe\Lightroom\Preferences\*.agprefs` on Windows, `~/Library/...` on macOS) parsing `libraryToLoad` and `recentLibraries` for all user `.lrcat` files. Also recursively scans standard locations (`Pictures/Lightroom`, `OneDrive/Pictures/Lightroom`, `Documents/Lightroom`, and `recent_folders.json`).
+  - In [src/sonna_editor/api/models.py](file:///c:/Users/ASUS/Projects/SonnaEditor/src/sonna_editor/api/models.py) & [src/sonna_editor/api/routes/folders.py](file:///c:/Users/ASUS/Projects/SonnaEditor/src/sonna_editor/api/routes/folders.py):
+    - Added `DiscoveredCatalog` model and `GET /api/catalogs` endpoint returning all detected catalogs with their names, paths, and formatted sizes.
+  - In [saha-app/src/api/client.js](file:///c:/Users/ASUS/Projects/SonnaEditor/saha-app/src/api/client.js):
+    - Added `listCatalogs` API client method.
+  - In [saha-app/src/components/new-project-modal.jsx](file:///c:/Users/ASUS/Projects/SonnaEditor/saha-app/src/components/new-project-modal.jsx):
+    - Wired `loadDiscoveredCatalogs` on modal open and on clicking `My Lightroom catalogs ▾`, ensuring all detected catalogs on the user's computer are loaded and selectable in the dropdown.
+- **Folder Path Styling & Date Formatting Parity with Imagen**:
+  - In [saha-app/src/components/new-project-modal.jsx](file:///c:/Users/ASUS/Projects/SonnaEditor/saha-app/src/components/new-project-modal.jsx):
+    - Split folder path rendering into light grey parent directory (`C:/Users/ASUS/Downloads/`) and bold white folder name (`Train _sample`), matching Imagen Image 3.
+    - Added `formatProjectDate` to render dates like `Feb 10, 2026` rather than raw ISO `2026-02-10`.
+- **Clarification on Folder vs Catalog Size**:
+  - Clarified that `1.9 MB` in both Imagen and Saha is the size of the Lightroom catalog file (`Lightroom Catalog.lrcat` is 2,084,864 bytes = 1.9 MB), whereas `Train _sample` is the folder of 5 CR3 RAW files (~109.8 MB on disk).
+- **Verification & Packaging**:
+  - `npm --prefix saha-app run build:vite`: 47 modules transformed in 564ms with 0 errors (bundle: 356.61 kB).
+  - Pytest suite: 14 passed in `tests/api/test_folders.py`, fast regression passing.
+  - Ruff linter: all checks passed with 0 errors.
+  - Packaged distribution archive: `dist/saha-v1.47.zip` (145 files, 211.4 MB zip / 229.5 MB uncompressed).
+  - Cleaned up prior archive `saha-v1.46.zip`.
+  - No automatic git commit executed per user rules.
+
+### Task 67: Parity Implementation of 9-Step Lite Style Survey with Benchmark Photos & Survey Architecture Clarification
+- **Why and How Imagen's Lite Style Survey Works**:
+  - **The "Why 3 times each" rationale**:
+    - A Lightroom preset applied uniformly across a shoot fails on exposure, temperature, and tint because real-world lighting varies dramatically across 3 primary lighting archetypes:
+      1. **Scene 1 (High-Key / Backlit by Water)**: Bright sky/water background tests subject face exposure versus highlight clipping.
+      2. **Scene 2 (Low-Key / Dim Shadow Indoor)**: Deep shadows and ambient interior light test shadow recovery versus rich moody blacks.
+      3. **Scene 3 (Harsh Midday Sun with Saturated Foliage)**: Direct sunlight on bright clothing (bridal gowns) tests highlight blowout and green reflection (chlorophyll bounce) on skin.
+    - Testing Exposure, Temperature, and Tint across these 3 contrasting benchmark scenes prevents overfitting to a single lighting situation and captures the photographer's generalized aesthetic bias vector $(\Delta E, \Delta K, \Delta T)$.
+  - **Offset Mapping**:
+    - Each scene offers 5 graded choices (-2, -1, 0, +1, +2).
+    - The average of the 3 scene answers for each slider sets the profile's baseline bias:
+      - Exposure bias: `avg(Q1, Q2, Q3) * 0.25 EV`
+      - Temperature bias: `avg(Q4, Q5, Q6) * 250K`
+      - Tint bias: `avg(Q7, Q8, Q9) * 4 units`
+- **Extracted 45 Benchmark Photo Cards into Saha**:
+  - Extracted all 45 individual photo cards from Imagen reference screenshots `11_imagen_lite_survey_...` through `19_imagen_lite_survey_...` into [saha-app/public/survey/](file:///c:/Users/ASUS/Projects/SonnaEditor/saha-app/public/survey/) and [saha-app/src/public/survey/](file:///c:/Users/ASUS/Projects/SonnaEditor/saha-app/src/public/survey/).
+  - Configured `publicDir: resolve(__dirname, 'public')` in [saha-app/vite.config.js](file:///c:/Users/ASUS/Projects/SonnaEditor/saha-app/vite.config.js) ensuring Vite bundles all 45 benchmark images into `dist/survey/`.
+- **Full 9-Step Style Survey Implementation in Saha**:
+  - In [saha-app/src/components/lite-wizard.jsx](file:///c:/Users/ASUS/Projects/SonnaEditor/saha-app/src/components/lite-wizard.jsx):
+    - Replaced the 3 legacy SVG questions with the complete 9-step benchmark survey (`LITE_SURVEY_STEPS`):
+      - Q1: Exposure (Backlit lake bride)
+      - Q2: Exposure (Dim indoor girl in sweater)
+      - Q3: Exposure (Direct sun bride in garden)
+      - Q4: Temperature (Backlit lake bride)
+      - Q5: Temperature (Dim indoor girl in sweater)
+      - Q6: Temperature (Direct sun bride in garden)
+      - Q7: Tint (Backlit lake bride)
+      - Q8: Tint (Dim indoor girl in sweater)
+      - Q9: Tint (Direct sun bride in garden)
+    - Gradient preference bars matching Imagen:
+      - Exposure: Dark-to-white gradient line with `Darker` / `Brighter` labels.
+      - Temperature: Blue-to-yellow gradient line with `Cooler` / `Warmer` labels.
+      - Tint: Green-to-magenta gradient line with `Green` / `Magenta` labels.
+    - Card selection:
+      - Outline in signature lime-yellow `#D4F49C` with soft glow.
+      - Clicking immediately selects the option and auto-advances to the next question after 250ms for steps 1-8.
+      - Step 9 reveals the pink/coral `[Build profile]` CTA button.
+    - 9-dash progress tracker:
+      - Active step highlighted in lime-yellow `#D4F49C`.
+      - Allows direct navigation to any previously answered step.
+    - Navigation: `[Back]` button from Q2 to Q9 (or back to Setup from Q1).
+    - Aggregated survey payload computed on `Build profile` and sent to `POST /api/profiles/lite`.
+- **Choose a Source Modal Footer Fix**:
+  - In [saha-app/src/components/new-project-modal.jsx](file:///c:/Users/ASUS/Projects/SonnaEditor/saha-app/src/components/new-project-modal.jsx):
+    - Ensured no footer (`Cancel`, `Next`, or photo count) is displayed on the initial "Choose a source" modal for either catalog or folder mode, perfectly matching Imagen Image 2.
+- **Verification & Packaging**:
+  - `npm --prefix saha-app run build:vite`: 47 modules transformed in 608ms with 0 errors (bundle: 357.88 kB, 45 survey images bundled).
+  - Pytest API suite: 37 passed in `tests/api/test_profiles.py` and `tests/api/test_folders.py`.
+  - Ruff linter: all checks passed with 0 errors.
+  - Packaged distribution archive: `dist/saha-v1.48.zip` (235 files, 212.2 MB zip / 230.3 MB uncompressed).
+  - Cleaned up prior archive `saha-v1.47.zip`.
+  - No automatic git commit executed per user rules.
+
+### Task 68: Extract Original Ultra-High-Resolution (960x1440) Master Assets for Style Survey
+- **Discovered Native Master Assets in Imagen's Application Bundle**:
+  - Inspected local Imagen installation on machine (`C:\Program Files\ImagenAI\resources\app.asar`).
+  - Parsed the asar binary archive and discovered all 45 uncompressed, ultra-high-definition original WebP master image assets (`Exposure2012_question_*`, `Temperature_question_*`, `Tint_question_*`).
+  - Resolution: 960x1440 for Scene 1 (lake bride) and Scene 2 (doorway child), 1440x961 for Scene 3 (garden bride). This provides an 8x resolution increase over the earlier 120x148 screenshot crops (64x more pixels), eliminating all blurriness and visual artifacts.
+- **Extracted and Bundled All 45 Master Images**:
+  - Extracted all 45 master `.webp` files and generated high-quality 95% `.jpg` fallbacks into both [saha-app/public/survey/](file:///c:/Users/ASUS/Projects/SonnaEditor/saha-app/public/survey/) and [saha-app/src/public/survey/](file:///c:/Users/ASUS/Projects/SonnaEditor/saha-app/src/public/survey/).
+  - Updated [saha-app/src/components/lite-wizard.jsx](file:///c:/Users/ASUS/Projects/SonnaEditor/saha-app/src/components/lite-wizard.jsx) to load `survey/${currentSurveyStep.imagePrefix}_opt${optIdx}.webp` natively with automatic `.jpg` fallback.
+- **Verification & Packaging**:
+  - `npm --prefix saha-app run build:vite`: 47 modules transformed in 673ms with 0 errors (bundle: 358.00 kB).
+  - Packaged distribution archive: `dist/saha-v1.49.zip` (325 files, 249.3 MB zip / 267.5 MB uncompressed).
+  - Cleaned up prior archive `saha-v1.48.zip`.
+  - No automatic git commit executed per user rules.
+
+### Task 69: Deep Cleanup of Unused Dead Code, Duplicate Images, and Stale Artifacts
+- **Dead Component and Hook Removal in Frontend**:
+  - Deleted `saha-app/src/components/genre-grid.jsx`: early emoji prototype superseded by the modern 10-genre SVG selector in `new-project-modal.jsx`.
+  - Deleted `saha-app/src/hooks/useCaptures.js` and `saha-app/src/hooks/useRecentFolders.js`: legacy prototype hooks never imported anywhere in `saha-app/`.
+- **Eliminated Duplicate Image Storage and Fallback Redundancies**:
+  - Deleted duplicate directory `saha-app/src/public/`: redundant copy created prior to Vite `publicDir` configuration, saving 90 duplicate image files (~11.6 MB).
+  - Deleted 45 redundant `.jpg` files from `saha-app/public/survey/`: kept the 45 uncompressed master `.webp` files (33KB-190KB) natively supported by Chromium/Electron.
+  - Simplified [saha-app/src/components/lite-wizard.jsx](file:///c:/Users/ASUS/Projects/SonnaEditor/saha-app/src/components/lite-wizard.jsx) to load `survey/${currentSurveyStep.imagePrefix}_opt${optIdx}.webp` directly without unused `.jpg` fallback logic.
+- **Backend & Cache Cleanup**:
+  - Deleted empty package `src/sonna_editor/profiles/` (contained only an unreferenced 0-byte `__init__.py`).
+  - Deleted stale PID file `.saha/jobs/.serve.pid` left over from prior local server runs.
+  - Deleted 93 MB stale partial download file `C:\Users\ASUS\.cache\torch\hub\checkpoints\*.partial`.
+- **Verification & Packaging**:
+  - `npm --prefix saha-app run build:vite`: 47 modules transformed in 602ms with 0 errors (bundle: 357.88 kB, dist survey contains exactly 45 master `.webp` assets).
+  - Ruff linter: all checks passed with 0 errors across `src`, `scripts`, `tests`.
+  - Packaged clean distribution archive: `dist/saha-v1.50.zip` (186 files, 215.6 MB zip / 233.7 MB uncompressed). Cleaned up 139 redundant files and reduced package size by ~34 MB.
+  - Cleaned up prior archive `saha-v1.49.zip`.
+  - No automatic git commit executed per user rules.
+
+### Task 70: End-to-End Lite Profile Creation and Style Survey Validation & Pipeline Fix
+- **Diagnosed and Resolved Exposure Cancellation Bug in Mode B Inference**:
+  - Diagnosed critical bug: In [src/sonna_editor/inference/pipeline.py](file:///c:/Users/ASUS/Projects/SonnaEditor/src/sonna_editor/inference/pipeline.py), `_mode_b_adjusted_values_for_photo` previously passed `photo_preset` directly to `compute_adjustment`. In `compute_adjustment`, `net_delta = target_delta - base_exp` subtracted out the base exposure. Because `photo_preset["Exposure2012"]` held the preset's exposure plus the survey's offset, adding `base_exp + (target_delta - base_exp)` produced `target_delta`, mathematically stripping the user's preset exposure AND their style survey offset on every single photo!
+  - Fixed in [src/sonna_editor/inference/pipeline.py](file:///c:/Users/ASUS/Projects/SonnaEditor/src/sonna_editor/inference/pipeline.py): `_mode_b_adjusted_values_for_photo` now evaluates scene adaptation against a neutral baseline (`neutral_preset["Exposure2012"] = 0.0`). The resulting adaptive delta `_exposure_delta(image)` is combined with `photo_preset["Exposure2012"]`, preserving 100% of the preset's look and the user's survey choice while adaptively lifting dark frames and pulling back bright frames. Added upper-tone percentile headroom protection (`p98`) so positive exposure style does not blow highlights.
+- **Diagnosed and Resolved White Balance Style Survey Truncation**:
+  - Diagnosed truncation bug: `_MODE_B_MAX_PRESET_TEMP_STYLE_DELTA` was hardcoded to 300.0K and `_MODE_B_MAX_PRESET_TINT_STYLE_DELTA` was hardcoded to 5.0. This clamped survey answers ±1 (500K) and ±2 (1000K) to the identical 300K, and Tint answers ±1 (5.0) and ±2 (10.0) to the identical 5.0.
+  - Refined in [src/sonna_editor/inference/pipeline.py](file:///c:/Users/ASUS/Projects/SonnaEditor/src/sonna_editor/inference/pipeline.py): `_survey_adjusted_preset` records `_survey_offsets`, and `_anchor_mode_b_wb_to_as_shot` separates accidental preset WB from the user's explicit Style Survey offset. The preset's raw WB is bounded by `±300K` and `±5 Tint` to prevent accidental preset camera WB from creating casts, while the user's intentional survey calibration offset (up to `±1000K` and `±10 Tint`) is fully applied on top of the camera's As-Shot WB.
+- **Comprehensive End-to-End Validation Suite**:
+  - Authored [tests/test_lite_profile_survey_validation.py](file:///c:/Users/ASUS/Projects/SonnaEditor/tests/test_lite_profile_survey_validation.py):
+    - Tests survey math across all answer tiers (-2..+2).
+    - Creates 3 complete Lite profiles end-to-end (Bright/Warm/Green, Neutral, Dark/Cool/Magenta).
+    - Validates checkpoint creation, sidecar metadata, and bias vector initialization.
+    - Validates per-photo inference on test images: Exposure differential is exactly +1.0 EV vs -1.0 EV, Temperature differential is exactly +1000K vs -1000K, Tint differential is exactly -10 vs +10 units.
+    - Confirms all 144 non-survey preset sliders (Tone Curves, HSL, Color Grading, Clarity, Vibrance, Shadows, Highlights) are 100% faithful to the preset.
+    - Confirms generated XMP sidecars on disk contain the exact values.
+- **Verification & Packaging**:
+  - Full pytest suite: **797 passed, 45 skipped in 240.59s (4 min)** with 0 failures and 0 errors.
+  - Ruff linter: all checks passed with 0 errors across `src`, `scripts`, `tests`.
+  - Vite build: passed in 578ms.
+  - Packaged clean distribution archive: `dist/saha-v1.51.zip` (186 files, 215.6 MB zip / 233.7 MB uncompressed).
+  - Cleaned up prior archive `saha-v1.50.zip`.
+  - No automatic git commit executed per user rules.
+
+### Task 71: Centralized Prominent Terminal Error Reflection Across Frontend & Backend
+- **Electron Main Process Centralized Error Streaming**:
+  - In [saha-app/electron/main.js](file:///c:/Users/ASUS/Projects/SonnaEditor/saha-app/electron/main.js):
+    - Added process-level traps for `uncaughtException` and `unhandledRejection`, formatting them in bold red with `[electron ERROR]`.
+    - Added line-buffered stream parser `pipeBackendStream`: all lines from backend stderr or lines matching `ERROR`, `CRITICAL`, `Traceback`, `Exception`, or `Failed` are prominently formatted with bold red `[backend ERROR]`, while warnings are formatted with yellow `[backend WARN]`.
+    - Updated `console-message` forwarding: inspects message severity level and text. Any console error or unhandled exception is formatted with bold red `[renderer ERROR] <message> (<source>:<line>)`.
+    - Added webContents crash and failure handlers (`render-process-gone`, `did-fail-load`, `unresponsive`) tagging terminal output with `[renderer CRASH]` and `[renderer LOAD ERROR]`.
+- **Frontend Global Error Capture**:
+  - In [saha-app/src/index.jsx](file:///c:/Users/ASUS/Projects/SonnaEditor/saha-app/src/index.jsx):
+    - Added global `window.addEventListener('error')` and `window.addEventListener('unhandledrejection')` listeners so no uncaught JavaScript exceptions or rejected promises are swallowed silently.
+  - In [saha-app/src/App.jsx](file:///c:/Users/ASUS/Projects/SonnaEditor/saha-app/src/App.jsx):
+    - Updated `ErrorBoundary` to log with `[React ErrorBoundary Caught Error]`.
+  - In [saha-app/src/api/client.js](file:///c:/Users/ASUS/Projects/SonnaEditor/saha-app/src/api/client.js):
+    - Added prominent error logging: logs `[API NETWORK ERROR]` on network/backend connectivity loss and `[API ERROR]` on non-2xx HTTP responses with status and detail.
+- **Launcher Error Detection**:
+  - In [scripts/run_app.py](file:///c:/Users/ASUS/Projects/SonnaEditor/scripts/run_app.py):
+    - Added process error logging: emits bold red `[saha ERROR] Application process exited with code <exit_code>` upon non-zero exit, and cleanly traps launcher exceptions.
+- **Verification & Packaging**:
+  - `npm --prefix saha-app run build:vite`: 47 modules transformed in 607ms with 0 errors (bundle: 358.56 kB).
+  - Pytest API & validation suites: 92 passed in 7.33s.
+  - Ruff linter: all checks passed with 0 errors across `src`, `scripts`, `tests`.
+  - Packaged distribution bundle: `dist/saha-v1.52.zip` (186 files, 215.6 MB zip / 233.7 MB uncompressed).
+  - Cleaned up prior archive `saha-v1.51.zip`.
+  - No automatic git commit executed per user rules.
+
+### Task 72: Fractional Precision Style Survey Calibration for Lite Profile Creation
+- **Backend Continuous Survey Answer Normalization**:
+  - In [src/sonna_editor/mode_b/survey.py](file:///c:/Users/ASUS/Projects/SonnaEditor/src/sonna_editor/mode_b/survey.py):
+    - Updated `compute_offset` to accept `float | int` answers in the range `[-2.0, 2.0]`. Computes continuous, linear slider offsets (e.g. answer `1.333` on Exposure yields `+0.6665` stops EV offset).
+    - Updated `normalise_lite_answers` to accept and validate floating-point answers. Retains exact integer answers (e.g. `0`, `1`, `-2`) for backwards compatibility while preserving fractional precision up to 4 decimal places.
+    - Updated `build_survey_payload` type signature to `answers: dict[str, float | int]`.
+  - In [src/sonna_editor/api/models.py](file:///c:/Users/ASUS/Projects/SonnaEditor/src/sonna_editor/api/models.py):
+    - Updated `LiteProfileRequest.survey_answers` type annotation to `dict[str, float | int]` so fractional averages from the frontend are parsed without integer truncation.
+  - In [src/sonna_editor/api/routes/profiles.py](file:///c:/Users/ASUS/Projects/SonnaEditor/src/sonna_editor/api/routes/profiles.py):
+    - Updated `_validate_survey_answers` to handle `dict[str, float | int]`.
+- **Frontend High-Precision Answer Aggregation**:
+  - In [saha-app/src/components/lite-wizard.jsx](file:///c:/Users/ASUS/Projects/SonnaEditor/saha-app/src/components/lite-wizard.jsx):
+    - Replaced `Math.round(mean)` with `Number((mean).toFixed(3))`.
+    - If a user chooses mixed preferences across the 3 benchmark scenes (e.g. +1, +2, +1), the survey calculates `1.333` instead of truncating down to `1`.
+    - Zero UI impact: preserves the identical 9-step visual cards and layout without adding any extra buttons, clutter, or visual complexity.
+- **Test Suite Updates**:
+  - In [tests/test_style_survey.py](file:///c:/Users/ASUS/Projects/SonnaEditor/tests/test_style_survey.py):
+    - Added `test_compute_offset_fractional` verifying linear scaling for +1.333 and -0.667.
+    - Added `test_compute_offset_rejects_out_of_bounds` verifying boundary checking for values outside `[-2, +2]`.
+    - Added `test_normalise_lite_answers_fractional_precision` and `test_normalise_lite_answers_rejects_out_of_bounds`.
+  - In [tests/test_lite_profile_survey_validation.py](file:///c:/Users/ASUS/Projects/SonnaEditor/tests/test_lite_profile_survey_validation.py):
+    - Added `test_lite_profile_fractional_survey_precision` verifying end-to-end profile creation and shoot inference with fractional answers (`exposure=1.333`, `temperature=-0.667`, `tint=0.5`).
+- **Packaging & Verification**:
+  - Full pytest suite: **812 passed, 45 skipped in 195.71s (3 min 15s)** with 0 failures and 0 errors.
+  - Ruff linter: all checks passed with 0 errors across `src`, `scripts`, `tests`.
+  - Vite build: 47 modules transformed in 560ms with 0 errors.
+  - Packaged distribution bundle: `dist/saha-v1.53.zip` (194 files, 426.1 MB zip / 460.8 MB uncompressed).
+  - Cleaned up prior archive `saha-v1.52.zip`.
+  - No automatic git commit executed per user rules.
+
+### Task 73: End-to-End Validation of Lite Profile Completion and Physical File Generation
+- **Live Creation, Artifact Generation, and API Flow Validation**:
+  - Validated real profile creation via `POST /api/profiles/lite`:
+    - Generated physical checkpoint file `model-v0.4.0.ckpt` (113.5 MB) on disk in `v1_learning/`.
+    - Generated metadata sidecar `model-v0.4.0.json` with `profile_type: "mode_b_initial"` and stable slug ID.
+    - Verified physical backup copy of source `.xmp` preset and survey `.json` in `v1_learning/`.
+    - Confirmed survey JSON accurately serializes continuous fractional offsets (`exposure_offset = 0.6665`, `temperature_offset = -333.5`, `tint_offset = 2.5`).
+  - Validated PyTorch model integrity:
+    - Successfully instantiated `SonnaEditor` model from the generated checkpoint file.
+    - Confirmed output head zero weights and bias vector injection for slider set `v2`, architecture `3`.
+  - Validated profile discovery and active status:
+    - Confirmed `GET /api/profiles` enumerates the new Lite profile with `Ready to use` status, non-draft state, and correct version `v0.4.0`.
+    - Confirmed activation via `POST /api/profiles/{id}/activate` updates `config.ACTIVE_PROFILE_PATH`.
+  - Validated shoot inference execution:
+    - Verified per-photo scene adaptation with the generated Lite profile: Exposure 0.90 EV, Temperature 4966.5 K, Tint 10.5.
+  - Validated clean physical cleanup:
+    - `DELETE /api/profiles/{id}` cleanly unlinks all 4 related files (`.ckpt`, `.json`, `-preset.xmp`, `-survey.json`).
+- **UI Completion Experience**:
+  - Confirmed `LiteProfileWizard` footer button transitions from "Next" to "Build profile" on Step 9, displays "Building…" during API submission, closes cleanly upon success, and triggers `onProfilesChanged` and `setRefreshKey`.
+  - Confirmed profile card renders with green `✓ Ready to use` badge and coral `Use to edit` CTA button.
+  - Confirmed clicking `Use to edit` activates the profile and launches `NewProjectModal` with the profile pre-selected.
+- **Verification**:
+  - Ran validation script `validate_lite_profile_flow.py`: all 8 steps passed 100%.
+  - No automatic git commit executed per user rules.
+
+### Task 74: End-to-End Validation of Project Creation (Catalog & Folder), Shoot Editing, and Lightroom Classic Before/After
+- **Catalog & Folder Project Ingestion Validation**:
+  - Validated real Lightroom Classic catalog scanning on `C:\Users\ASUS\OneDrive\Pictures\Lightroom\Lightroom Catalog.lrcat` (1.9 MB):
+    - Opened read-only with SQLite `PRAGMA query_only = ON;`.
+    - Discovered referenced folder `C:\Users\ASUS\Downloads\Train _sample` with 5 CR3 RAW files.
+    - Verified `POST /api/folders/scan` returns 200 with `is_valid: true`, `raw_count: 5`, `source_type: "catalog"`.
+  - Validated direct folder scanning on `C:\Users\ASUS\Downloads\Train _sample`:
+    - Verified `POST /api/folders/scan` returns 200 with `is_valid: true`, `raw_count: 5`, `source_type: "folder"`.
+- **Shoot Processing & XMP Sidecar Generation**:
+  - Ran processing pipeline on real Canon `.CR3` RAW files using an active profile:
+    - Previews extracted, per-photo adaptive exposure computed, and As-Shot camera WB anchored.
+    - Verified generation of Adobe Lightroom compliant XMP sidecars with `ProcessVersion="15.4"`.
+- **Lightroom Classic Before/After (`\`) Compatibility**:
+  - Embedded "Pre-Saha" snapshot:
+    - Every generated XMP includes a `<crs:Snapshots>` block with `crs:Name="Pre-Saha"` and `crs:Type="Develop"`, capturing the original unedited RAW identity state with exact camera As-Shot White Balance.
+    - Enables instantaneous before/after comparison directly in Lightroom Classic's Snapshots panel and via Develop History.
+  - Lightroom Classic Bridge package (`SahaBridge.lrplugin`):
+    - Verified automatic generation of `sonna_lightroom_edits.lua` alongside edits.
+    - Allows direct catalog develop settings import via `Library -> Plug-in Extras -> Import Saha Edits...` without requiring catalog restarts.
+    - Develop history step `Apply Saha edits` enables native Before/After comparison (`\` key) in Lightroom Classic.
+- **Verification**:
+  - Executed automated validation test `validate_lrcat_and_folder_project_flow.py`: 100% passed across all 5 verification parts.
+  - No automatic git commit executed per user rules.
+
+### Task 75: Fix Lite Profile Creation Failure in Running Session & Unblock Profile Listing
+- **Diagnosed Exact Root Causes**:
+  - **Stale Backend Process**: The desktop app's background backend process was started at 09:42 AM before the fractional float precision schema was updated. When the updated frontend submitted `{exposure: 1.333, ...}`, the stale backend process rejected the request with HTTP 422: `Input should be a valid integer, got a number with a fractional part`, preventing the profile from ever being created.
+  - **Frontend Deleted Name Collision**: In [saha-app/src/components/profile-view.jsx](file:///c:/Users/ASUS/Projects/SonnaEditor/saha-app/src/components/profile-view.jsx), `deletedIds` was storing `profile.name` instead of strictly `profile.id`. Any newly created profile whose display name matched a previously deleted test name (such as "test") was being filtered out of `processedServer`.
+- **Backend Auto-Reload & Process Refresh**:
+  - In [saha-app/electron/main.js](file:///c:/Users/ASUS/Projects/SonnaEditor/saha-app/electron/main.js):
+    - Added `--reload` flag to `scripts/serve.py` so Uvicorn dev server monitors Python code changes and automatically reloads without requiring manual restarts.
+  - Terminated the stale 09:42 AM backend process and started a fresh daemon backend with `--reload` active on port 8765.
+- **Frontend Filter & Error Visibility Enhancements**:
+  - In [saha-app/src/components/profile-view.jsx](file:///c:/Users/ASUS/Projects/SonnaEditor/saha-app/src/components/profile-view.jsx):
+    - Fixed `processedServer` and `executeDelete` to filter and delete strictly by unique `profile.id`, unblocking any re-used human names.
+    - Updated `LiteProfileWizard` and `PersonalProfileWizard` `onCreated` callbacks to await `onProfilesChanged` before incrementing `refreshKey`.
+  - In [saha-app/src/hooks/useProfiles.js](file:///c:/Users/ASUS/Projects/SonnaEditor/saha-app/src/hooks/useProfiles.js):
+    - Updated `refetch()` to return the fetched profile array so caller handlers (`handleProfileCreated`) can immediately detect newly created profiles without receiving `undefined`.
+  - In [saha-app/src/components/lite-wizard.jsx](file:///c:/Users/ASUS/Projects/SonnaEditor/saha-app/src/components/lite-wizard.jsx):
+    - Added prominent error banner in the modal footer right next to the "Build profile" button so any validation or network issues are immediately visible.
+    - Added explicit pre-submission validation confirming the preset path is absolute.
+  - Rebuilt Vite bundle: 47 modules transformed in 527ms.
+- **Verification**:
+  - Live tested `POST http://127.0.0.1:8765/api/profiles/lite` with fractional payload: returned HTTP 200 OK.
+  - Tested profile activation and clean deletion through API endpoints.
+  - Ran pytest suite: 89 passed in 4.93s (`tests/api/test_profiles.py`, `tests/test_style_survey.py`, `tests/test_lite_profile_survey_validation.py`).
+  - Packaged distribution bundle: `dist/saha-v1.54.zip` (194 files, 460.8 MB uncompressed, 426.1 MB zip).
+  - No automatic git commit executed per user rules.
+
+### Task 76: Remove AI Culling Card, Adjust Action & Crop Tool from UI & Validate Tool Toggles
+- **Removed Unused AI Culling Card & Adjust Action**:
+  - In [saha-app/src/components/new-project-modal.jsx](file:///c:/Users/ASUS/Projects/SonnaEditor/saha-app/src/components/new-project-modal.jsx):
+    - Removed top "AI culling" card and toggle switch from Step 3 ("Your workflow").
+    - Cleaned up unused `aiCullingEnabled` state.
+    - Removed non-functional "Adjust" button from AI Profile card row, preserving the "Change ▾" dropdown.
+- **Removed Crop from UI While Preserving Code**:
+  - In [saha-app/src/components/new-project-modal.jsx](file:///c:/Users/ASUS/Projects/SonnaEditor/saha-app/src/components/new-project-modal.jsx):
+    - Hidden the Crop card in both `recommended` and `composition` tabs from being rendered in the UI, keeping full component and preview JSX in the repository for future activation.
+    - Updated active count to reflect Straighten (`compActiveCount = autoStraighten ? 1 : 0`).
+    - Focused Preview column on Straighten with horizon rotation graphic and descriptive subtitle.
+- **Wired Real Backend Inference to Project Creation**:
+  - In [saha-app/src/App.jsx](file:///c:/Users/ASUS/Projects/SonnaEditor/saha-app/src/App.jsx):
+    - Imported `startProcess` from `./api/client.js`.
+    - Updated `handleCreateProject` to forward `auto_straighten: Boolean(projectData.autoStraighten)` and `denoise_enabled: Boolean(projectData.denoiseEnabled)` to `POST /api/process`.
+- **Validation of Tool Toggles**:
+  - Authored comprehensive test suite [tests/test_ai_tools_toggle_validation.py](file:///c:/Users/ASUS/Projects/SonnaEditor/tests/test_ai_tools_toggle_validation.py):
+    - Validated that when `auto_straighten=True`: `crs:CropAngle`, `crs:HasCrop="True"`, and Lightroom bridge `sonna_lightroom_edits.lua` CropAngle are strictly applied.
+    - Validated that when `auto_straighten=False`: NO `CropAngle`, `HasCrop`, `CropTop`, or `CropLeft` attributes are applied to XMP, predictions JSON, or lua bridge.
+    - Verified test suite: 25 passed in 0.33s.
+
+### Task 77: Temporarily Remove Project Detail Workspace Page
+- **Removed Project Detail Screen from Navigation**:
+  - In [saha-app/src/App.jsx](file:///c:/Users/ASUS/Projects/SonnaEditor/saha-app/src/App.jsx):
+    - Disabled rendering of the `ProjectDetailView` workspace screen (`screen === 'project-detail'`), keeping the file [saha-app/src/components/project-detail-view.jsx](file:///c:/Users/ASUS/Projects/SonnaEditor/saha-app/src/components/project-detail-view.jsx) preserved in the repository.
+    - Updated `handleOpenProject` to reveal the project's folder in the host file manager via `window.saha?.revealPath` instead of transitioning to the photo inspection screen.
+- **Verification**:
+  - Rebuilt Vite bundle: 47 modules transformed in 498ms with 0 errors (bundle: 343.64 kB).
+  - Packaged distribution bundle: `dist/saha-v1.54.zip` (186 files, 233.7 MB uncompressed, 215.6 MB zip).
+  - No automatic git commit executed per user rules.
+
+### Task 78: Enforce Unique Profile Names and Ensure Reliable UI Visibility
+- **Backend Unique Name Enforcement**:
+  - In [src/sonna_editor/api/routes/profiles.py](file:///c:/Users/ASUS/Projects/SonnaEditor/src/sonna_editor/api/routes/profiles.py):
+    - Added `_assert_unique_profile_name(name)` check in both `create_lite_profile` (`POST /api/profiles/lite`) and `_validate_personal_profile_request` (`POST /api/profiles/personal`).
+    - Validates against both `display_name` and `name` across all discovered profiles (case-insensitive and whitespace-trimmed).
+    - Returns HTTP 400 with detail: `"A profile named '{name}' already exists. Every profile must have a unique name."`
+- **Frontend Real-Time Duplicate Name Validation**:
+  - In [saha-app/src/components/lite-wizard.jsx](file:///c:/Users/ASUS/Projects/SonnaEditor/saha-app/src/components/lite-wizard.jsx):
+    - Passed `profiles` prop into `LiteProfileWizard`.
+    - Added reactive `isDuplicateName` check matching existing profile display names or IDs.
+    - Renders red border on name input and displays an inline warning banner: `⚠️ A profile named "${trimmedName}" already exists. Every profile must have a unique name.`
+    - Blocks `canAdvance`, Enter key submission, and API dispatch when a duplicate name is entered.
+  - In [saha-app/src/components/personal-wizard.jsx](file:///c:/Users/ASUS/Projects/SonnaEditor/saha-app/src/components/personal-wizard.jsx):
+    - Passed `profiles` prop into `PersonalProfileWizard`.
+    - Added duplicate name detection in `StepName` with red input border and inline warning banner, preventing step advancement.
+- **Ensured Created Profiles Always Appear in UI**:
+  - In [saha-app/src/components/profile-view.jsx](file:///c:/Users/ASUS/Projects/SonnaEditor/saha-app/src/components/profile-view.jsx):
+    - Removed `deletedIds` filtering from `processedServer`. Backend profiles returned by `GET /api/profiles` represent actual checkpoints on disk and are never suppressed by stale client-side `localStorage`.
+    - Kept `deletedIds` strictly for local mock drafts.
+    - Added duplicate validation to `executeRename` and auto-incrementing unique copy naming in `handleDuplicate`.
+  - In [saha-app/src/App.jsx](file:///c:/Users/ASUS/Projects/SonnaEditor/saha-app/src/App.jsx):
+    - In `handleProfileCreated`, purged any stale suppression entry from `saha_deleted_profile_ids` in `localStorage` so the new profile is immediately visible.
+    - Automatically activates the newly created profile and syncs `newlyCreatedProfileId` to auto-select it in `NewProjectModal`.
+- **Verification**:
+  - Authored tests `test_lite_create_rejects_duplicate_profile_name` and `test_personal_create_rejects_duplicate_profile_name` in [tests/api/test_profiles.py](file:///c:/Users/ASUS/Projects/SonnaEditor/tests/api/test_profiles.py).
+  - All 25 profile API tests passed in 0.37s.
+  - Rebuilt Vite bundle: 47 modules transformed in 508ms (bundle: 345.56 kB).
+  - Packaged distribution bundle: `dist/saha-v1.54.zip` (186 files, 233.7 MB uncompressed, 215.6 MB zip).
+  - No automatic git commit executed per user rules.
+
+### Task 79: Backend Auto-Recovery Watchdog & Persistent Terminal Reliability
+- **Diagnosed Long-Running Connection Drop (`Failed to fetch`)**:
+  - When running via terminal (`scripts/run_app.py`) over several hours, if the Python backend on port `8765` exited or was interrupted (e.g. sleep/wake, external server stopped, crash), Electron stayed open with `backend = null` and never restarted it, causing `GET /api/profiles` and `POST /api/profiles/lite` to fail with `Failed to connect to backend: Failed to fetch`.
+- **Electron Main Process Self-Healing Watchdog**:
+  - In [saha-app/electron/main.js](file:///c:/Users/ASUS/Projects/SonnaEditor/saha-app/electron/main.js):
+    - Added single-flight `ensureBackendRunning()` recovery routine that probes `/api/health`, clears any stale listener on `:8765`, and respawns `scripts/serve.py`.
+    - Added unexpected-exit auto-restart in `spawnBackend()` (`!quitting && !externalBackend`).
+    - Added periodic 10s `startBackendWatchdog()` health monitor (recovers even if an external backend dies after startup).
+    - Restricted `freeStalePort()` on Windows to `-State Listen` so closing/TIME_WAIT client sockets are never touched.
+    - Registered `saha:ensure-backend` IPC handler and set `quitting = true` in `before-quit` to prevent restart during app shutdown.
+  - In [saha-app/electron/preload.js](file:///c:/Users/ASUS/Projects/SonnaEditor/saha-app/electron/preload.js):
+    - Exposed `window.saha.ensureBackend()` to the renderer.
+  - In [scripts/run_app.py](file:///c:/Users/ASUS/Projects/SonnaEditor/scripts/run_app.py):
+    - Restricted `_free_stale_ports()` on Windows to `-State Listen`.
+- **Renderer Transparent Retry**:
+  - In [saha-app/src/api/client.js](file:///c:/Users/ASUS/Projects/SonnaEditor/saha-app/src/api/client.js):
+    - When `fetch` throws a network error, `request()` invokes `window.saha.ensureBackend()` and retries the request once transparently before raising `ApiError`.
+- **Verification**:
+  - Verified `node --check` on `main.js` and `preload.js`, `vite build` (537ms), `ruff check`, and `pytest tests/api/test_profiles.py` (25 passed).
+  - No automatic git commit executed per user rules.
+
+### Task 80: Re-apply AI Culling Card & Adjust Removal in NewProjectModal
+- **Restored Step 3 & Step 4 UI Cleanup**:
+  - In [saha-app/src/components/new-project-modal.jsx](file:///c:/Users/ASUS/Projects/SonnaEditor/saha-app/src/components/new-project-modal.jsx) (which had been reverted by an open IDE buffer):
+    - Removed the `AI culling` card and `aiCullingEnabled` state from Step 3 ("Your workflow").
+    - Removed the `Adjust` button from the AI Profile card row, keeping only `Change ▾`.
+    - Re-applied `{false && (...)}` guard around the `Crop` cards in Step 4 (`recommended` and `composition` tabs) while preserving all crop code in the repository, set `compActiveCount = autoStraighten ? 1 : 0`, and defaulted `previewTool` to `'straighten'`.
+- **Verification**:
+  - Rebuilt Vite bundle cleanly (`npx vite build`).
+  - No automatic git commit executed per user rules.
+
+### Task 81: Fix Clipped 3-Dots Action Menu in Projects Table
+- **Fixed Table Dropdown Clipping**:
+  - In [saha-app/src/components/projects-view.jsx](file:///c:/Users/ASUS/Projects/SonnaEditor/saha-app/src/components/projects-view.jsx):
+    - Changed the Projects list-view table container from `overflow: 'hidden'` to `overflow: 'visible'` and added `borderTopLeftRadius: 7` / `borderTopRightRadius: 7` to the table header so the `⋮` action menu (`Archive project`) and `Review edits ▾` dropdown on the bottom row are never clipped.
+- **Verification**:
+  - Rebuilt Vite bundle cleanly (`npx vite build`).
+  - No automatic git commit executed per user rules.
+
+### Task 82: Remove Tune Profile Button & Delete References Images Folder
+- **Removed Tune Profile Icon Button & Tune Overrides**:
+  - In [saha-app/src/components/profile-view.jsx](file:///c:/Users/ASUS/Projects/SonnaEditor/saha-app/src/components/profile-view.jsx):
+    - Removed the tuning sliders icon button next to `Use to edit` on each profile row, the `Tune Overrides` option from the 3-dots context menu, and the unused `ProfileTuningModal` / `tuningProfile` state.
+- **Removed `references/` Folder**:
+  - Deleted the `references/` directory (40 reference screenshots + `README.md`) from the repository per user request.
+- **Verification**:
+  - `npx vite build` in `saha-app`: 47 modules transformed in 538ms (`dist/assets/index-DOBLor_N.js`, 340.56 kB).
+  - No automatic git commit executed per user rules.
+
+### Task 83: Remove RAW and Color Tags from Step 3 AI Profile Row
+- **Removed `RAW` and `Color` Badges**:
+  - In [saha-app/src/components/new-project-modal.jsx](file:///c:/Users/ASUS/Projects/SonnaEditor/saha-app/src/components/new-project-modal.jsx):
+    - Removed the `RAW` and `Color` tags next to the selected AI Profile name in Step 3 ("Your workflow"), keeping the `Lite` / `Talent` badge.
+- **Verification**:
+  - `npx vite build` in `saha-app`: 46 modules transformed in 565ms (`dist/assets/index-C26AkrYm.js`, 334.93 kB).
+  - No automatic git commit executed per user rules.
+
+### Task 84: Restrict Project Folder Reveal to "Review in Saha" Button Only
+- **Removed Row-Click `onOpenProject` Handler**:
+  - In [saha-app/src/components/projects-view.jsx](file:///c:/Users/ASUS/Projects/SonnaEditor/saha-app/src/components/projects-view.jsx):
+    - Removed `onClick={() => onOpenProject?.(p.raw || p)}` and changed `cursor: 'pointer'` to `cursor: 'default'` on the Projects table row container, so clicking anywhere on the row no longer opens the file manager.
+    - Preserved `onOpenProject?.(p.raw || p)` on the **Review in Saha** menu button.
+- **Verification**:
+  - `npx vite build` in `saha-app`: rebuilt cleanly.
+  - No automatic git commit executed per user rules.
+
+### Task 88: Classify Backend `INFO:` / `WARNING:` Logs Properly in Electron
+- **Updated `pipeBackendStream` in [saha-app/electron/main.js](file:///c:/Users/ASUS/Projects/SonnaEditor/saha-app/electron/main.js)**:
+  - Extracted `logBackendLine(rawLine, isStderr)` so Uvicorn/Python `INFO:` and `DEBUG:` lines on `stderr` log as `[backend]`, `WARNING:`/`WARN:` lines log as `[backend WARN]`, and actual errors/tracebacks log as `[backend ERROR]`.
+- **Verification**:
+  - `node --check saha-app/electron/main.js`: passed.
+  - No automatic git commit executed per user rules.
+
+### Task 89: Keep Status "Ready for review" & "Review edits ▾" Button (Remove "Train profile" Override)
+- **Updated Projects Table Status & Next Step in [saha-app/src/components/projects-view.jsx](file:///c:/Users/ASUS/Projects/SonnaEditor/saha-app/src/components/projects-view.jsx)**:
+  - Treated any existing `fine_tune` status projects as `isReady` so they display **Ready for review** and keep the **Review edits ▾** button instead of switching to **Train profile**.
+- **Verification**:
+  - `npx vite build` in `saha-app`: rebuilt cleanly.
+  - No automatic git commit executed per user rules.
+
+### Task 90: Make "Review edits ▾" and `⋮` Action Menus Mutually Exclusive
+- **Updated Menu Toggle Handlers in [saha-app/src/components/projects-view.jsx](file:///c:/Users/ASUS/Projects/SonnaEditor/saha-app/src/components/projects-view.jsx)**:
+  - Clicking **Review edits ▾** now closes `cardMenuOpenId` (`setCardMenuOpenId(null)`), and clicking `⋮` now closes `reviewDropdownOpenId` (`setReviewDropdownOpenId(null)`), so only one menu can be open at a time.
+- **Verification**:
+  - `npx vite build` in `saha-app`: rebuilt cleanly.
+  - No automatic git commit executed per user rules.
+
+### Task 91: Chain Download Edits Flow into Direct Lightroom Classic (LrC) Launch
+- **Updated Review in Adobe Workflow in [saha-app/src/components/projects-view.jsx](file:///c:/Users/ASUS/Projects/SonnaEditor/saha-app/src/components/projects-view.jsx)**:
+  - Clicking **Review in Adobe** starts with the **Download edit metadata** modal (`handleStartDownloadEdits`) featuring Project name, Lightroom catalog / Photos folder with Browse, and collapsible **Selection** (`Folders` / `Collections` table with live `scanFolder` data, excluding the Filters section and trial upsells).
+  - Clicking **Download edits** displays the **Note** overwrite confirmation dialog (`"Downloading the edits will overwrite any previous edit of the photos submitted for editing."`) with **"Don't show this again"**, **Cancel**, and **Continue**.
+  - Clicking **Continue** runs the **Downloading edit metadata** progress modal and finishes with **Download Complete!** featuring **Close** and **Open LR catalog** (which directly launches Lightroom Classic via `window.saha.openInLightroom` while keeping the project status as **Ready for review**).
+
+### Task 92: Auto-Discover Catalog Folders in Download Modal & Launch `Lightroom.exe` Directly
+- **Fixed Multi-Folder Selection & Photo Counts in [saha-app/src/components/projects-view.jsx](file:///c:/Users/ASUS/Projects/SonnaEditor/saha-app/src/components/projects-view.jsx)**:
+  - Imported `listCatalogs` and updated `handleStartDownloadEdits` to automatically resolve the user's Lightroom catalog (`.lrcat`) via `GET /api/catalogs` when a project was created from a standalone folder, so **Selection** displays **all** catalog folders (e.g., `Sample_Raw` and `Train _sample`) and pre-checks the matching project folder.
+  - Mapped `f.total_photos` and `f.filtered_photos` from `scanFolder` so photo counts render accurately instead of `0`.
+- **Direct `Lightroom.exe` Launch in [saha-app/electron/main.js](file:///c:/Users/ASUS/Projects/SonnaEditor/saha-app/electron/main.js)**:
+  - Updated `saha:open-lightroom` to prefer launching `Lightroom.exe` (Windows) / `Adobe Lightroom Classic.app` (macOS) directly with the `.lrcat` catalog or folder path instead of relying on `shell.openPath` first.
+- **Verification**:
+  - `node --check saha-app/electron/main.js` and `npx vite build` in `saha-app`: passed cleanly (`dist/assets/index-BQRQ2A6a.js`, 344.89 kB).
+  - No automatic git commit executed per user rules.
+- **Verification**:
+  - `npx vite build` in `saha-app`: rebuilt cleanly.
+  - No automatic git commit executed per user rules.
+
+### Task 85: Make Electron Window & All App Views Responsive Across Window Sizes
+- **Electron Minimum Window Constraints**:
+  - In [saha-app/electron/main.js](file:///c:/Users/ASUS/Projects/SonnaEditor/saha-app/electron/main.js):
+    - Lowered `BrowserWindow` `minWidth` from `1100` to `640` and `minHeight` from `720` to `500` so users can resize the app to smaller desktop/split-screen sizes.
+- **Global Responsive Grids & Media Queries**:
+  - In [saha-app/src/index.html](file:///c:/Users/ASUS/Projects/SonnaEditor/saha-app/src/index.html):
+    - Added `.saha-table-scroll`, `.saha-lite-setup-grid`, `.saha-ai-tools-grid`, `.saha-2col-grid`, `.saha-3col-grid`, and `.saha-login-form` / `.saha-login-brand` responsive breakpoints (`820px`, `760px`, `680px`).
+- **Component Responsiveness**:
+  - [saha-app/src/components/projects-view.jsx](file:///c:/Users/ASUS/Projects/SonnaEditor/saha-app/src/components/projects-view.jsx): Wrapped header toolbar (`flexWrap: 'wrap'`), made search input flexible, wrapped table in `.saha-table-scroll` (`minWidth: 820`) while keeping `overflow: 'visible'` on the table box, and constrained modal `maxWidth: '94vw'` / `maxHeight: '90vh'`.
+  - [saha-app/src/components/profile-view.jsx](file:///c:/Users/ASUS/Projects/SonnaEditor/saha-app/src/components/profile-view.jsx): Wrapped profiles table in `.saha-table-scroll` (`minWidth: 740`).
+  - [saha-app/src/components/new-project-modal.jsx](file:///c:/Users/ASUS/Projects/SonnaEditor/saha-app/src/components/new-project-modal.jsx): Replaced fixed `minHeight: 600` with `min(520px, 85vh)`, converted Step 2 genres grid to `repeat(auto-fill, minmax(135px, 1fr))`, and applied `.saha-ai-tools-grid` to Step 4.
+  - [saha-app/src/components/lite-wizard.jsx](file:///c:/Users/ASUS/Projects/SonnaEditor/saha-app/src/components/lite-wizard.jsx), [saha-app/src/components/profile-type-modal.jsx](file:///c:/Users/ASUS/Projects/SonnaEditor/saha-app/src/components/profile-type-modal.jsx), [saha-app/src/components/login.jsx](file:///c:/Users/ASUS/Projects/SonnaEditor/saha-app/src/components/login.jsx): Applied responsive stacking grids and fluid survey/brand panels.
+- **Verification**:
+  - `node --check saha-app/electron/main.js` and `npx vite build` in `saha-app`: passed cleanly.
+  - No automatic git commit executed per user rules.
+
+### Task 86: Direct Lightroom Classic (LrC) Launch from "Review in Adobe"
+- **Replaced Download Edits Flow with Direct LrC Review Modal**:
+  - In [saha-app/src/components/projects-view.jsx](file:///c:/Users/ASUS/Projects/SonnaEditor/saha-app/src/components/projects-view.jsx):
+    - Clicking **Review in Adobe** now opens the **"Where do you want to review the photos?"** modal with a single **Lightroom Classic (`LrC`)** option (no unnecessary download step or status switch to `Fine-tune profile`).
+    - Clicking **Lightroom Classic** invokes `window.saha.openInLightroom(project.path)`.
+- **Electron Lightroom Classic Launcher**:
+  - In [saha-app/electron/main.js](file:///c:/Users/ASUS/Projects/SonnaEditor/saha-app/electron/main.js) and [saha-app/electron/preload.js](file:///c:/Users/ASUS/Projects/SonnaEditor/saha-app/electron/preload.js):
+    - Added `saha:open-lightroom` IPC handler (`window.saha.openInLightroom`) that opens `.lrcat` catalogs directly with Lightroom Classic via `shell.openPath`, or launches `Lightroom.exe` / `Adobe Lightroom Classic.app` directly for shoot folders.
+- **Verification**:
+  - `node --check` on `main.js` and `preload.js`, and `npx vite build` in `saha-app`: passed cleanly.
+  - No automatic git commit executed per user rules.
+
+### Task 87: Fix Vertical Scrollbar on Table Dropdowns Caused by CSS `overflow-x: auto`
+- **Fixed `.saha-table-scroll` Overflow Spec Interaction**:
+  - In [saha-app/src/index.html](file:///c:/Users/ASUS/Projects/SonnaEditor/saha-app/src/index.html):
+    - Changed `.saha-table-scroll` to `overflow: visible` by default (preventing CSS from coercing `overflow-y: visible` into `overflow-y: auto`), and scoped `overflow-x: auto` with `padding-bottom: 56px; margin-bottom: -56px;` to `@media (max-width: 960px)` so both normal and narrow windows show the `Archive project` dropdown cleanly without a vertical scrollbar.
+- **Verification**:
+  - `npx vite build` in `saha-app`: rebuilt cleanly.
+  - No automatic git commit executed per user rules.
+
+### Task 88: Classify Backend `INFO:` / `WARNING:` Logs Properly in Electron
+- **Updated `pipeBackendStream` in [saha-app/electron/main.js](file:///c:/Users/ASUS/Projects/SonnaEditor/saha-app/electron/main.js)**:
+  - Extracted `logBackendLine(rawLine, isStderr)` so Uvicorn/Python `INFO:` and `DEBUG:` lines on `stderr` log as `[backend]`, `WARNING:`/`WARN:` lines log as `[backend WARN]`, and actual errors/tracebacks log as `[backend ERROR]`.
+- **Verification**:
+  - `node --check saha-app/electron/main.js`: passed.
+  - No automatic git commit executed per user rules.
+
+### Task 89: Keep Status "Ready for review" & "Review edits ▾" Button (Remove "Train profile" Override)
+- **Updated Projects Table Status & Next Step in [saha-app/src/components/projects-view.jsx](file:///c:/Users/ASUS/Projects/SonnaEditor/saha-app/src/components/projects-view.jsx)**:
+  - Treated any existing `fine_tune` status projects as `isReady` so they display **Ready for review** and keep the **Review edits ▾** button instead of switching to **Train profile**.
+- **Verification**:
+  - `npx vite build` in `saha-app`: rebuilt cleanly.
+  - No automatic git commit executed per user rules.
+
+### Task 90: Make "Review edits ▾" and `⋮` Action Menus Mutually Exclusive
+- **Updated Menu Toggle Handlers in [saha-app/src/components/projects-view.jsx](file:///c:/Users/ASUS/Projects/SonnaEditor/saha-app/src/components/projects-view.jsx)**:
+  - Clicking **Review edits ▾** now closes `cardMenuOpenId` (`setCardMenuOpenId(null)`), and clicking `⋮` now closes `reviewDropdownOpenId` (`setReviewDropdownOpenId(null)`), so only one menu can be open at a time.
+- **Verification**:
+  - `npx vite build` in `saha-app`: rebuilt cleanly.
+  - No automatic git commit executed per user rules.
+
+### Task 91: Chain Download Edits Flow into Direct Lightroom Classic (LrC) Launch
+- **Updated Review in Adobe Workflow in [saha-app/src/components/projects-view.jsx](file:///c:/Users/ASUS/Projects/SonnaEditor/saha-app/src/components/projects-view.jsx)**:
+  - Clicking **Review in Adobe** starts with the **Download edit metadata** modal (`handleStartDownloadEdits`) featuring Project name, Lightroom catalog / Photos folder with Browse, and collapsible **Selection** (`Folders` / `Collections` table with live `scanFolder` data, excluding the Filters section and trial upsells).
+  - Clicking **Download edits** displays the **Note** overwrite confirmation dialog (`"Downloading the edits will overwrite any previous edit of the photos submitted for editing."`) with **"Don't show this again"**, **Cancel**, and **Continue**.
+  - Clicking **Continue** runs the **Downloading edit metadata** progress modal and finishes with **Download Complete!** featuring **Close** and **Open LR catalog** (which directly launches Lightroom Classic via `window.saha.openInLightroom` while keeping the project status as **Ready for review**).
+
+### Task 92: Auto-Discover Catalog Folders in Download Modal & Launch `Lightroom.exe` Directly
+- **Fixed Multi-Folder Selection & Photo Counts in [saha-app/src/components/projects-view.jsx](file:///c:/Users/ASUS/Projects/SonnaEditor/saha-app/src/components/projects-view.jsx)**:
+  - Imported `listCatalogs` and updated `handleStartDownloadEdits` to automatically resolve the user's Lightroom catalog (`.lrcat`) via `GET /api/catalogs` when a project was created from a standalone folder, so **Selection** displays **all** catalog folders (e.g., `Sample_Raw` and `Train _sample`) and pre-checks the matching project folder.
+  - Mapped `f.total_photos` and `f.filtered_photos` from `scanFolder` so photo counts render accurately instead of `0`.
+- **Direct `Lightroom.exe` Launch in [saha-app/electron/main.js](file:///c:/Users/ASUS/Projects/SonnaEditor/saha-app/electron/main.js)**:
+  - Updated `saha:open-lightroom` to prefer launching `Lightroom.exe` (Windows) / `Adobe Lightroom Classic.app` (macOS) directly with the `.lrcat` catalog or folder path instead of relying on `shell.openPath` first.
+- **Verification**:
+  - `node --check saha-app/electron/main.js` and `npx vite build` in `saha-app`: passed cleanly (`dist/assets/index-BQRQ2A6a.js`, 344.89 kB).
+  - No automatic git commit executed per user rules.
+- **Verification**:
+  - `npx vite build` in `saha-app`: rebuilt cleanly.
+  - No automatic git commit executed per user rules.

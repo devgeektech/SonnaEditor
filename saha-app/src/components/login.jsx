@@ -131,20 +131,21 @@ export function SahaLogin({ onSubmit, theme, onToggleTheme }) {
   return (
     <form
       onSubmit={handleSubmit}
+      className="saha-login-form"
       style={{
-        width: '100%', height: '100%',
         background: SONNA.bgDeep, color: SONNA.fg, fontFamily: F,
-        display: 'flex', overflow: 'hidden', margin: 0,
       }}
     >
       {/* ── LEFT · brand panel ─────────────────────── */}
-      <div style={{
-        width: 560, flexShrink: 0,
-        background: SONNA.bgPanel,
-        borderRight: `1px solid ${SONNA.line}`,
-        padding: '56px 56px 40px',
-        display: 'flex', flexDirection: 'column', gap: 32,
-      }}>
+      <div
+        className="saha-login-brand"
+        style={{
+          background: SONNA.bgPanel,
+          borderRight: `1px solid ${SONNA.line}`,
+          padding: '56px 56px 40px',
+          display: 'flex', flexDirection: 'column', gap: 32,
+        }}
+      >
         <div>
           <SahaWordmark size={32} />
         </div>

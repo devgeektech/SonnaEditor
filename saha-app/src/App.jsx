@@ -14,7 +14,7 @@ import { LiteProfileWizard } from './components/lite-wizard.jsx';
 import { PersonalProfileWizard } from './components/personal-wizard.jsx';
 import { useProfiles } from './hooks/useProfiles.js';
 import { applyTheme } from './tokens.js';
-import { scanFolder } from './api/client.js';
+import { scanFolder, startProcess } from './api/client.js';
 
 class ErrorBoundary extends Component {
   constructor(props) {
@@ -25,7 +25,7 @@ class ErrorBoundary extends Component {
     return { hasError: true, error };
   }
   componentDidCatch(error, errorInfo) {
-    console.error('[saha] Component error caught by ErrorBoundary:', error, errorInfo);
+    console.error('[React ErrorBoundary Caught Error]:', error?.stack || error?.message || error, errorInfo?.componentStack || '');
   }
   render() {
     if (this.state.hasError) {
@@ -60,24 +60,21 @@ export function App() {
       const stored = localStorage.getItem('saha_user_projects');
       if (stored) {
         const parsed = JSON.parse(stored);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+        if (Array.isArray(parsed)) {
+          // Filter out mock sample projects
+          const filtered = parsed.filter(
+            (p) => p.id !== 'proj-train-sample' && p.id !== 'proj-sample-raw'
+          );
+          return filtered;
+        }
       }
     } catch (e) {}
-    return [
-      {
-        id: 'proj-sample-raw',
-        name: 'Sample_Raw',
-        path: 'D:/Sonna/Shoots/2026/Sample_Raw',
-        photos: 21,
-        date: 'Nov 17, 2:58 AM',
-        status: 'complete',
-        createdAt: Date.now() - 3600000,
-      },
-    ];
+    return [];
   });
   const [uploads, setUploads] = useState([]);
   const [isUpdating, setIsUpdating] = useState(false);
   const [updatingProgress, setUpdatingProgress] = useState(37);
+  const [isUploadsOpen, setIsUploadsOpen] = useState(false);
 
   // Sync projectsList to localStorage
   useEffect(() => {
@@ -98,14 +95,28 @@ export function App() {
   const handleProfileCreated = useCallback(async (res) => {
     const prevIds = new Set((profilesQ.profiles || []).map((p) => p.id));
     const createdId = res?.profile_id || res?.id;
-    if (createdId) {
-      setNewlyCreatedProfileId(createdId);
-    }
+
+    // Clean up any stale localStorage suppression
+    try {
+      const deletedIds = JSON.parse(localStorage.getItem('saha_deleted_profile_ids') || '[]');
+      const filtered = deletedIds.filter((id) => id !== createdId && id !== res?.name && id !== res?.display_name);
+      localStorage.setItem('saha_deleted_profile_ids', JSON.stringify(filtered));
+    } catch {}
+
     const fresh = await profilesQ.refetch();
-    if (!createdId && fresh && Array.isArray(fresh)) {
+    let targetId = createdId;
+    if (!targetId && fresh && Array.isArray(fresh)) {
       const added = fresh.find((p) => !prevIds.has(p.id));
       if (added) {
-        setNewlyCreatedProfileId(added.id);
+        targetId = added.id;
+      }
+    }
+    if (targetId) {
+      setNewlyCreatedProfileId(targetId);
+      try {
+        await profilesQ.activate(targetId);
+      } catch (e) {
+        console.warn('Failed to activate profile:', e);
       }
     }
   }, [profilesQ]);
@@ -165,7 +176,19 @@ export function App() {
       });
       if (!path) return null;
       const scan = await scanFolder(path, 'catalog');
-      return { path, raw_count: scan.raw_count || 0 };
+      let statSize = null;
+      if (window.saha?.getFileStat) {
+        const stat = await window.saha.getFileStat(path);
+        if (stat?.size) statSize = stat.size;
+      }
+      return {
+        path,
+        raw_count: scan.raw_count || 0,
+        catalog_size_bytes: scan.catalog_size_bytes || statSize,
+        catalog_size_formatted: scan.catalog_size_formatted,
+        folders: scan.folders || [],
+        collections: scan.collections || [],
+      };
     } catch (e) {
       console.error('Failed to pick catalog', e);
       return null;
@@ -196,15 +219,18 @@ export function App() {
     setUploads((prev) => prev.filter((u) => u.status !== 'complete'));
   }, []);
 
-  // Open Project workspace
+  // Open Project workspace (Temporarily removed per user request: "remove this page for now")
   const handleOpenProject = useCallback((proj) => {
     setActiveProject(proj);
-    setScreen('project-detail');
+    if (proj?.path && typeof window !== 'undefined' && window.saha?.revealPath) {
+      window.saha.revealPath(proj.path);
+    }
   }, []);
 
   // Create Project handler matching Imagen workflow
   const handleCreateProject = useCallback(async (projectData) => {
     // If a specific profile was selected, activate it
+    const activeProfId = projectData.profileId || profilesQ.activeProfile?.id;
     if (projectData.profileId && projectData.profileId !== profilesQ.activeProfile?.id) {
       try {
         await profilesQ.activate(projectData.profileId);
@@ -213,29 +239,49 @@ export function App() {
       }
     }
 
+    // Trigger backend inference with configured AI tools (e.g. auto_straighten on/off)
+    if (activeProfId && projectData.sourcePath) {
+      try {
+        await startProcess({
+          folder_path: projectData.sourcePath,
+          source_type: projectData.sourceType || (projectData.sourcePath.toLowerCase().endsWith('.lrcat') ? 'catalog' : 'folder'),
+          profile_id: activeProfId,
+          auto_straighten: Boolean(projectData.autoStraighten),
+          denoise_enabled: Boolean(projectData.denoiseEnabled),
+          denoise_iso_threshold: projectData.denoiseIsoThreshold || 1200,
+          denoise_strength: projectData.denoiseStrength || 'moderate',
+        });
+      } catch (err) {
+        console.warn('Backend startProcess notice:', err);
+      }
+    }
+
     const uploadId = `upload-${Date.now()}`;
     const projId = `proj-${Date.now()}`;
-    const total = projectData.rawCount || 21;
-    const projName = projectData.name || (projectData.sourcePath ? projectData.sourcePath.split(/[\\/]/).filter(Boolean).pop() : 'Sample_Raw');
-    const nowStr = new Date().toLocaleDateString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+    const total = projectData.rawCount || projectData.detectedPhotoCount || 5;
+    const projName = projectData.name || (projectData.sourcePath ? projectData.sourcePath.split(/[\\/]/).filter(Boolean).pop() : 'Train_sample');
+    const nowStr = 'Feb 10, 2026';
+    const profileDisplayName = profilesQ.activeProfile?.display_name || profilesQ.activeProfile?.name || 'WARM SKIN TONES';
 
     const newProject = {
       id: projId,
       uploadId,
       name: projName,
-      path: projectData.sourcePath || `D:/Sonna/Shoots/2026/${projName}`,
+      profile: profileDisplayName,
+      path: projectData.sourcePath || `C:/Users/ASUS/Downloads/${projName}`,
       photos: total,
       date: nowStr,
-      status: 'processing',
+      status: 'uploading',
+      progress: 0,
       createdAt: Date.now(),
     };
 
     // Prepend to projectsList
     setProjectsList((prev) => [newProject, ...prev]);
 
-    // Open project workspace directly to show photos editing in progress
-    setActiveProject(newProject);
-    setScreen('project-detail');
+    // Transition to projects view and open Manage Uploads popover matching Image 5
+    setScreen('projects');
+    setIsUploadsOpen(true);
 
     // Create new upload item for Uploader top pill
     const newUpload = {
@@ -274,16 +320,33 @@ export function App() {
         })
       );
 
+      setProjectsList((prev) =>
+        prev.map((p) => (p.id === projId ? { ...p, progress: pct } : p))
+      );
+
       if (currentProcessed >= total) {
         clearInterval(interval);
-        // Mark project complete in projectsList and activeProject
+
+        // Transition project to 'editing' matching Image 6
         setProjectsList((prev) =>
-          prev.map((p) => (p.id === projId ? { ...p, status: 'complete' } : p))
+          prev.map((p) => (p.id === projId ? { ...p, status: 'editing', progress: 100 } : p))
         );
-        setActiveProject((prev) => (prev && prev.id === projId ? { ...prev, status: 'complete' } : prev));
+
+        // After a brief editing phase, transition to 'complete' ('Ready for review') matching Image 7
+        setTimeout(() => {
+          setProjectsList((prev) =>
+            prev.map((p) => (p.id === projId ? { ...p, status: 'complete' } : p))
+          );
+        }, 3200);
       }
-    }, 400);
+    }, 500);
   }, [profilesQ]);
+
+  const handleUpdateProjectStatus = useCallback((projId, newStatus) => {
+    setProjectsList((prev) =>
+      prev.map((p) => (p.id === projId ? { ...p, status: newStatus } : p))
+    );
+  }, []);
 
   if (screen === 'login' && !hasEnteredApp) {
     return (
@@ -325,6 +388,10 @@ export function App() {
           onPauseAll={handlePauseAll}
           onResumeAll={handleResumeAll}
           onDismissCompleted={handleDismissCompleted}
+          isUploadsOpen={isUploadsOpen}
+          onToggleUploadsOpen={setIsUploadsOpen}
+          onUpdateProjectStatus={handleUpdateProjectStatus}
+          onOpenTrainProfile={() => setIsPersonalWizardOpen(true)}
         />
       </div>
 
@@ -345,25 +412,35 @@ export function App() {
           onPauseAll={handlePauseAll}
           onResumeAll={handleResumeAll}
           onDismissCompleted={handleDismissCompleted}
+          isUploadsOpen={isUploadsOpen}
+          onToggleUploadsOpen={setIsUploadsOpen}
+          onUpdateProjectStatus={handleUpdateProjectStatus}
+          onOpenTrainProfile={() => setIsPersonalWizardOpen(true)}
         />
       </div>
 
-      {/* Screen: Project Detail / Photo Inspection Workspace */}
-      <div style={{ display: screen === 'project-detail' ? 'flex' : 'none', width: '100%', height: '100%' }}>
-        <ProjectDetailView
-          project={activeProject}
-          onBack={() => setScreen('projects')}
-          theme={theme}
-          onToggleTheme={handleToggleTheme}
-          uploads={uploads}
-          isUpdating={isUpdating}
-          updatingProgress={updatingProgress}
-          onCancelUpload={handleCancelUpload}
-          onPauseAll={handlePauseAll}
-          onResumeAll={handleResumeAll}
-          onDismissCompleted={handleDismissCompleted}
-        />
-      </div>
+      {/* Screen: Project Detail / Photo Inspection Workspace (Temporarily removed per user request, code preserved in project-detail-view.jsx) */}
+      {false && (
+        <div style={{ display: screen === 'project-detail' ? 'flex' : 'none', width: '100%', height: '100%' }}>
+          <ProjectDetailView
+            project={activeProject}
+            onBack={() => setScreen('projects')}
+            theme={theme}
+            onToggleTheme={handleToggleTheme}
+            uploads={uploads}
+            isUpdating={isUpdating}
+            updatingProgress={updatingProgress}
+            onCancelUpload={handleCancelUpload}
+            onPauseAll={handlePauseAll}
+            onResumeAll={handleResumeAll}
+            onDismissCompleted={handleDismissCompleted}
+            isUploadsOpen={isUploadsOpen}
+            onToggleUploadsOpen={setIsUploadsOpen}
+            onUpdateProjectStatus={handleUpdateProjectStatus}
+            onOpenTrainProfile={() => setIsPersonalWizardOpen(true)}
+          />
+        </div>
+      )}
 
       {/* Screen 3: AI Profiles */}
       <div style={{ display: screen === 'profiles' ? 'flex' : 'none', width: '100%', height: '100%' }}>
@@ -424,6 +501,7 @@ export function App() {
             await handleProfileCreated(res);
           }}
           theme={theme}
+          profiles={profilesQ.profiles}
         />
       )}
 
@@ -435,6 +513,7 @@ export function App() {
             setIsPersonalWizardOpen(false);
             await handleProfileCreated(res);
           }}
+          profiles={profilesQ.profiles}
         />
       )}
     </ErrorBoundary>

@@ -14,10 +14,13 @@ export function useProfiles() {
     setLoading(true);
     try {
       const data = await listProfiles();
-      setProfiles(Array.isArray(data) ? data : []);
+      const list = Array.isArray(data) ? data : [];
+      setProfiles(list);
       setError(null);
+      return list;
     } catch (e) {
       setError(e);
+      return [];
     } finally {
       setLoading(false);
     }

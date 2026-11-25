@@ -11,12 +11,16 @@ Three-layer read-only enforcement:
 
 from __future__ import annotations
 
+import json
 import logging
+import os
 import re
 import sqlite3
+import sys
 from pathlib import Path
 from typing import Any, Mapping
 
+from sonna_editor import config
 from sonna_editor.config import SLIDER_FIELDS
 from sonna_editor.data import xmp
 from sonna_editor.data.xmp import (
@@ -290,6 +294,258 @@ def connect_catalog(lrcat_path: Path) -> sqlite3.Connection:
     conn.execute("PRAGMA query_only = 1;")
     _verify_schema(conn)
     return conn
+
+
+def format_catalog_size(size_bytes: int) -> str:
+    """Format file size in bytes to human-readable string matching Lightroom/Imagen."""
+    if size_bytes < 1024:
+        return f"{size_bytes} B"
+    if size_bytes < 1024 * 1024:
+        return f"{size_bytes / 1024:.1f} KB"
+    if size_bytes < 1024 * 1024 * 1024:
+        mb = size_bytes / (1024 * 1024)
+        truncated_mb = int(mb * 10) / 10
+        return f"{truncated_mb:.1f} MB"
+    gb = size_bytes / (1024 * 1024 * 1024)
+    return f"{gb:.1f} GB"
+
+
+def inspect_catalog(catalog_path: Path) -> dict[str, Any]:
+    """Inspect a Lightroom catalog and return its file size, folders, and collections.
+
+    Returns dict with keys:
+        size_bytes: int
+        size_formatted: str
+        folders: list[dict[str, Any]]
+        collections: list[dict[str, Any]]
+    """
+    catalog_path = Path(catalog_path)
+    size_bytes = catalog_path.stat().st_size
+    size_formatted = format_catalog_size(size_bytes)
+
+    folders: list[dict[str, Any]] = []
+    collections: list[dict[str, Any]] = []
+
+    conn = connect_catalog(catalog_path)
+    try:
+        tables = {
+            r[0]
+            for r in conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table'"
+            ).fetchall()
+        }
+
+        # Query Folders
+        if (
+            "AgLibraryFolder" in tables
+            and "AgLibraryRootFolder" in tables
+            and "AgLibraryFile" in tables
+            and "Adobe_images" in tables
+        ):
+            folder_sql = """
+            SELECT
+                fol.id_local AS folder_id,
+                rf.absolutePath AS root_path,
+                fol.pathFromRoot AS folder_path,
+                COUNT(ai.id_local) AS total_photos,
+                MIN(ai.captureTime) AS min_date,
+                MAX(ai.captureTime) AS max_date
+            FROM AgLibraryFolder fol
+            JOIN AgLibraryRootFolder rf ON rf.id_local = fol.rootFolder
+            JOIN AgLibraryFile af ON af.folder = fol.id_local
+            JOIN Adobe_images ai ON ai.rootFile = af.id_local
+            WHERE COALESCE(ai.pick, 0) > -1
+            GROUP BY fol.id_local
+            ORDER BY total_photos DESC
+            """
+            for r in conn.execute(folder_sql):
+                root = r["root_path"] or ""
+                sub = r["folder_path"] or ""
+                combined = (root + sub).replace("\\", "/").rstrip("/")
+                name = combined.split("/")[-1] if combined else "Photos"
+                folders.append({
+                    "id": f"f-{r['folder_id']}",
+                    "name": name,
+                    "path": combined,
+                    "total_photos": r["total_photos"],
+                    "filtered_photos": r["total_photos"],
+                    "date": str(r["max_date"])[:10] if r["max_date"] else "",
+                })
+
+        # Query Collections
+        if "AgLibraryCollection" in tables:
+            cols_info = {
+                r[1]
+                for r in conn.execute("PRAGMA table_info(AgLibraryCollection)").fetchall()
+            }
+            where_clause = (
+                "WHERE (c.systemOnly = 0 OR c.systemOnly IS NULL)"
+                if "systemOnly" in cols_info
+                else ""
+            )
+            if "AgLibraryCollectionImage" in tables:
+                col_sql = f"""
+                SELECT
+                    c.id_local AS collection_id,
+                    c.name AS collection_name,
+                    COUNT(ci.image) AS total_photos
+                FROM AgLibraryCollection c
+                LEFT JOIN AgLibraryCollectionImage ci ON ci.collection = c.id_local
+                LEFT JOIN Adobe_images ai ON ai.id_local = ci.image AND COALESCE(ai.pick, 0) > -1
+                {where_clause}
+                GROUP BY c.id_local
+                ORDER BY c.name ASC
+                """
+            else:
+                col_sql = f"""
+                SELECT
+                    c.id_local AS collection_id,
+                    c.name AS collection_name,
+                    COALESCE(c.imageCount, 0) AS total_photos
+                FROM AgLibraryCollection c
+                {where_clause}
+                ORDER BY c.name ASC
+                """
+            for r in conn.execute(col_sql):
+                collections.append({
+                    "id": f"c-{r['collection_id']}",
+                    "name": r["collection_name"],
+                    "total_photos": r["total_photos"],
+                    "filtered_photos": r["total_photos"],
+                    "date": "",
+                })
+    finally:
+        conn.close()
+
+    return {
+        "size_bytes": size_bytes,
+        "size_formatted": size_formatted,
+        "folders": folders,
+        "collections": collections,
+    }
+
+
+def discover_lightroom_catalogs() -> list[dict[str, Any]]:
+    """Scan the operating system for Lightroom Classic catalogs (.lrcat).
+
+    Checks Adobe Lightroom Preferences (Windows %APPDATA%, macOS Application Support),
+    standard user directories (Pictures/Lightroom, Documents/Lightroom, OneDrive),
+    and recent folder history.
+
+    Returns a list of dicts:
+        name: str (filename)
+        path: str (absolute path)
+        size: str (formatted size like "1.9 MB")
+        size_bytes: int
+    """
+    found: dict[str, Path] = {}
+
+    # 1. Check Lightroom Preferences files
+    if sys.platform == "win32":
+        appdata = os.environ.get("APPDATA")
+        if appdata:
+            pref_dir = Path(appdata) / "Adobe" / "Lightroom" / "Preferences"
+            if pref_dir.exists():
+                for pref in pref_dir.glob("*.agprefs"):
+                    try:
+                        text = pref.read_text(encoding="utf-8", errors="ignore")
+                        for pattern in (
+                            r'([a-zA-Z]:\\[^\r\n"\t\0]+\.lrcat)',
+                            r'([a-zA-Z]:\\\\[^\r\n"\t\0]+\.lrcat)',
+                        ):
+                            for m in re.findall(pattern, text):
+                                p = Path(m.replace("\\\\", "\\").strip())
+                                if p.exists() and p.is_file():
+                                    try:
+                                        found[str(p.resolve())] = p
+                                    except OSError:
+                                        found[str(p)] = p
+                    except Exception:
+                        pass
+    elif sys.platform == "darwin":
+        home = Path.home()
+        pref_candidates = [
+            home / "Library" / "Application Support" / "Adobe" / "Lightroom" / "Preferences",
+            home / "Library" / "Preferences",
+        ]
+        for pref_dir in pref_candidates:
+            if pref_dir.exists():
+                for pref in pref_dir.glob("*Lightroom*.agprefs"):
+                    try:
+                        text = pref.read_text(encoding="utf-8", errors="ignore")
+                        for m in re.findall(r'(/[^\r\n"\t\0]+\.lrcat)', text):
+                            p = Path(m.strip())
+                            if p.exists() and p.is_file():
+                                try:
+                                    found[str(p.resolve())] = p
+                                except OSError:
+                                    found[str(p)] = p
+                    except Exception:
+                        pass
+
+    # 2. Check standard user paths
+    home = Path.home()
+    user_candidates = [
+        home / "Pictures" / "Lightroom",
+        home / "OneDrive" / "Pictures" / "Lightroom",
+        home / "Pictures",
+        home / "OneDrive" / "Pictures",
+        home / "Documents" / "Lightroom",
+        home / "OneDrive" / "Documents" / "Lightroom",
+    ]
+    for cd in user_candidates:
+        if cd.exists():
+            try:
+                for p in cd.glob("*.lrcat"):
+                    if p.is_file():
+                        try:
+                            found[str(p.resolve())] = p
+                        except OSError:
+                            found[str(p)] = p
+                for p in cd.glob("*/*.lrcat"):
+                    if p.is_file():
+                        try:
+                            found[str(p.resolve())] = p
+                        except OSError:
+                            found[str(p)] = p
+            except Exception:
+                pass
+
+    # 3. Check recent folder history
+    recent_path = config.RECENT_FOLDERS_PATH
+    if recent_path.exists():
+        try:
+            records = json.loads(recent_path.read_text(encoding="utf-8"))
+            if isinstance(records, list):
+                for r in records:
+                    p_str = r.get("path")
+                    if p_str and p_str.lower().endswith(".lrcat"):
+                        p = Path(p_str)
+                        if p.exists() and p.is_file():
+                            try:
+                                found[str(p.resolve())] = p
+                            except OSError:
+                                found[str(p)] = p
+        except Exception:
+            pass
+
+    results = []
+    for k, p in found.items():
+        try:
+            st = p.stat()
+            size_b = st.st_size
+            results.append({
+                "name": p.name,
+                "path": str(p),
+                "size": format_catalog_size(size_b),
+                "size_bytes": size_b,
+                "last_modified": st.st_mtime,
+            })
+        except OSError:
+            pass
+
+    results.sort(key=lambda c: c.get("last_modified", 0), reverse=True)
+    return results
 
 
 # --------------------------------------------------------------------------- #

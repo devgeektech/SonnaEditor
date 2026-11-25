@@ -44,7 +44,7 @@ function StepHeader({ stepKind }) {
   );
 }
 
-function StepName({ value, onChange, onNext }) {
+function StepName({ value, onChange, onNext, isDuplicate }) {
   return (
     <div style={{ padding: '20px 22px', flex: 1, minHeight: 0, overflow: 'auto' }}>
       <div style={{ fontSize: 13, color: SONNA.fg, marginBottom: 8 }}>Profile name</div>
@@ -54,7 +54,7 @@ function StepName({ value, onChange, onNext }) {
         value={value}
         onChange={(e) => onChange(e.target.value)}
         onKeyDown={(e) => {
-          if (e.key === 'Enter' && value.trim()) {
+          if (e.key === 'Enter' && value.trim() && !isDuplicate) {
             e.preventDefault();
             onNext();
           }
@@ -63,11 +63,25 @@ function StepName({ value, onChange, onNext }) {
         style={{
           width: '100%', height: 38, padding: '0 12px',
           background: SONNA.bgPanel,
-          border: `1px solid ${SONNA.line}`, borderRadius: 3,
+          border: `1px solid ${isDuplicate ? SONNA.red : SONNA.line}`, borderRadius: 3,
           color: SONNA.fg, fontFamily: F, fontSize: 13,
           outline: 'none',
         }}
       />
+      {isDuplicate && (
+        <div style={{
+          marginTop: 6,
+          fontSize: 11.5,
+          color: SONNA.red,
+          fontWeight: 500,
+          display: 'flex',
+          alignItems: 'center',
+          gap: 5,
+        }}>
+          <span>⚠️</span>
+          <span>A profile named &quot;{value.trim()}&quot; already exists. Every profile must have a unique name.</span>
+        </div>
+      )}
       <div style={{ marginTop: 10, fontSize: 11.5, color: SONNA.fgFaint, lineHeight: 1.5 }}>
         This name is written into the checkpoint sidecar and shown in the profile list.
       </div>
@@ -258,7 +272,7 @@ function TrainingProgress({ job, onCancel, onDone }) {
   );
 }
 
-export function PersonalProfileWizard({ onClose, onCreated }) {
+export function PersonalProfileWizard({ onClose, onCreated, profiles = [] }) {
   const [stepKind, setStepKind] = useState('name');
   const [profileName, setProfileName] = useState('');
   const [folderPath, setFolderPath] = useState(null);
@@ -268,6 +282,15 @@ export function PersonalProfileWizard({ onClose, onCreated }) {
   const [submitError, setSubmitError] = useState(null);
   const [confirmLeaveOpen, setConfirmLeaveOpen] = useState(false);
   const job = useJob({ onError: (e) => setSubmitError(e?.message || String(e)) });
+
+  const trimmedName = profileName.trim();
+  const isDuplicateName = useMemo(() => {
+    if (!trimmedName) return false;
+    const lower = trimmedName.toLowerCase();
+    return (profiles || []).some(
+      (p) => (p.display_name || p.name || '').trim().toLowerCase() === lower
+    );
+  }, [trimmedName, profiles]);
 
   const trainingStarted = !!job.current;
   const hasAnyState = useMemo(() => (
@@ -304,7 +327,7 @@ export function PersonalProfileWizard({ onClose, onCreated }) {
   }, []);
 
   const canAdvance = (() => {
-    if (stepKind === 'name') return profileName.trim().length > 0;
+    if (stepKind === 'name') return trimmedName.length > 0 && !isDuplicateName;
     if (stepKind === 'folder') return folderPath !== null;
     if (stepKind === 'settings') return maxEpochs >= 1 && batchSize >= 1 && workers >= 0;
     if (stepKind === 'confirm') return true;
@@ -313,6 +336,10 @@ export function PersonalProfileWizard({ onClose, onCreated }) {
 
   const advance = useCallback(async () => {
     if (!canAdvance || trainingStarted) return;
+    if (isDuplicateName) {
+      setSubmitError(`A profile named "${trimmedName}" already exists. Every profile must have a unique name.`);
+      return;
+    }
     if (stepKind === 'name') { setStepKind('folder'); return; }
     if (stepKind === 'folder') { setStepKind('settings'); return; }
     if (stepKind === 'settings') { setStepKind('confirm'); return; }
@@ -329,7 +356,7 @@ export function PersonalProfileWizard({ onClose, onCreated }) {
     } catch (e) {
       setSubmitError(e.message || 'Failed to start training');
     }
-  }, [batchSize, canAdvance, folderPath, job, maxEpochs, profileName, stepKind, trainingStarted, workers]);
+  }, [batchSize, canAdvance, folderPath, isDuplicateName, job, maxEpochs, profileName, stepKind, trainingStarted, trimmedName, workers]);
 
   const goBack = useCallback(() => {
     if (trainingStarted) return;
@@ -351,7 +378,7 @@ export function PersonalProfileWizard({ onClose, onCreated }) {
       />
     );
   } else if (stepKind === 'name') {
-    body = <StepName value={profileName} onChange={setProfileName} onNext={advance} />;
+    body = <StepName value={profileName} onChange={setProfileName} onNext={advance} isDuplicate={isDuplicateName} />;
   } else if (stepKind === 'folder') {
     body = <StepFolder folderPath={folderPath} onPick={pickFolder} />;
   } else if (stepKind === 'settings') {

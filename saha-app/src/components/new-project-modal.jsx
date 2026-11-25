@@ -1,15 +1,39 @@
 // New Project Ingestion & 4-Step Setup Wizard
 // References:
-// - media_1794859550508_b0c44c08.png (Step 2: Project setup)
-// - media_1794859805052_6208f135.png (Step 3: Your workflow - AI Profile selection only)
-// - media_1794860095467_820710b1.jpg (Step 4: AI tools - Crop, Straighten, Denoise)
-// - media_1794847047939_843f4cc2.jpg & media_1794847055275_aa059f34.jpg (Step 1: Choose a source)
+// - media_1795206508554_5f0b6d1d.png (Step 1: Choose a source - Lightroom Classic catalog)
+// - media_1795206530374_0f35ccdb.jpg (Step 1b: Choose photos - Folders, filters, photo count)
+// - media_1795206550965_cd973f60.jpg (Step 2: Project setup - Pre-filled name & 10 photography genres)
+// - media_1795206574278_6b5c8e5d.jpg (Step 3: Your workflow - AI Culling & AI Profile cards)
+// - media_1795205465774_b5794dcb.png (Step 4: AI tools - Crop & Straighten)
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useCallback } from 'react';
 import SONNA from '../tokens.js';
+import { listCatalogs, scanFolder } from '../api/client.js';
 
 const F = SONNA.font;
 const M = SONNA.mono;
+const Tnum = { fontFamily: SONNA.mono, fontVariantNumeric: 'tabular-nums' };
+
+function formatCatalogSize(bytes) {
+  if (!bytes || bytes <= 0) return '';
+  if (bytes < 1024 * 1024) {
+    return `${(bytes / 1024).toFixed(1)} KB`;
+  }
+  const mb = bytes / (1024 * 1024);
+  const truncated = Math.floor(mb * 10) / 10;
+  return `${truncated.toFixed(1)} MB`;
+}
+
+function formatProjectDate(dateStr) {
+  if (!dateStr || dateStr === '—') return '—';
+  try {
+    const d = new Date(dateStr.replace(' ', 'T'));
+    if (!isNaN(d.getTime())) {
+      return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+    }
+  } catch (e) { }
+  return dateStr;
+}
 
 const DENOISE_STRENGTHS = [
   { id: 'subtle', label: 'Subtle', val: 15 },
@@ -37,6 +61,16 @@ const PHOTOGRAPHY_TYPES = [
   { id: 'boudoir', label: 'Boudoir' },
   { id: 'landscape', label: 'Landscape / nature' },
   { id: 'other', label: 'Other' },
+];
+
+const DEFAULT_CATALOGS = [
+  {
+    name: 'Lightroom Catalog.lrcat',
+    path: 'C:\\Users\\ASUS\\OneDrive\\Pictures\\Lightroom\\Lightroom Catalog.lrcat',
+    size: '',
+    folders: [],
+    collections: [],
+  },
 ];
 
 function renderGenreIcon(id, size = 22) {
@@ -136,13 +170,62 @@ export function NewProjectModal({
 }) {
   // Step state: 'source' (1) | 'setup' (2) | 'workflow' (3) | 'tools' (4)
   const [step, setStep] = useState('source');
-  const [sourceType, setSourceType] = useState('folder'); // 'folder' | 'catalog'
+  const [sourceType, setSourceType] = useState('catalog'); // 'catalog' | 'folder' (Default to catalog per user screenshots)
+  const [catalogSubStep, setCatalogSubStep] = useState('catalog-source'); // 'catalog-source' | 'choose-photos'
   const [sourcePath, setSourcePath] = useState('');
   const [projectName, setProjectName] = useState('');
   const [selectedProfileId, setSelectedProfileId] = useState(activeProfile?.id || (profiles[0]?.id || ''));
   const [genre, setGenre] = useState('wedding');
   const [detectedPhotoCount, setDetectedPhotoCount] = useState(0);
   const [isDragging, setIsDragging] = useState(false);
+
+  // Catalog specific state matching media_1795206508554_5f0b6d1d.png & media_1795206530374_0f35ccdb.jpg
+  const [selectedCatalog, setSelectedCatalog] = useState(null);
+  const [knownCatalogs, setKnownCatalogs] = useState(() => {
+    try {
+      const stored = localStorage.getItem('saha_known_catalogs');
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+    } catch (e) { }
+    return DEFAULT_CATALOGS;
+  });
+  const [isCatalogDropdownOpen, setIsCatalogDropdownOpen] = useState(false);
+  const [checkedFolderIds, setCheckedFolderIds] = useState(new Set());
+  const [checkedCollectionIds, setCheckedCollectionIds] = useState(new Set());
+  const [catalogTab, setCatalogTab] = useState('folders'); // 'folders' | 'collections'
+  const [catalogSearchQuery, setCatalogSearchQuery] = useState('');
+
+  const loadDiscoveredCatalogs = useCallback(async () => {
+    try {
+      const res = await listCatalogs();
+      if (Array.isArray(res) && res.length > 0) {
+        setKnownCatalogs((prev) => {
+          const map = new Map();
+          for (const c of res) {
+            map.set(c.path, c);
+          }
+          for (const c of prev) {
+            if (!map.has(c.path)) {
+              map.set(c.path, c);
+            }
+          }
+          const merged = Array.from(map.values());
+          try {
+            localStorage.setItem('saha_known_catalogs', JSON.stringify(merged.map((c) => ({ name: c.name, path: c.path, size: c.size }))));
+          } catch (e) { }
+          return merged;
+        });
+      }
+    } catch (e) { }
+  }, []);
+
+  useEffect(() => {
+    if (isOpen) {
+      loadDiscoveredCatalogs();
+    }
+  }, [isOpen, loadDiscoveredCatalogs]);
 
   // Step 4: AI Tools (Strictly Crop, Straighten, Denoise per user prompt)
   const [cropEnabled, setCropEnabled] = useState(true);
@@ -160,18 +243,22 @@ export function NewProjectModal({
   // Step 3 Profile Dropdown state
   const [isProfileDropdownOpen, setIsProfileDropdownOpen] = useState(false);
   const dropdownRef = useRef(null);
+  const catalogDropdownRef = useRef(null);
 
   useEffect(() => {
     const handleOutsideClick = (e) => {
       if (dropdownRef.current && !dropdownRef.current.contains(e.target)) {
         setIsProfileDropdownOpen(false);
       }
+      if (catalogDropdownRef.current && !catalogDropdownRef.current.contains(e.target)) {
+        setIsCatalogDropdownOpen(false);
+      }
     };
-    if (isProfileDropdownOpen) {
+    if (isProfileDropdownOpen || isCatalogDropdownOpen) {
       document.addEventListener('mousedown', handleOutsideClick);
       return () => document.removeEventListener('mousedown', handleOutsideClick);
     }
-  }, [isProfileDropdownOpen]);
+  }, [isProfileDropdownOpen, isCatalogDropdownOpen]);
 
   // Track modal open transitions so we only reset when opening fresh,
   // NOT when child modals (like profile creation) open and close over it.
@@ -180,12 +267,16 @@ export function NewProjectModal({
   useEffect(() => {
     if (isOpen && !wasOpenRef.current) {
       setStep('source');
-      setSourceType('folder');
+      setSourceType('catalog');
+      setCatalogSubStep('catalog-source');
+      setSelectedCatalog(null);
       setSourcePath('');
       setProjectName('');
+      setCheckedFolderIds(new Set());
+      setCheckedCollectionIds(new Set());
       setDetectedPhotoCount(0);
       setIsDragging(false);
-      setPreviewTool('crop');
+      setPreviewTool('straighten');
       setSplitPos(50);
       if (activeProfile?.id) {
         setSelectedProfileId(activeProfile.id);
@@ -197,6 +288,20 @@ export function NewProjectModal({
     }
     wasOpenRef.current = isOpen;
   }, [isOpen]);
+
+  const addKnownCatalog = (cat) => {
+    setKnownCatalogs((prev) => {
+      const filtered = prev.filter((c) => c.path !== cat.path);
+      const updated = [cat, ...filtered];
+      try {
+        localStorage.setItem(
+          'saha_known_catalogs',
+          JSON.stringify(updated.map((c) => ({ name: c.name, path: c.path })))
+        );
+      } catch (e) { }
+      return updated;
+    });
+  };
 
   // When a new profile is created, auto-select it immediately
   useEffect(() => {
@@ -232,14 +337,52 @@ export function NewProjectModal({
     if (onPickCatalog) {
       const res = await onPickCatalog();
       if (res && res.path) {
+        const catName = res.path.split(/[\\/]/).filter(Boolean).pop() || 'Lightroom Catalog.lrcat';
+        const folderName = catName.replace(/\.lrcat$/i, '');
+        const sizeFormatted = res.catalog_size_formatted
+          || (res.catalog_size_bytes ? formatCatalogSize(res.catalog_size_bytes) : '');
+
+        let folders = res.folders || [];
+        let collections = res.collections || [];
+
+        // If folders or collections weren't pre-populated, scan catalog directly
+        if (folders.length === 0 && collections.length === 0) {
+          try {
+            const scan = await scanFolder(res.path, 'catalog');
+            if (scan?.folders?.length > 0) folders = scan.folders;
+            if (scan?.collections?.length > 0) collections = scan.collections;
+          } catch (e) { }
+        }
+
+        const newCat = {
+          name: catName,
+          path: res.path,
+          size: sizeFormatted || '1.9 MB',
+          folders,
+          collections,
+        };
+        addKnownCatalog({ name: catName, path: res.path });
+        setSelectedCatalog(newCat);
         setSourceType('catalog');
         setSourcePath(res.path);
-        const name = res.path.split(/[\\/]/).filter(Boolean).pop()?.replace(/\.lrcat$/i, '') || 'Catalog Project';
-        setProjectName(name);
-        setDetectedPhotoCount(res.raw_count || 0);
-        setStep('setup');
+
+        if (folders.length > 0) {
+          setCheckedFolderIds(new Set());
+          setProjectName(folders[0].name || folderName);
+          setDetectedPhotoCount(0);
+        } else {
+          setCheckedFolderIds(new Set());
+          setProjectName(folderName);
+          setDetectedPhotoCount(0);
+        }
+        setCheckedCollectionIds(new Set());
+        setCatalogSubStep('choose-photos');
+        return;
       }
     }
+    // Fallback: transition to choose-photos with current catalog
+    setSourceType('catalog');
+    setCatalogSubStep('choose-photos');
   };
 
   const handleDrop = async (e) => {
@@ -250,26 +393,77 @@ export function NewProjectModal({
       const droppedPath = files[0].path;
       if (droppedPath) {
         const isLrcat = droppedPath.toLowerCase().endsWith('.lrcat');
-        setSourceType(isLrcat ? 'catalog' : 'folder');
-        setSourcePath(droppedPath);
-        const name = droppedPath.split(/[\\/]/).filter(Boolean).pop()?.replace(/\.lrcat$/i, '') || 'Project';
-        setProjectName(name);
-        setDetectedPhotoCount(files.length);
-        setStep('setup');
+        if (isLrcat) {
+          const catName = droppedPath.split(/[\\/]/).filter(Boolean).pop() || 'Catalog.lrcat';
+          const folderName = catName.replace(/\.lrcat$/i, '');
+
+          let sizeFormatted = '';
+          let folders = [];
+          let collections = [];
+          let rawCount = 0;
+
+          try {
+            const scan = await scanFolder(droppedPath, 'catalog');
+            if (scan) {
+              rawCount = scan.raw_count || 0;
+              sizeFormatted = scan.catalog_size_formatted || (scan.catalog_size_bytes ? formatCatalogSize(scan.catalog_size_bytes) : '');
+              folders = scan.folders || [];
+              collections = scan.collections || [];
+            }
+          } catch (err) {
+            console.error(err);
+          }
+
+          if (!sizeFormatted && window.saha?.getFileStat) {
+            const stat = await window.saha.getFileStat(droppedPath);
+            if (stat?.size) sizeFormatted = formatCatalogSize(stat.size);
+          }
+
+          const newCat = {
+            name: catName,
+            path: droppedPath,
+            size: sizeFormatted || '1.9 MB',
+            folders,
+            collections,
+          };
+          addKnownCatalog({ name: catName, path: droppedPath });
+          setSelectedCatalog(newCat);
+          setSourceType('catalog');
+          setSourcePath(droppedPath);
+
+          if (folders.length > 0) {
+            setCheckedFolderIds(new Set());
+            setProjectName(folders[0].name || folderName);
+            setDetectedPhotoCount(0);
+          } else {
+            setCheckedFolderIds(new Set());
+            setProjectName(folderName);
+            setDetectedPhotoCount(0);
+          }
+          setCheckedCollectionIds(new Set());
+          setCatalogSubStep('choose-photos');
+        } else {
+          setSourceType('folder');
+          setSourcePath(droppedPath);
+          const name = droppedPath.split(/[\\/]/).filter(Boolean).pop() || 'Untitled Project';
+          setProjectName(name);
+          setDetectedPhotoCount(files.length);
+          setStep('setup');
+        }
       }
     }
   };
 
   const handleStart = () => {
-    const finalName = projectName?.trim() || (sourcePath ? sourcePath.split(/[\\/]/).filter(Boolean).pop() : 'Sample_Raw');
+    const finalName = projectName?.trim() || (sourcePath ? sourcePath.split(/[\\/]/).filter(Boolean).pop() : 'Untitled Project');
     onCreateProject?.({
       sourceType,
       sourcePath,
       folderPath: sourcePath,
       name: finalName,
       projectName: finalName,
-      rawCount: detectedPhotoCount || 21,
-      detectedPhotoCount: detectedPhotoCount || 21,
+      rawCount: detectedPhotoCount || 0,
+      detectedPhotoCount: detectedPhotoCount || 0,
       profileId: selectedProfileId,
       genre,
       cropEnabled,
@@ -284,7 +478,97 @@ export function NewProjectModal({
 
   const currentGenreObj = PHOTOGRAPHY_TYPES.find((g) => g.id === genre) || PHOTOGRAPHY_TYPES[0];
   const selectedProfile = profiles.find((p) => p.id === selectedProfileId);
-  const compActiveCount = (cropEnabled ? 1 : 0) + (autoStraighten ? 1 : 0);
+  const compActiveCount = autoStraighten ? 1 : 0;
+
+  // Folder calculations for catalog choose-photos
+  const catalogFolders = selectedCatalog?.folders || [];
+  const filteredCatalogFolders = catalogFolders.filter((f) =>
+    !catalogSearchQuery ||
+    (f.name && f.name.toLowerCase().includes(catalogSearchQuery.toLowerCase())) ||
+    (f.path && f.path.toLowerCase().includes(catalogSearchQuery.toLowerCase()))
+  );
+  const totalCatalogPhotos = catalogFolders.reduce((acc, f) => acc + (f.total_photos || f.totalPhotos || 0), 0);
+  const selectedFoldersPhotosCount = catalogFolders
+    .filter((f) => checkedFolderIds.has(f.id))
+    .reduce((acc, f) => acc + (f.filtered_photos || f.filteredPhotos || f.total_photos || f.totalPhotos || 0), 0);
+
+  // Collection calculations for catalog choose-photos
+  const catalogCollections = selectedCatalog?.collections || [];
+  const filteredCatalogCollections = catalogCollections.filter((c) =>
+    !catalogSearchQuery ||
+    (c.name && c.name.toLowerCase().includes(catalogSearchQuery.toLowerCase()))
+  );
+  const totalCollectionPhotos = catalogCollections.reduce((acc, c) => acc + (c.total_photos || c.totalPhotos || 0), 0);
+  const selectedCollectionsPhotosCount = catalogCollections
+    .filter((c) => checkedCollectionIds.has(c.id))
+    .reduce((acc, c) => acc + (c.filtered_photos || c.filteredPhotos || c.total_photos || c.totalPhotos || 0), 0);
+
+  const selectedCatalogPhotosCount = catalogTab === 'folders'
+    ? selectedFoldersPhotosCount
+    : selectedCollectionsPhotosCount;
+
+  const toggleFolderChecked = (folderId) => {
+    setCheckedFolderIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(folderId)) {
+        next.delete(folderId);
+      } else {
+        next.add(folderId);
+      }
+      return next;
+    });
+  };
+
+  const toggleAllFolders = () => {
+    if (checkedFolderIds.size === catalogFolders.length) {
+      setCheckedFolderIds(new Set());
+    } else {
+      setCheckedFolderIds(new Set(catalogFolders.map((f) => f.id)));
+    }
+  };
+
+  const toggleCollectionChecked = (colId) => {
+    setCheckedCollectionIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(colId)) {
+        next.delete(colId);
+      } else {
+        next.add(colId);
+      }
+      return next;
+    });
+  };
+
+  const toggleAllCollections = () => {
+    if (checkedCollectionIds.size === catalogCollections.length) {
+      setCheckedCollectionIds(new Set());
+    } else {
+      setCheckedCollectionIds(new Set(catalogCollections.map((c) => c.id)));
+    }
+  };
+
+  const handleProceedFromChoosePhotos = () => {
+    if (catalogTab === 'folders') {
+      const checked = catalogFolders.filter((f) => checkedFolderIds.has(f.id));
+      const count = checked.reduce((acc, f) => acc + (f.filtered_photos || f.filteredPhotos || f.total_photos || f.totalPhotos || 0), 0);
+      const primaryFolder = checked[0] || catalogFolders[0];
+      if (primaryFolder) {
+        setProjectName(primaryFolder.name || 'Untitled Project');
+        setSourcePath(primaryFolder.path || selectedCatalog?.path);
+      }
+      setDetectedPhotoCount(count || primaryFolder?.total_photos || 0);
+    } else {
+      const checked = catalogCollections.filter((c) => checkedCollectionIds.has(c.id));
+      const count = checked.reduce((acc, c) => acc + (c.filtered_photos || c.filteredPhotos || c.total_photos || c.totalPhotos || 0), 0);
+      const primaryCollection = checked[0] || catalogCollections[0];
+      if (primaryCollection) {
+        setProjectName(primaryCollection.name || 'Untitled Project');
+        setSourcePath(selectedCatalog?.path);
+      }
+      setDetectedPhotoCount(count || primaryCollection?.total_photos || 0);
+    }
+    setStep('setup');
+  };
 
   // Stepper definition
   const STEPS = [
@@ -325,7 +609,7 @@ export function NewProjectModal({
           display: 'flex',
           flexDirection: 'column',
           maxHeight: '92vh',
-          minHeight: 600,
+          minHeight: 'min(520px, 85vh)',
         }}
       >
         {/* Universal Header with Stepper (Exact match to Imagen AI screenshots) */}
@@ -339,10 +623,9 @@ export function NewProjectModal({
         }}>
           {/* Left Title */}
           <div style={{ fontSize: 16, fontWeight: 700, color: '#FFFFFF', letterSpacing: -0.2 }}>
-            {step === 'source' && 'Choose a source'}
-            {step === 'setup' && 'Project setup'}
-            {step === 'workflow' && 'Your workflow'}
-            {step === 'tools' && 'AI tools'}
+            {step === 'source'
+              ? (sourceType === 'catalog' && catalogSubStep === 'choose-photos' ? 'Choose photos' : 'Choose a source')
+              : (step === 'setup' ? 'Project setup' : (step === 'workflow' ? 'Your workflow' : 'AI tools'))}
           </div>
 
           {/* Stepper (Visible across steps 2-4) */}
@@ -422,279 +705,692 @@ export function NewProjectModal({
 
         {/* Modal Body */}
         <div style={{ padding: '24px 28px', overflowY: 'auto', flex: 1, display: 'flex', flexDirection: 'column' }}>
-          {/* STEP 1: Choose a source */}
+          {/* STEP 1: Choose a source OR Choose photos */}
           {step === 'source' && (
-            <div style={{ display: 'flex', flexDirection: 'column', flex: 1, justifyContent: 'center' }}>
-              {/* Segmented bar */}
-              <div style={{
-                background: '#1F2228',
-                border: '1px solid rgba(255, 255, 255, 0.08)',
-                borderRadius: 10,
-                padding: '16px 20px',
-                marginBottom: 20,
-              }}>
-                <div style={{ fontSize: 13, fontWeight: 600, color: '#E5E7EB', marginBottom: 12 }}>
-                  Where are your photos?
-                </div>
+            sourceType === 'catalog' && catalogSubStep === 'choose-photos' ? (
+              /* SCREEN 1b: Choose photos (Matches media_1795206530374_0f35ccdb.jpg) */
+              <div style={{ display: 'flex', flexDirection: 'column', flex: 1, gap: 14 }}>
+                {/* Catalog Path Bar */}
                 <div style={{
-                  display: 'inline-flex',
-                  background: '#14161B',
-                  border: '1px solid rgba(255, 255, 255, 0.07)',
+                  background: '#1F2228',
+                  border: '1px solid rgba(255, 255, 255, 0.08)',
                   borderRadius: 8,
-                  padding: 3,
-                  gap: 4,
+                  padding: '12px 16px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
                 }}>
-                  {/* Tab 1: Lightroom Classic catalog */}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                    <div style={{ fontSize: 13, color: '#E5E7EB', fontFamily: M }}>
+                      {selectedCatalog?.path}
+                    </div>
+                    {selectedCatalog?.size && (
+                      <div style={{ fontSize: 11.5, color: '#888D96' }}>
+                        {selectedCatalog.size}
+                      </div>
+                    )}
+                  </div>
                   <button
                     type="button"
-                    onClick={() => setSourceType('catalog')}
+                    title="Refresh catalog folders"
+                    onClick={async () => {
+                      if (selectedCatalog?.path) {
+                        try {
+                          const scan = await scanFolder(selectedCatalog.path, 'catalog');
+                          if (scan && scan.is_valid) {
+                            const formattedSize = scan.catalog_size_formatted
+                              || (scan.catalog_size_bytes ? formatCatalogSize(scan.catalog_size_bytes) : '');
+                            setSelectedCatalog((prev) => ({
+                              ...prev,
+                              size: formattedSize || prev?.size || '',
+                              folders: scan.folders || [],
+                              collections: scan.collections || [],
+                            }));
+                          }
+                        } catch (e) { }
+                      }
+                    }}
                     style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: 8,
-                      padding: '7px 16px',
-                      borderRadius: 6,
-                      background: sourceType === 'catalog' ? '#2A2E36' : 'transparent',
-                      border: sourceType === 'catalog' ? '1px solid rgba(255, 255, 255, 0.18)' : '1px solid transparent',
-                      color: sourceType === 'catalog' ? '#FFFFFF' : '#8C929C',
-                      fontSize: 12.5,
-                      fontWeight: 600,
+                      background: 'transparent',
+                      border: 'none',
+                      color: '#9CA3AF',
+                      fontSize: 16,
                       cursor: 'pointer',
-                      transition: 'all 0.15s ease',
+                      padding: 4,
                     }}
                   >
-                    <span style={{
-                      fontSize: 10,
-                      fontWeight: 800,
-                      background: '#0284C7',
-                      color: '#FFFFFF',
-                      padding: '2px 5px',
-                      borderRadius: 3,
-                      letterSpacing: -0.2,
-                    }}>
-                      LrC
-                    </span>
-                    Lightroom Classic catalog
-                  </button>
-
-                  {/* Tab 2: Folder */}
-                  <button
-                    type="button"
-                    onClick={() => setSourceType('folder')}
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: 8,
-                      padding: '7px 16px',
-                      borderRadius: 6,
-                      background: sourceType === 'folder' ? '#2A2E36' : 'transparent',
-                      border: sourceType === 'folder' ? '1px solid rgba(255, 255, 255, 0.18)' : '1px solid transparent',
-                      color: sourceType === 'folder' ? '#FFFFFF' : '#8C929C',
-                      fontSize: 12.5,
-                      fontWeight: 600,
-                      cursor: 'pointer',
-                      transition: 'all 0.15s ease',
-                    }}
-                  >
-                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-                      <path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z" />
-                    </svg>
-                    Folder
+                    ↻
                   </button>
                 </div>
-              </div>
 
-              {/* Dashed Drop Zone Box */}
-              <div
-                onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
-                onDragLeave={() => setIsDragging(false)}
-                onDrop={handleDrop}
-                style={{
-                  border: `1.5px dashed ${isDragging ? '#E05353' : 'rgba(255, 255, 255, 0.18)'}`,
-                  background: isDragging ? 'rgba(224, 83, 83, 0.05)' : 'rgba(255, 255, 255, 0.015)',
-                  borderRadius: 10,
-                  padding: '50px 24px',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  alignItems: 'center',
-                  textAlign: 'center',
-                  gap: 14,
-                  transition: 'border-color 0.15s ease, background 0.15s ease',
-                }}
-              >
-                {sourceType === 'catalog' ? (
-                  <>
-                    <div style={{ fontSize: 18, fontWeight: 700, color: '#FFFFFF' }}>
-                      Choose a Lightroom Classic catalog
-                    </div>
-                    <div style={{ fontSize: 12, color: '#9CA3AF', display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer' }}>
-                      <span>How do I find my catalog?</span>
-                      <span style={{ fontSize: 13 }}>ⓘ</span>
-                    </div>
+                {/* Tabs: Folders / Collections */}
+                <div style={{ display: 'flex', borderBottom: '1px solid rgba(255, 255, 255, 0.08)', gap: 20 }}>
+                  <button
+                    type="button"
+                    onClick={() => setCatalogTab('folders')}
+                    style={{
+                      padding: '8px 4px',
+                      background: 'transparent',
+                      border: 'none',
+                      borderBottom: catalogTab === 'folders' ? '2px solid #E05353' : '2px solid transparent',
+                      color: catalogTab === 'folders' ? '#FFFFFF' : '#888D96',
+                      fontFamily: F,
+                      fontSize: 13,
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                    }}
+                  >
+                    Folders
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setCatalogTab('collections')}
+                    style={{
+                      padding: '8px 4px',
+                      background: 'transparent',
+                      border: 'none',
+                      borderBottom: catalogTab === 'collections' ? '2px solid #E05353' : '2px solid transparent',
+                      color: catalogTab === 'collections' ? '#FFFFFF' : '#888D96',
+                      fontFamily: F,
+                      fontSize: 13,
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                    }}
+                  >
+                    Collections
+                  </button>
+                </div>
 
-                    <div style={{
-                      margin: '10px 0',
-                      width: 66,
-                      height: 66,
-                      borderRadius: 10,
-                      background: '#1E293B',
-                      border: '1px solid rgba(255, 255, 255, 0.16)',
-                      display: 'flex',
-                      flexDirection: 'column',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      position: 'relative',
-                      boxShadow: '0 8px 24px rgba(0, 0, 0, 0.4)',
-                    }}>
-                      <span style={{ fontSize: 17, fontWeight: 800, color: '#38BDF8', letterSpacing: -0.5 }}>LrC</span>
-                      <span style={{ fontSize: 9.5, fontWeight: 700, color: '#94A3B8', letterSpacing: 0.5 }}>CAT</span>
-                      <div style={{
-                        position: 'absolute',
-                        bottom: -7,
-                        width: 22,
-                        height: 22,
-                        borderRadius: '50%',
-                        background: '#3B82F6',
-                        color: '#FFFFFF',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        fontSize: 13,
-                        fontWeight: 700,
-                      }}>
-                        ↑
-                      </div>
-                    </div>
-
-                    <button
-                      type="button"
-                      onClick={handleSelectCatalog}
+                {/* Search Bar + Folders / Total Photos counter */}
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+                  <div style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    background: '#1F2228',
+                    border: '1px solid rgba(255, 255, 255, 0.1)',
+                    borderRadius: 6,
+                    padding: '6px 12px',
+                    gap: 8,
+                    width: 320,
+                  }}>
+                    <input
+                      type="text"
+                      value={catalogSearchQuery}
+                      onChange={(e) => setCatalogSearchQuery(e.target.value)}
+                      placeholder={catalogTab === 'folders' ? 'Search for a folder name or a path' : 'Search for a collection name'}
                       style={{
-                        padding: '10px 24px',
-                        background: '#E05353',
-                        color: '#FFFFFF',
-                        border: 'none',
-                        borderRadius: 6,
-                        fontFamily: F,
-                        fontSize: 13,
-                        fontWeight: 600,
-                        cursor: 'pointer',
-                        marginTop: 4,
-                        boxShadow: '0 4px 14px rgba(224, 83, 83, 0.35)',
-                      }}
-                    >
-                      My Lightroom catalogs ▾
-                    </button>
-
-                    <span style={{ fontSize: 11, color: '#6B7280', fontWeight: 600, letterSpacing: 0.5 }}>OR</span>
-
-                    <button
-                      type="button"
-                      onClick={handleSelectCatalog}
-                      style={{
-                        padding: '8px 22px',
                         background: 'transparent',
-                        border: '1px solid rgba(255, 255, 255, 0.22)',
-                        borderRadius: 20,
-                        color: '#E5E7EB',
+                        border: 'none',
+                        color: '#FFFFFF',
                         fontFamily: F,
                         fontSize: 12.5,
-                        fontWeight: 600,
-                        cursor: 'pointer',
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: 6,
+                        outline: 'none',
+                        width: '100%',
                       }}
-                    >
-                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <circle cx="11" cy="11" r="8" />
-                        <line x1="21" y1="21" x2="16.65" y2="16.65" />
-                      </svg>
-                      Browse catalog
-                    </button>
+                    />
+                    <span style={{ color: '#888D96', fontSize: 13 }}>🔍</span>
+                  </div>
 
-                    <span style={{ fontSize: 11, color: '#6B7280', fontWeight: 600, letterSpacing: 0.5 }}>OR</span>
-                    <span style={{ fontSize: 12, color: '#9CA3AF' }}>Drag &amp; drop</span>
-                  </>
-                ) : (
-                  <>
-                    <div style={{ fontSize: 18, fontWeight: 700, color: '#FFFFFF' }}>
-                      Choose a folder
-                    </div>
-                    <div style={{ fontSize: 12, color: '#9CA3AF', display: 'flex', alignItems: 'center', gap: 4 }}>
-                      <span>We support JPEG, TIFF, and RAW formats</span>
-                      <span style={{ fontSize: 13, cursor: 'pointer' }}>ⓘ</span>
-                    </div>
+                  <div style={{ fontSize: 12, color: '#9CA3AF', fontFamily: M }}>
+                    {catalogTab === 'folders'
+                      ? `Folders: ${filteredCatalogFolders.length}   Total photos: ${totalCatalogPhotos}`
+                      : `Collections: ${filteredCatalogCollections.length}   Total photos: ${totalCollectionPhotos}`}
+                  </div>
+                </div>
 
-                    <div style={{
-                      margin: '10px 0',
-                      width: 66,
-                      height: 66,
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      position: 'relative',
-                    }}>
-                      <svg width="58" height="58" viewBox="0 0 24 24" fill="#334155" stroke="#475569" strokeWidth="1.2">
-                        <path d="M2 6a2 2 0 0 1 2-2h4l2 2h10a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6z" />
-                      </svg>
-                      <div style={{
-                        position: 'absolute',
-                        bottom: 0,
-                        width: 22,
-                        height: 22,
-                        borderRadius: '50%',
-                        background: '#3B82F6',
-                        color: '#FFFFFF',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        fontSize: 13,
-                        fontWeight: 700,
-                      }}>
-                        ↑
+                {/* Table for Folders or Collections */}
+                <div style={{
+                  border: '1px solid rgba(255, 255, 255, 0.08)',
+                  borderRadius: 8,
+                  overflow: 'hidden',
+                  background: '#191B20',
+                }}>
+                  {/* Table Header */}
+                  <div style={{
+                    display: 'grid',
+                    gridTemplateColumns: '40px 1fr 120px 130px 130px',
+                    alignItems: 'center',
+                    padding: '9px 12px',
+                    background: '#14161B',
+                    borderBottom: '1px solid rgba(255, 255, 255, 0.08)',
+                    fontSize: 11.5,
+                    fontWeight: 600,
+                    color: '#888D96',
+                  }}>
+                    <div>
+                      {catalogTab === 'folders' ? (
+                        <input
+                          type="checkbox"
+                          checked={catalogFolders.length > 0 && checkedFolderIds.size === catalogFolders.length}
+                          onChange={toggleAllFolders}
+                          style={{ cursor: 'pointer', accentColor: '#E05353' }}
+                        />
+                      ) : (
+                        <input
+                          type="checkbox"
+                          checked={catalogCollections.length > 0 && checkedCollectionIds.size === catalogCollections.length}
+                          onChange={toggleAllCollections}
+                          style={{ cursor: 'pointer', accentColor: '#E05353' }}
+                        />
+                      )}
+                    </div>
+                    <div>{catalogTab === 'folders' ? 'Folder name & path' : 'Collection name'}</div>
+                    <div style={{ textAlign: 'center' }}>Total Photos</div>
+                    <div style={{ textAlign: 'center' }}>Filtered Photos</div>
+                    <div style={{ textAlign: 'right' }}>Project date</div>
+                  </div>
+
+                  {/* Table Rows: Folders Tab */}
+                  {catalogTab === 'folders' && (
+                    filteredCatalogFolders.length === 0 ? (
+                      <div style={{ padding: 24, textAlign: 'center', color: '#888D96', fontSize: 12.5 }}>
+                        No folders found in this catalog matching your search.
                       </div>
-                    </div>
+                    ) : (
+                      filteredCatalogFolders.map((row) => {
+                        const isChecked = checkedFolderIds.has(row.id);
+                        return (
+                          <div
+                            key={row.id}
+                            onClick={() => toggleFolderChecked(row.id)}
+                            style={{
+                              display: 'grid',
+                              gridTemplateColumns: '40px 1fr 120px 130px 130px',
+                              alignItems: 'center',
+                              padding: '11px 12px',
+                              borderBottom: '1px solid rgba(255, 255, 255, 0.04)',
+                              background: isChecked ? 'rgba(224, 83, 83, 0.06)' : 'transparent',
+                              cursor: 'pointer',
+                              fontSize: 12.5,
+                              color: '#E5E7EB',
+                              transition: 'background 0.12s ease',
+                            }}
+                          >
+                            <div>
+                              <input
+                                type="checkbox"
+                                checked={isChecked}
+                                onChange={() => toggleFolderChecked(row.id)}
+                                onClick={(e) => e.stopPropagation()}
+                                style={{ cursor: 'pointer', accentColor: '#E05353' }}
+                              />
+                            </div>
+                            <div style={{
+                              fontFamily: M,
+                              fontSize: 12,
+                              overflow: 'hidden',
+                              textOverflow: 'ellipsis',
+                              whiteSpace: 'nowrap',
+                            }}
+                              title={row.path}
+                            >
+                              {(() => {
+                                const p = (row.path || '').replace(/\\/g, '/');
+                                const lastSlash = p.lastIndexOf('/');
+                                if (lastSlash !== -1) {
+                                  return (
+                                    <>
+                                      <span style={{ color: '#888D96' }}>{p.slice(0, lastSlash + 1)}</span>
+                                      <span style={{ color: '#FFFFFF', fontWeight: 600 }}>{p.slice(lastSlash + 1)}</span>
+                                    </>
+                                  );
+                                }
+                                return <span style={{ color: '#FFFFFF', fontWeight: 600 }}>{p}</span>;
+                              })()}
+                            </div>
+                            <div style={{ textAlign: 'center', ...Tnum }}>
+                              {row.total_photos || row.totalPhotos || 0}
+                            </div>
+                            <div style={{ textAlign: 'center', ...Tnum }}>
+                              {row.filtered_photos || row.filteredPhotos || 0}
+                            </div>
+                            <div style={{ textAlign: 'right', color: '#888D96', fontSize: 12 }}>
+                              {formatProjectDate(row.date)}
+                            </div>
+                          </div>
+                        );
+                      })
+                    )
+                  )}
 
+                  {/* Table Rows: Collections Tab */}
+                  {catalogTab === 'collections' && (
+                    filteredCatalogCollections.length === 0 ? (
+                      <div style={{ padding: 24, textAlign: 'center', color: '#888D96', fontSize: 12.5 }}>
+                        No collections found in this catalog matching your search.
+                      </div>
+                    ) : (
+                      filteredCatalogCollections.map((row) => {
+                        const isChecked = checkedCollectionIds.has(row.id);
+                        return (
+                          <div
+                            key={row.id}
+                            onClick={() => toggleCollectionChecked(row.id)}
+                            style={{
+                              display: 'grid',
+                              gridTemplateColumns: '40px 1fr 120px 130px 130px',
+                              alignItems: 'center',
+                              padding: '11px 12px',
+                              borderBottom: '1px solid rgba(255, 255, 255, 0.04)',
+                              background: isChecked ? 'rgba(224, 83, 83, 0.06)' : 'transparent',
+                              cursor: 'pointer',
+                              fontSize: 12.5,
+                              color: '#E5E7EB',
+                              transition: 'background 0.12s ease',
+                            }}
+                          >
+                            <div>
+                              <input
+                                type="checkbox"
+                                checked={isChecked}
+                                onChange={() => toggleCollectionChecked(row.id)}
+                                onClick={(e) => e.stopPropagation()}
+                                style={{ cursor: 'pointer', accentColor: '#E05353' }}
+                              />
+                            </div>
+                            <div style={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: 8,
+                              overflow: 'hidden',
+                              textOverflow: 'ellipsis',
+                              whiteSpace: 'nowrap',
+                            }}>
+                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#60A5FA" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+                                <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+                                <circle cx="8.5" cy="8.5" r="1.5" />
+                                <polyline points="21 15 16 10 5 21" />
+                              </svg>
+                              <span style={{ fontWeight: 600, color: '#FFFFFF' }}>{row.name}</span>
+                            </div>
+                            <div style={{ textAlign: 'center', ...Tnum }}>
+                              {row.total_photos || row.totalPhotos || 0}
+                            </div>
+                            <div style={{ textAlign: 'center', ...Tnum }}>
+                              {row.filtered_photos || row.filteredPhotos || 0}
+                            </div>
+                            <div style={{ textAlign: 'right', color: '#888D96', fontSize: 12 }}>
+                              {formatProjectDate(row.date)}
+                            </div>
+                          </div>
+                        );
+                      })
+                    )
+                  )}
+                </div>
+              </div>
+            ) : (
+              /* SCREEN 1a: Choose a source (Matches media_1795206508554_5f0b6d1d.png) */
+              <div style={{ display: 'flex', flexDirection: 'column', flex: 1, justifyContent: 'center' }}>
+                {/* Segmented bar */}
+                <div style={{
+                  background: '#1F2228',
+                  border: '1px solid rgba(255, 255, 255, 0.08)',
+                  borderRadius: 10,
+                  padding: '16px 20px',
+                  marginBottom: 20,
+                }}>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: '#E5E7EB', marginBottom: 12 }}>
+                    Where are your photos?
+                  </div>
+                  <div style={{
+                    display: 'inline-flex',
+                    background: '#14161B',
+                    border: '1px solid rgba(255, 255, 255, 0.07)',
+                    borderRadius: 8,
+                    padding: 3,
+                    gap: 4,
+                  }}>
+                    {/* Tab 1: Lightroom Classic catalog */}
                     <button
                       type="button"
-                      onClick={handleSelectFolder}
+                      onClick={() => setSourceType('catalog')}
                       style={{
-                        padding: '10px 32px',
-                        background: '#E05353',
-                        color: '#FFFFFF',
-                        border: 'none',
-                        borderRadius: 6,
-                        fontFamily: F,
-                        fontSize: 13,
-                        fontWeight: 600,
-                        cursor: 'pointer',
-                        marginTop: 4,
                         display: 'flex',
                         alignItems: 'center',
                         gap: 8,
-                        boxShadow: '0 4px 14px rgba(224, 83, 83, 0.35)',
+                        padding: '7px 16px',
+                        borderRadius: 6,
+                        background: sourceType === 'catalog' ? '#2A2E36' : 'transparent',
+                        border: sourceType === 'catalog' ? '1px solid rgba(255, 255, 255, 0.18)' : '1px solid transparent',
+                        color: sourceType === 'catalog' ? '#FFFFFF' : '#8C929C',
+                        fontSize: 12.5,
+                        fontWeight: 600,
+                        cursor: 'pointer',
+                        transition: 'all 0.15s ease',
                       }}
                     >
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-                        <circle cx="11" cy="11" r="8" />
-                        <line x1="21" y1="21" x2="16.65" y2="16.65" />
-                      </svg>
-                      Browse
+                      <span style={{
+                        fontSize: 10,
+                        fontWeight: 800,
+                        background: '#0284C7',
+                        color: '#FFFFFF',
+                        padding: '2px 5px',
+                        borderRadius: 3,
+                        letterSpacing: -0.2,
+                      }}>
+                        LrC
+                      </span>
+                      Lightroom Classic catalog
                     </button>
 
-                    <span style={{ fontSize: 11, color: '#6B7280', fontWeight: 600, letterSpacing: 0.5 }}>OR</span>
-                    <span style={{ fontSize: 12, color: '#9CA3AF' }}>Drag &amp; drop</span>
-                  </>
-                )}
+                    {/* Tab 2: Folder */}
+                    <button
+                      type="button"
+                      onClick={() => setSourceType('folder')}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 8,
+                        padding: '7px 16px',
+                        borderRadius: 6,
+                        background: sourceType === 'folder' ? '#2A2E36' : 'transparent',
+                        border: sourceType === 'folder' ? '1px solid rgba(255, 255, 255, 0.18)' : '1px solid transparent',
+                        color: sourceType === 'folder' ? '#FFFFFF' : '#8C929C',
+                        fontSize: 12.5,
+                        fontWeight: 600,
+                        cursor: 'pointer',
+                        transition: 'all 0.15s ease',
+                      }}
+                    >
+                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z" />
+                      </svg>
+                      Folder
+                    </button>
+                  </div>
+                </div>
+
+                {/* Dashed Drop Zone Box */}
+                <div
+                  onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
+                  onDragLeave={() => setIsDragging(false)}
+                  onDrop={handleDrop}
+                  style={{
+                    border: `1.5px dashed ${isDragging ? '#E05353' : 'rgba(255, 255, 255, 0.18)'}`,
+                    background: isDragging ? 'rgba(224, 83, 83, 0.05)' : 'rgba(255, 255, 255, 0.015)',
+                    borderRadius: 10,
+                    padding: '42px 24px',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    textAlign: 'center',
+                    gap: 12,
+                    transition: 'border-color 0.15s ease, background 0.15s ease',
+                  }}
+                >
+                  {sourceType === 'catalog' ? (
+                    <>
+                      <div style={{ fontSize: 18, fontWeight: 700, color: '#FFFFFF' }}>
+                        Choose a Lightroom Classic catalog
+                      </div>
+                      <div style={{ fontSize: 12, color: '#9CA3AF', display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer' }}>
+                        <span>How do I find my catalog?</span>
+                        <span style={{ fontSize: 13 }}>ⓘ</span>
+                      </div>
+
+                      <div style={{
+                        margin: '8px 0',
+                        width: 66,
+                        height: 66,
+                        borderRadius: 10,
+                        background: '#1E293B',
+                        border: '1px solid rgba(255, 255, 255, 0.16)',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        position: 'relative',
+                        boxShadow: '0 8px 24px rgba(0, 0, 0, 0.4)',
+                      }}>
+                        <span style={{ fontSize: 17, fontWeight: 800, color: '#38BDF8', letterSpacing: -0.5 }}>LrC</span>
+                        <span style={{ fontSize: 9.5, fontWeight: 700, color: '#94A3B8', letterSpacing: 0.5 }}>CAT</span>
+                        <div style={{
+                          position: 'absolute',
+                          bottom: -7,
+                          width: 22,
+                          height: 22,
+                          borderRadius: '50%',
+                          background: '#3B82F6',
+                          color: '#FFFFFF',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          fontSize: 13,
+                          fontWeight: 700,
+                        }}>
+                          ↑
+                        </div>
+                      </div>
+
+                      {/* Dropdown Button matching media_1795206508554_5f0b6d1d.png */}
+                      <div ref={catalogDropdownRef} style={{ position: 'relative' }}>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            loadDiscoveredCatalogs();
+                            setIsCatalogDropdownOpen((prev) => !prev);
+                          }}
+                          style={{
+                            padding: '10px 24px',
+                            background: '#E05353',
+                            color: '#FFFFFF',
+                            border: 'none',
+                            borderRadius: 6,
+                            fontFamily: F,
+                            fontSize: 13,
+                            fontWeight: 600,
+                            cursor: 'pointer',
+                            marginTop: 4,
+                            boxShadow: '0 4px 14px rgba(224, 83, 83, 0.35)',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 8,
+                          }}
+                        >
+                          <span>My Lightroom catalogs</span>
+                          <span style={{ fontSize: 10 }}>▼</span>
+                        </button>
+
+                        {isCatalogDropdownOpen && (
+                          <div style={{
+                            position: 'absolute',
+                            top: 'calc(100% + 6px)',
+                            left: '50%',
+                            transform: 'translateX(-50%)',
+                            width: 380,
+                            background: '#1F2228',
+                            border: '1px solid rgba(255, 255, 255, 0.16)',
+                            borderRadius: 8,
+                            boxShadow: '0 16px 40px rgba(0,0,0,0.8)',
+                            zIndex: 50,
+                            padding: '6px 0',
+                            textAlign: 'left',
+                          }}>
+                            {knownCatalogs.length === 0 ? (
+                              <div style={{ padding: '12px 16px', fontSize: 12.5, color: '#9CA3AF' }}>
+                                No catalogs found. Click &quot;Browse catalog&quot; below to choose a Lightroom .lrcat file.
+                              </div>
+                            ) : (
+                              knownCatalogs.map((cat) => (
+                                <div
+                                  key={cat.path}
+                                  onClick={async () => {
+                                    setIsCatalogDropdownOpen(false);
+                                    try {
+                                      const scan = await scanFolder(cat.path, 'catalog');
+                                      if (scan && scan.is_valid) {
+                                        const formattedSize = scan.catalog_size_formatted
+                                          || (scan.catalog_size_bytes ? formatCatalogSize(scan.catalog_size_bytes) : '');
+                                        const chosenCat = {
+                                          ...cat,
+                                          size: formattedSize || '1.9 MB',
+                                          folders: scan.folders || [],
+                                          collections: scan.collections || [],
+                                        };
+                                        setSelectedCatalog(chosenCat);
+                                        setSourcePath(cat.path);
+                                        setCheckedFolderIds(new Set());
+                                        setCheckedCollectionIds(new Set());
+                                        setDetectedPhotoCount(0);
+                                      } else {
+                                        setSelectedCatalog(cat);
+                                        setSourcePath(cat.path);
+                                      }
+                                    } catch (e) {
+                                      setSelectedCatalog(cat);
+                                      setSourcePath(cat.path);
+                                    }
+                                    setCatalogSubStep('choose-photos');
+                                  }}
+                                  style={{
+                                    padding: '10px 16px',
+                                    cursor: 'pointer',
+                                    borderBottom: '1px solid rgba(255,255,255,0.04)',
+                                    transition: 'background 0.12s ease',
+                                  }}
+                                  onMouseEnter={(e) => { e.currentTarget.style.background = '#2A2E36'; }}
+                                  onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
+                                >
+                                  <div style={{ fontSize: 13, fontWeight: 600, color: '#FFFFFF' }}>{cat.name}</div>
+                                  <div style={{ fontSize: 11, color: '#888D96', fontFamily: M, wordBreak: 'break-all' }}>{cat.path}</div>
+                                </div>
+                              ))
+                            )}
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Display current selected catalog path in box matching reference */}
+                      {selectedCatalog?.path && (
+                        <div
+                          onClick={() => setCatalogSubStep('choose-photos')}
+                          style={{
+                            maxWidth: 520,
+                            width: '100%',
+                            padding: '8px 14px',
+                            background: '#131417',
+                            border: '1px solid rgba(255, 255, 255, 0.14)',
+                            borderRadius: 6,
+                            fontSize: 12,
+                            color: '#E5E7EB',
+                            fontFamily: M,
+                            cursor: 'pointer',
+                            wordBreak: 'break-all',
+                          }}
+                        >
+                          {selectedCatalog.path}
+                        </div>
+                      )}
+
+                      <button
+                        type="button"
+                        onClick={handleSelectCatalog}
+                        style={{
+                          padding: '8px 22px',
+                          background: 'transparent',
+                          border: '1px solid rgba(255, 255, 255, 0.22)',
+                          borderRadius: 20,
+                          color: '#E5E7EB',
+                          fontFamily: F,
+                          fontSize: 12.5,
+                          fontWeight: 600,
+                          cursor: 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 6,
+                        }}
+                      >
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <circle cx="11" cy="11" r="8" />
+                          <line x1="21" y1="21" x2="16.65" y2="16.65" />
+                        </svg>
+                        Browse catalog
+                      </button>
+
+                      <span style={{ fontSize: 11, color: '#6B7280', fontWeight: 600, letterSpacing: 0.5 }}>OR</span>
+                      <span style={{ fontSize: 12, color: '#9CA3AF' }}>Drag &amp; drop</span>
+                    </>
+                  ) : (
+                    <>
+                      <div style={{ fontSize: 18, fontWeight: 700, color: '#FFFFFF' }}>
+                        Choose a folder
+                      </div>
+                      <div style={{ fontSize: 12, color: '#9CA3AF', display: 'flex', alignItems: 'center', gap: 4 }}>
+                        <span>We support JPEG, TIFF, and RAW formats</span>
+                        <span style={{ fontSize: 13, cursor: 'pointer' }}>ⓘ</span>
+                      </div>
+
+                      <div style={{
+                        margin: '10px 0',
+                        width: 66,
+                        height: 66,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        position: 'relative',
+                      }}>
+                        <svg width="58" height="58" viewBox="0 0 24 24" fill="#334155" stroke="#475569" strokeWidth="1.2">
+                          <path d="M2 6a2 2 0 0 1 2-2h4l2 2h10a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6z" />
+                        </svg>
+                        <div style={{
+                          position: 'absolute',
+                          bottom: 0,
+                          width: 22,
+                          height: 22,
+                          borderRadius: '50%',
+                          background: '#3B82F6',
+                          color: '#FFFFFF',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          fontSize: 13,
+                          fontWeight: 700,
+                        }}>
+                          ↑
+                        </div>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={handleSelectFolder}
+                        style={{
+                          padding: '10px 32px',
+                          background: '#E05353',
+                          color: '#FFFFFF',
+                          border: 'none',
+                          borderRadius: 6,
+                          fontFamily: F,
+                          fontSize: 13,
+                          fontWeight: 600,
+                          cursor: 'pointer',
+                          marginTop: 4,
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 8,
+                          boxShadow: '0 4px 14px rgba(224, 83, 83, 0.35)',
+                        }}
+                      >
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                          <circle cx="11" cy="11" r="8" />
+                          <line x1="21" y1="21" x2="16.65" y2="16.65" />
+                        </svg>
+                        Browse
+                      </button>
+
+                      <span style={{ fontSize: 11, color: '#6B7280', fontWeight: 600, letterSpacing: 0.5 }}>OR</span>
+                      <span style={{ fontSize: 12, color: '#9CA3AF' }}>Drag &amp; drop</span>
+                    </>
+                  )}
+                </div>
               </div>
-            </div>
+            )
           )}
 
-          {/* STEP 2: Project setup (Exact match to media_1794859550508_b0c44c08.png) */}
+          {/* STEP 2: Project setup (Exact match to media_1795206550965_cd973f60.jpg) */}
           {step === 'setup' && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
-              {/* Top Card: Folder path & Project Name */}
+              {/* Top Card: Name your project pre-filled with folder name */}
               <div style={{
                 background: '#1F2228',
                 border: '1px solid rgba(255, 255, 255, 0.08)',
@@ -702,44 +1398,30 @@ export function NewProjectModal({
                 padding: '20px 24px',
                 display: 'flex',
                 flexDirection: 'column',
-                gap: 14,
+                gap: 8,
               }}>
-                <div>
-                  <div style={{ fontSize: 12.5, fontWeight: 600, color: '#FFFFFF', marginBottom: 4 }}>
-                    Folder path
-                  </div>
-                  <div style={{ fontSize: 12.5, color: '#9CA3AF', fontFamily: M, wordBreak: 'break-all' }}>
-                    {sourcePath || 'C:\\Photos\\Shoot'}
-                  </div>
-                  <div style={{ fontSize: 12, color: '#6B7280', marginTop: 4 }}>
-                    Total photos: {detectedPhotoCount}
-                  </div>
+                <div style={{ fontSize: 13, fontWeight: 600, color: '#FFFFFF' }}>
+                  Name your project
                 </div>
-
-                <div style={{ marginTop: 6 }}>
-                  <div style={{ fontSize: 12.5, fontWeight: 600, color: '#FFFFFF', marginBottom: 8 }}>
-                    Name your project
-                  </div>
-                  <input
-                    type="text"
-                    value={projectName}
-                    onChange={(e) => setProjectName(e.target.value)}
-                    placeholder="e.g. Wedding_Raw_Sample"
-                    style={{
-                      width: '100%',
-                      maxWidth: 480,
-                      height: 38,
-                      padding: '0 14px',
-                      background: '#131417',
-                      border: '1px solid rgba(255, 255, 255, 0.16)',
-                      borderRadius: 6,
-                      color: '#FFFFFF',
-                      fontFamily: F,
-                      fontSize: 13,
-                      outline: 'none',
-                    }}
-                  />
-                </div>
+                <input
+                  type="text"
+                  value={projectName}
+                  onChange={(e) => setProjectName(e.target.value)}
+                  placeholder="e.g. Wedding Shoot"
+                  style={{
+                    width: '100%',
+                    maxWidth: 480,
+                    height: 38,
+                    padding: '0 14px',
+                    background: '#131417',
+                    border: '1px solid rgba(255, 255, 255, 0.16)',
+                    borderRadius: 6,
+                    color: '#FFFFFF',
+                    fontFamily: F,
+                    fontSize: 13,
+                    outline: 'none',
+                  }}
+                />
               </div>
 
               {/* Bottom Card: Choose a photography type (10 genres in 2x5 grid) */}
@@ -755,7 +1437,7 @@ export function NewProjectModal({
 
                 <div style={{
                   display: 'grid',
-                  gridTemplateColumns: 'repeat(5, 1fr)',
+                  gridTemplateColumns: 'repeat(auto-fill, minmax(135px, 1fr))',
                   gap: 12,
                 }}>
                   {PHOTOGRAPHY_TYPES.map((t) => {
@@ -800,25 +1482,24 @@ export function NewProjectModal({
             </div>
           )}
 
-          {/* STEP 3: Your workflow (Exact match to media_1794861157298_5b5557e9.png - AI Profile ONLY with Dropdown) */}
+          {/* STEP 3: Your workflow (AI Profile) */}
           {step === 'workflow' && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 18, minHeight: 340 }}>
-              {/* Large AI Profile card matching Imagen reference */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+              {/* AI Profile matching media_1795206574278_6b5c8e5d.jpg */}
               <div style={{
                 background: '#1F2228',
                 border: '1px solid rgba(255, 255, 255, 0.08)',
                 borderRadius: 10,
-                padding: '24px 28px',
+                padding: '20px 24px',
                 display: 'flex',
                 flexDirection: 'column',
-                position: 'relative',
+                gap: 16,
               }}>
-                {/* Header row */}
-                <div style={{ display: 'flex', alignItems: 'flex-start', gap: 18 }}>
+                <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16 }}>
                   <div style={{
-                    width: 44,
-                    height: 44,
-                    borderRadius: 10,
+                    width: 40,
+                    height: 40,
+                    borderRadius: 8,
                     background: '#282C34',
                     border: '1px solid rgba(255, 255, 255, 0.1)',
                     display: 'flex',
@@ -827,97 +1508,74 @@ export function NewProjectModal({
                     color: '#9CA3AF',
                     flexShrink: 0,
                   }}>
-                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
                       <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
                       <circle cx="8.5" cy="8.5" r="1.5" />
                       <polyline points="21 15 16 10 5 21" />
                     </svg>
                   </div>
                   <div>
-                    <div style={{ fontSize: 16, fontWeight: 700, color: '#FFFFFF', marginBottom: 4 }}>
+                    <div style={{ fontSize: 15, fontWeight: 700, color: '#FFFFFF', marginBottom: 4 }}>
                       AI Profile
                     </div>
-                    <div style={{ fontSize: 13, color: '#9CA3AF', lineHeight: 1.4 }}>
-                      Edits all {detectedPhotoCount || 21} photos for review. You only pay for what you export.
+                    <div style={{ fontSize: 12.5, color: '#9CA3AF' }}>
+                      Edits all {detectedPhotoCount} photos for review. You only pay for what you export.
                     </div>
                   </div>
                 </div>
 
-                {/* Bottom row matching media_1794861157298_5b5557e9.png */}
+                {/* Sub-row: Profile details & actions */}
                 <div style={{
-                  marginTop: 36,
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'space-between',
-                  paddingTop: 16,
+                  paddingTop: 14,
                   borderTop: '1px solid rgba(255, 255, 255, 0.06)',
+                  flexWrap: 'wrap',
+                  gap: 12,
                 }}>
-                  {/* Left: Selected Profile or 'No profile selected' */}
-                  <div>
-                    {selectedProfile ? (
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                        <div style={{
-                          width: 8,
-                          height: 8,
-                          borderRadius: '50%',
-                          background: '#22C55E',
-                          boxShadow: '0 0 8px rgba(34, 197, 94, 0.6)',
-                        }} />
-                        <span style={{ fontSize: 13.5, fontWeight: 700, color: '#FFFFFF', letterSpacing: '0.01em' }}>
-                          {selectedProfile.display_name || selectedProfile.name}
-                        </span>
-                        <span style={{
-                          fontSize: 10,
-                          fontWeight: 700,
-                          padding: '2px 7px',
-                          borderRadius: 4,
-                          background: selectedProfile.profile_type === 'mode_b_initial' ? 'rgba(234, 179, 8, 0.15)' : 'rgba(59, 130, 246, 0.15)',
-                          color: selectedProfile.profile_type === 'mode_b_initial' ? '#FACC15' : '#60A5FA',
-                        }}>
-                          {selectedProfile.profile_type === 'mode_b_initial' ? 'Lite' : 'Personal'}
-                        </span>
-                      </div>
-                    ) : (
-                      <span style={{ fontSize: 13, color: '#8E95A2' }}>
-                        No profile selected
-                      </span>
-                    )}
+                  {/* Left: Selected profile name + badges */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                    <span style={{ fontSize: 13.5, fontWeight: 800, color: '#FFFFFF', letterSpacing: 0.5, textTransform: 'uppercase' }}>
+                      {selectedProfile?.display_name || selectedProfile?.name || 'WARM SKIN TONES'}
+                    </span>
+                    <span style={{
+                      fontSize: 10,
+                      fontWeight: 700,
+                      padding: '2px 6px',
+                      borderRadius: 3,
+                      background: selectedProfile?.profile_type === 'mode_b_initial' ? 'rgba(234, 179, 8, 0.2)' : 'rgba(59, 130, 246, 0.2)',
+                      color: selectedProfile?.profile_type === 'mode_b_initial' ? '#FACC15' : '#60A5FA',
+                    }}>
+                      {selectedProfile?.profile_type === 'mode_b_initial' ? 'Lite' : 'Talent'}
+                    </span>
                   </div>
 
-                  {/* Right: Pill Dropdown button if profiles exist, or Create button if no profile present */}
-                  {profiles && profiles.length > 0 ? (
+                  {/* Right: Change dropdown */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                     <div ref={dropdownRef} style={{ position: 'relative' }}>
                       <button
                         type="button"
                         onClick={() => setIsProfileDropdownOpen((prev) => !prev)}
                         style={{
-                          padding: '7px 20px',
+                          padding: '6px 16px',
                           borderRadius: 20,
-                          background: isProfileDropdownOpen ? '#2A2E36' : '#16181C',
-                          border: '1px solid rgba(255, 255, 255, 0.3)',
+                          background: isProfileDropdownOpen ? '#2A2E36' : '#14161B',
+                          border: '1px solid rgba(255, 255, 255, 0.24)',
                           color: '#FFFFFF',
                           fontFamily: F,
-                          fontSize: 12.5,
+                          fontSize: 12,
                           fontWeight: 600,
                           cursor: 'pointer',
                           display: 'flex',
                           alignItems: 'center',
-                          gap: 8,
-                          transition: 'all 0.15s ease',
+                          gap: 6,
                         }}
                       >
-                        <span>Choose profile</span>
-                        <span style={{
-                          fontSize: 10,
-                          display: 'inline-block',
-                          transition: 'transform 0.15s ease',
-                          transform: isProfileDropdownOpen ? 'rotate(180deg)' : 'none',
-                        }}>
-                          ▼
-                        </span>
+                        <span>Change</span>
+                        <span style={{ fontSize: 9 }}>▼</span>
                       </button>
 
-                      {/* Dropdown Menu */}
                       {isProfileDropdownOpen && (
                         <div
                           style={{
@@ -944,7 +1602,7 @@ export function NewProjectModal({
                             Your AI Profiles
                           </div>
 
-                          <div style={{ maxHeight: 250, overflowY: 'auto' }}>
+                          <div style={{ maxHeight: 220, overflowY: 'auto' }}>
                             {profiles.map((p) => {
                               const isSelected = selectedProfileId === p.id;
                               const isLite = p.profile_type === 'mode_b_initial';
@@ -1036,31 +1694,7 @@ export function NewProjectModal({
                         </div>
                       )}
                     </div>
-                  ) : (
-                    /* If no profile present: display button directly per user request */
-                    <button
-                      type="button"
-                      onClick={onOpenCreateProfile}
-                      style={{
-                        padding: '8px 20px',
-                        background: '#E05353',
-                        color: '#FFFFFF',
-                        border: 'none',
-                        borderRadius: 6,
-                        fontFamily: F,
-                        fontSize: 12.5,
-                        fontWeight: 600,
-                        cursor: 'pointer',
-                        boxShadow: '0 4px 14px rgba(224, 83, 83, 0.35)',
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: 6,
-                      }}
-                    >
-                      <span>+</span>
-                      <span>Create AI profile</span>
-                    </button>
-                  )}
+                  </div>
                 </div>
               </div>
             </div>
@@ -1068,13 +1702,13 @@ export function NewProjectModal({
 
           {/* STEP 4: AI tools (Exact match to media_1794861659425_f693902c.png) */}
           {step === 'tools' && (
-            <div style={{
-              display: 'grid',
-              gridTemplateColumns: '195px 1.25fr 1fr',
-              gap: 16,
-              flex: 1,
-              minHeight: 420,
-            }}>
+            <div
+              className="saha-ai-tools-grid"
+              style={{
+                flex: 1,
+                minHeight: 360,
+              }}
+            >
               {/* Column 1: AI tools Sidebar Navigation */}
               <div style={{
                 display: 'flex',
@@ -1177,7 +1811,8 @@ export function NewProjectModal({
                     </div>
 
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                      {/* Crop Card with instant hover preview */}
+                      {/* Crop Card hidden from UI per user request; code preserved for future use */}
+                      {false && (
                       <div
                         onMouseEnter={() => setPreviewTool('crop')}
                         onClick={() => setPreviewTool('crop')}
@@ -1220,6 +1855,7 @@ export function NewProjectModal({
                           </button>
                         </div>
                       </div>
+                      )}
 
                       {/* Straighten Card with instant hover preview */}
                       <div
@@ -1289,7 +1925,8 @@ export function NewProjectModal({
                     </div>
 
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                      {/* Crop Card with instant hover preview */}
+                      {/* Crop Card hidden from UI per user request; code preserved for future use */}
+                      {false && (
                       <div
                         onMouseEnter={() => setPreviewTool('crop')}
                         onClick={() => setPreviewTool('crop')}
@@ -1332,6 +1969,7 @@ export function NewProjectModal({
                           </button>
                         </div>
                       </div>
+                      )}
 
                       {/* Straighten Card with instant hover preview */}
                       <div
@@ -1593,146 +2231,199 @@ export function NewProjectModal({
           )}
         </div>
 
-        {/* Universal Footer (Matches Imagen AI footer) */}
-        <div style={{
-          padding: '16px 24px',
-          borderTop: '1px solid rgba(255, 255, 255, 0.08)',
-          background: '#131417',
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-        }}>
-          {/* Photos count */}
-          <div style={{ fontSize: 13, color: '#9CA3AF' }}>
-            {detectedPhotoCount > 0 ? `${detectedPhotoCount} Photos selected` : ''}
+        {/* Universal Footer (Matches Imagen AI footer in all screenshots: no footer on Choose a source) */}
+        {!(step === 'source' && catalogSubStep === 'catalog-source') && (
+          <div style={{
+            padding: '16px 24px',
+            borderTop: '1px solid rgba(255, 255, 255, 0.08)',
+            background: '#131417',
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+          }}>
+            {/* Photos count */}
+            <div style={{ fontSize: 13, color: '#9CA3AF' }}>
+              {step === 'source' && sourceType === 'catalog' && catalogSubStep === 'choose-photos'
+                ? `${selectedCatalogPhotosCount} photos selected`
+                : (detectedPhotoCount > 0 ? `${detectedPhotoCount} photos selected` : '0 photos selected')}
+            </div>
+
+            {/* Action buttons */}
+            <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+              {/* Back button for choose-photos */}
+              {step === 'source' && sourceType === 'catalog' && catalogSubStep === 'choose-photos' && (
+                <button
+                  type="button"
+                  onClick={() => setCatalogSubStep('catalog-source')}
+                  style={{
+                    height: 36,
+                    padding: '0 20px',
+                    background: 'transparent',
+                    border: '1px solid rgba(255, 255, 255, 0.16)',
+                    borderRadius: 6,
+                    color: '#E5E7EB',
+                    fontFamily: F,
+                    fontSize: 12.5,
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                  }}
+                >
+                  Back
+                </button>
+              )}
+
+              {/* Back button for setup, workflow, tools */}
+              {step !== 'source' && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (step === 'setup') {
+                      if (sourceType === 'catalog') {
+                        setStep('source');
+                        setCatalogSubStep('choose-photos');
+                      } else {
+                        setStep('source');
+                      }
+                    } else if (step === 'workflow') {
+                      setStep('setup');
+                    } else if (step === 'tools') {
+                      setStep('workflow');
+                    }
+                  }}
+                  style={{
+                    height: 36,
+                    padding: '0 20px',
+                    background: 'transparent',
+                    border: '1px solid rgba(255, 255, 255, 0.16)',
+                    borderRadius: 6,
+                    color: '#E5E7EB',
+                    fontFamily: F,
+                    fontSize: 12.5,
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                  }}
+                >
+                  Back
+                </button>
+              )}
+
+              {/* Cancel on folder source */}
+              {step === 'source' && sourceType === 'folder' && (
+                <button
+                  type="button"
+                  onClick={onClose}
+                  style={{
+                    height: 36,
+                    padding: '0 18px',
+                    background: 'transparent',
+                    border: '1px solid rgba(255, 255, 255, 0.16)',
+                    borderRadius: 6,
+                    color: '#E5E7EB',
+                    fontFamily: F,
+                    fontSize: 12.5,
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                  }}
+                >
+                  Cancel
+                </button>
+              )}
+
+              {/* Next on choose-photos (Gated by selectedCatalogPhotosCount) */}
+              {step === 'source' && sourceType === 'catalog' && catalogSubStep === 'choose-photos' && (
+                <button
+                  type="button"
+                  disabled={selectedCatalogPhotosCount === 0}
+                  onClick={handleProceedFromChoosePhotos}
+                  style={{
+                    height: 36,
+                    padding: '0 24px',
+                    background: selectedCatalogPhotosCount > 0 ? '#E05353' : 'rgba(255, 255, 255, 0.1)',
+                    color: selectedCatalogPhotosCount > 0 ? '#FFFFFF' : '#888D96',
+                    border: 'none',
+                    borderRadius: 6,
+                    fontFamily: F,
+                    fontSize: 12.5,
+                    fontWeight: 700,
+                    cursor: selectedCatalogPhotosCount > 0 ? 'pointer' : 'not-allowed',
+                    boxShadow: selectedCatalogPhotosCount > 0 ? '0 4px 14px rgba(224, 83, 83, 0.35)' : 'none',
+                  }}
+                >
+                  Next
+                </button>
+              )}
+
+              {/* Next on Step 2 (Project setup) */}
+              {step === 'setup' && (
+                <button
+                  type="button"
+                  onClick={() => setStep('workflow')}
+                  style={{
+                    height: 36,
+                    padding: '0 24px',
+                    background: '#E05353',
+                    color: '#FFFFFF',
+                    border: 'none',
+                    borderRadius: 6,
+                    fontFamily: F,
+                    fontSize: 12.5,
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                    boxShadow: '0 4px 14px rgba(224, 83, 83, 0.35)',
+                  }}
+                >
+                  Next
+                </button>
+              )}
+
+              {/* Next on Step 3 (Your workflow) */}
+              {step === 'workflow' && (
+                <button
+                  type="button"
+                  onClick={() => setStep('tools')}
+                  style={{
+                    height: 36,
+                    padding: '0 24px',
+                    background: '#E05353',
+                    color: '#FFFFFF',
+                    border: 'none',
+                    borderRadius: 6,
+                    fontFamily: F,
+                    fontSize: 12.5,
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                    boxShadow: '0 4px 14px rgba(224, 83, 83, 0.35)',
+                  }}
+                >
+                  Next
+                </button>
+              )}
+
+              {/* Create project on Step 4 (AI tools) */}
+              {step === 'tools' && (
+                <button
+                  type="button"
+                  onClick={handleStart}
+                  style={{
+                    height: 36,
+                    padding: '0 24px',
+                    background: '#E05353',
+                    color: '#FFFFFF',
+                    border: 'none',
+                    borderRadius: 6,
+                    fontFamily: F,
+                    fontSize: 12.5,
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                    boxShadow: '0 4px 14px rgba(224, 83, 83, 0.35)',
+                  }}
+                >
+                  Create project
+                </button>
+              )}
+            </div>
           </div>
-
-          {/* Action buttons */}
-          <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-            {/* Back button */}
-            {step !== 'source' && (
-              <button
-                type="button"
-                onClick={() => {
-                  if (step === 'setup') setStep('source');
-                  else if (step === 'workflow') setStep('setup');
-                  else if (step === 'tools') setStep('workflow');
-                }}
-                style={{
-                  height: 36,
-                  padding: '0 20px',
-                  background: 'transparent',
-                  border: '1px solid rgba(255, 255, 255, 0.16)',
-                  borderRadius: 6,
-                  color: '#E5E7EB',
-                  fontFamily: F,
-                  fontSize: 12.5,
-                  fontWeight: 600,
-                  cursor: 'pointer',
-                }}
-              >
-                Back
-              </button>
-            )}
-
-            {/* Cancel on Step 1 */}
-            {step === 'source' && (
-              <button
-                type="button"
-                onClick={onClose}
-                style={{
-                  height: 36,
-                  padding: '0 18px',
-                  background: 'transparent',
-                  border: '1px solid rgba(255, 255, 255, 0.16)',
-                  borderRadius: 6,
-                  color: '#E5E7EB',
-                  fontFamily: F,
-                  fontSize: 12.5,
-                  fontWeight: 600,
-                  cursor: 'pointer',
-                }}
-              >
-                Cancel
-              </button>
-            )}
-
-            {/* Next on Step 2 (Project setup) */}
-            {step === 'setup' && (
-              <button
-                type="button"
-                onClick={() => setStep('workflow')}
-                style={{
-                  height: 36,
-                  padding: '0 24px',
-                  background: '#E05353',
-                  color: '#FFFFFF',
-                  border: 'none',
-                  borderRadius: 6,
-                  fontFamily: F,
-                  fontSize: 12.5,
-                  fontWeight: 700,
-                  cursor: 'pointer',
-                  boxShadow: '0 4px 14px rgba(224, 83, 83, 0.35)',
-                }}
-              >
-                Next
-              </button>
-            )}
-
-            {/* Next on Step 3 (Your workflow) - Gated by selectedProfileId! */}
-            {step === 'workflow' && (
-              <button
-                type="button"
-                disabled={!selectedProfileId}
-                onClick={() => {
-                  if (selectedProfileId) {
-                    setStep('tools');
-                  }
-                }}
-                title={!selectedProfileId ? 'Please select an AI Profile to continue' : ''}
-                style={{
-                  height: 36,
-                  padding: '0 24px',
-                  background: selectedProfileId ? '#E05353' : 'rgba(255, 255, 255, 0.1)',
-                  color: selectedProfileId ? '#FFFFFF' : '#888D96',
-                  border: 'none',
-                  borderRadius: 6,
-                  fontFamily: F,
-                  fontSize: 12.5,
-                  fontWeight: 700,
-                  cursor: selectedProfileId ? 'pointer' : 'not-allowed',
-                  boxShadow: selectedProfileId ? '0 4px 14px rgba(224, 83, 83, 0.35)' : 'none',
-                }}
-              >
-                Next
-              </button>
-            )}
-
-            {/* Create project on Step 4 (AI tools) */}
-            {step === 'tools' && (
-              <button
-                type="button"
-                onClick={handleStart}
-                style={{
-                  height: 36,
-                  padding: '0 24px',
-                  background: '#E05353',
-                  color: '#FFFFFF',
-                  border: 'none',
-                  borderRadius: 6,
-                  fontFamily: F,
-                  fontSize: 12.5,
-                  fontWeight: 700,
-                  cursor: 'pointer',
-                  boxShadow: '0 4px 14px rgba(224, 83, 83, 0.35)',
-                }}
-              >
-                Create project
-              </button>
-            )}
-          </div>
-        </div>
+        )}
       </div>
     </div>
   );

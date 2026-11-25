@@ -382,9 +382,9 @@ export function ManageUploadsPopover({
                       {item.name || 'Untitled Project'}
                     </div>
 
-                    {/* Status & Action */}
+                    {/* Status & Action matching Image 5 & Image 6 */}
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 1 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 1, minWidth: 0 }}>
                         {isItemComplete ? (
                           <span style={{ color: '#10B981', fontSize: 13, fontWeight: 700 }}>✓</span>
                         ) : isItemPaused ? (
@@ -403,38 +403,62 @@ export function ManageUploadsPopover({
 
                         <span style={{ fontSize: 12, color: isLight ? '#4B5563' : '#D1D5DB' }}>
                           {isItemComplete
-                            ? `Completed ${item.totalPhotos}/${item.totalPhotos} photos`
+                            ? `Upload for editing Upload complete. You uploaded ${item.totalPhotos} photos.`
                             : isItemPaused
                             ? `Paused at ${item.processedPhotos || 0}/${item.totalPhotos} photos`
-                            : `Upload project ${item.processedPhotos || 0}/${item.totalPhotos} photos`}
+                            : `Upload for editing ${item.totalPhotos || 5} photos`}
                         </span>
 
-                        {/* Progress Bar */}
-                        <div style={{
-                          flex: 1,
-                          maxWidth: 160,
-                          height: 5,
-                          borderRadius: 3,
-                          background: isLight ? 'rgba(0,0,0,0.1)' : 'rgba(255,255,255,0.12)',
-                          overflow: 'hidden',
-                          margin: '0 6px',
-                        }}>
-                          <div style={{
-                            width: `${progressPct}%`,
-                            height: '100%',
-                            background: '#10B981',
-                            borderRadius: 3,
-                            transition: 'width 0.2s ease',
-                          }} />
-                        </div>
+                        {/* Progress Bar (Visible while uploading) */}
+                        {!isItemComplete && (
+                          <>
+                            <div style={{
+                              flex: 1,
+                              maxWidth: 160,
+                              height: 5,
+                              borderRadius: 3,
+                              background: isLight ? 'rgba(0,0,0,0.1)' : 'rgba(255,255,255,0.12)',
+                              overflow: 'hidden',
+                              margin: '0 6px',
+                            }}>
+                              <div style={{
+                                width: `${progressPct}%`,
+                                height: '100%',
+                                background: '#10B981',
+                                borderRadius: 3,
+                                transition: 'width 0.2s ease',
+                              }} />
+                            </div>
 
-                        <span style={{ ...Tnum, fontSize: 11, color: isLight ? '#4B5563' : '#9CA3AF' }}>
-                          {progressPct}%
-                        </span>
+                            <span style={{ ...Tnum, fontSize: 11, color: isLight ? '#4B5563' : '#9CA3AF' }}>
+                              {progressPct}%
+                            </span>
+                          </>
+                        )}
                       </div>
 
                       {/* Cancel / Dismiss Button */}
-                      {!isItemComplete && (
+                      {isItemComplete ? (
+                        <button
+                          type="button"
+                          onClick={() => onCancelUpload?.(item.id)}
+                          style={{
+                            background: 'transparent',
+                            border: 'none',
+                            color: isLight ? '#6B7280' : '#9CA3AF',
+                            fontFamily: F,
+                            fontSize: 11.5,
+                            fontWeight: 600,
+                            cursor: 'pointer',
+                            padding: '2px 4px',
+                            transition: 'color 0.15s ease',
+                          }}
+                          onMouseEnter={(e) => { e.currentTarget.style.color = '#FFFFFF'; }}
+                          onMouseLeave={(e) => { e.currentTarget.style.color = isLight ? '#6B7280' : '#9CA3AF'; }}
+                        >
+                          Dismiss
+                        </button>
+                      ) : (
                         <button
                           type="button"
                           onClick={() => onCancelUpload?.(item.id)}
